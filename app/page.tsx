@@ -54,7 +54,11 @@ type PhoneItem = {
   imei: string;
   color: string;
   storage: string;
+  madeIn: string;
+  networkVersion: string;
+  batteryCondition: string;
   condition: string;
+  note?: string;
   storeId: Exclude<StoreId, "all">;
   cost: number;
   expectedPrice: number;
@@ -140,13 +144,13 @@ const customersSeed: Customer[] = [
 ];
 
 const phoneSeed: PhoneItem[] = [
-  { id: "p1", brand: "iPhone", name: "iPhone 13 Pro", imei: "356789101234561", color: "Xanh", storage: "256GB", condition: "Đẹp 98%", storeId: "store-1", cost: 11700000, expectedPrice: 13200000, status: "Còn hàng" },
-  { id: "p2", brand: "iPhone", name: "iPhone 12", imei: "356789101234562", color: "Đen", storage: "128GB", condition: "Pin 88%", storeId: "store-2", cost: 7200000, expectedPrice: 8200000, status: "Còn hàng" },
-  { id: "p3", brand: "Samsung", name: "Galaxy S22", imei: "356789101234563", color: "Trắng", storage: "128GB", condition: "Trầy nhẹ", storeId: "store-3", cost: 6500000, expectedPrice: 7600000, status: "Còn hàng" },
-  { id: "p4", brand: "iPhone", name: "iPhone 11", imei: "356789101234564", color: "Tím", storage: "64GB", condition: "Đẹp 99%", storeId: "store-1", cost: 5500000, expectedPrice: 6500000, status: "Còn hàng" },
-  { id: "p5", brand: "Oppo", name: "Reno 8", imei: "356789101234565", color: "Vàng", storage: "256GB", condition: "Mới 100%", storeId: "store-2", cost: 7000000, expectedPrice: 8500000, status: "Còn hàng" },
-  { id: "p6", brand: "Xiaomi", name: "Redmi Note 12", imei: "356789101234566", color: "Xám", storage: "128GB", condition: "Đẹp 99%", storeId: "store-3", cost: 3500000, expectedPrice: 4200000, status: "Còn hàng" },
-  { id: "p7", brand: "iPhone", name: "iPhone 10", imei: "356789101234567", color: "Đen", storage: "64GB", condition: "Trầy nhiều", storeId: "store-1", cost: 2500000, expectedPrice: 3200000, status: "Còn hàng" },
+  { id: "p1", brand: "iPhone", name: "13 Pro", imei: "356789101234561", color: "Xanh", storage: "256GB", madeIn: "VN/A", networkVersion: "5G", batteryCondition: "Zin", condition: "Like New", note: "Màn đẹp", storeId: "store-1", cost: 11700000, expectedPrice: 13200000, status: "Còn hàng" },
+  { id: "p2", brand: "iPhone", name: "12", imei: "356789101234562", color: "Đen", storage: "128GB", madeIn: "LL/A", networkVersion: "5G", batteryCondition: "80-90%", condition: "Cũ", note: "Trầy viền nhẹ", storeId: "store-2", cost: 7200000, expectedPrice: 8200000, status: "Còn hàng" },
+  { id: "p3", brand: "Samsung", name: "Galaxy S22", imei: "356789101234563", color: "Trắng", storage: "128GB", madeIn: "VN/A", networkVersion: "5G", batteryCondition: "Zin", condition: "Like New", note: "", storeId: "store-3", cost: 6500000, expectedPrice: 7600000, status: "Còn hàng" },
+  { id: "p4", brand: "iPhone", name: "11", imei: "356789101234564", color: "Tím", storage: "64GB", madeIn: "VN/A", networkVersion: "4G", batteryCondition: "Đã thay", condition: "Cũ", storeId: "store-1", cost: 5500000, expectedPrice: 6500000, status: "Còn hàng" },
+  { id: "p5", brand: "Oppo", name: "Reno 8", imei: "356789101234565", color: "Vàng", storage: "256GB", madeIn: "Trung Quốc", networkVersion: "5G", batteryCondition: "Zin", condition: "Mới 100%", storeId: "store-2", cost: 7000000, expectedPrice: 8500000, status: "Còn hàng" },
+  { id: "p6", brand: "Xiaomi", name: "Redmi Note 12", imei: "356789101234566", color: "Xám", storage: "128GB", madeIn: "Trung Quốc", networkVersion: "5G", batteryCondition: "Zin", condition: "Like New", storeId: "store-3", cost: 3500000, expectedPrice: 4200000, status: "Còn hàng" },
+  { id: "p7", brand: "iPhone", name: "10", imei: "356789101234567", color: "Đen", storage: "64GB", madeIn: "LL/A", networkVersion: "4G", batteryCondition: "Đã thay", condition: "Cũ", storeId: "store-1", cost: 2500000, expectedPrice: 3200000, status: "Còn hàng" },
 ];
 
 const accessorySeed: Accessory[] = [
@@ -190,15 +194,13 @@ const navItems = [
 
 type PageId = (typeof navItems)[number]["id"];
 
-const money = new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" });
-
 function storeName(id: StoreId) {
   if (id === "all") return "Toàn hệ thống";
   return stores.find((store) => store.id === id)?.name ?? id;
 }
 
 function formatMoney(value: number) {
-  return money.format(value);
+  return (value / 1000).toLocaleString("vi-VN");
 }
 
 function StatusBadge({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "ok" | "warn" | "danger" }) {
@@ -255,8 +257,7 @@ export default function Home() {
   const [inventoryPage, setInventoryPage] = useState(1);
   const [inventoryTypeFilter, setInventoryTypeFilter] = useState("all");
   const [inventoryNameFilter, setInventoryNameFilter] = useState("");
-  const [inventoryMinPrice, setInventoryMinPrice] = useState("");
-  const [inventoryMaxPrice, setInventoryMaxPrice] = useState("");
+  const [inventoryPriceRange, setInventoryPriceRange] = useState("all");
   const [inventorySort, setInventorySort] = useState("price-desc");
   const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false);
   const [editingPhoneId, setEditingPhoneId] = useState<string | null>(null);
@@ -271,8 +272,15 @@ export default function Home() {
 
   const canCancel = currentUser?.role === "owner";
 
-  const minInventoryPrice = Number(inventoryMinPrice || 0);
-  const maxInventoryPrice = Number(inventoryMaxPrice || Number.MAX_SAFE_INTEGER);
+  let minInventoryPrice = 0;
+  let maxInventoryPrice = Number.MAX_SAFE_INTEGER;
+  if (inventoryPriceRange === "u1m") maxInventoryPrice = 1000000;
+  else if (inventoryPriceRange === "1m-2m") { minInventoryPrice = 1000000; maxInventoryPrice = 2000000; }
+  else if (inventoryPriceRange === "2m-4m") { minInventoryPrice = 2000000; maxInventoryPrice = 4000000; }
+  else if (inventoryPriceRange === "4m-6m") { minInventoryPrice = 4000000; maxInventoryPrice = 6000000; }
+  else if (inventoryPriceRange === "6m-10m") { minInventoryPrice = 6000000; maxInventoryPrice = 10000000; }
+  else if (inventoryPriceRange === "o10m") minInventoryPrice = 10000000;
+
   const phoneTypeOptions = Array.from(new Set(phones.map((item) => item.name.split(" ")[0]).filter(Boolean)));
   const accessoryTypeOptions = Array.from(new Set(accessories.map((item) => item.code.split("-")[0]).filter(Boolean)));
   const inventoryTypeOptions = inventoryTab === "phones" ? phoneTypeOptions : accessoryTypeOptions;
@@ -416,7 +424,11 @@ export default function Home() {
       imei: String(form.get("imei")),
       color: String(form.get("color")),
       storage: String(form.get("storage")),
+      madeIn: String(form.get("madeIn")),
+      networkVersion: String(form.get("networkVersion")),
+      batteryCondition: String(form.get("batteryCondition")),
       condition: String(form.get("condition")),
+      note: String(form.get("note") || ""),
       storeId,
       cost: Number(form.get("cost") || 0),
       expectedPrice: Number(form.get("expectedPrice") || 0),
@@ -810,30 +822,22 @@ export default function Home() {
                       <option key={type} value={type}>{type}</option>
                     ))}
                   </select>
-                  <div className="grid grid-cols-2 gap-2">
-                    <input
-                      value={inventoryMinPrice}
-                      onChange={(event) => {
-                        setInventoryMinPrice(event.target.value);
-                        setInventoryPage(1);
-                      }}
-                      type="number"
-                      min="0"
-                      className="h-10 rounded-lg border border-line px-3 font-semibold"
-                      placeholder="Giá từ"
-                    />
-                    <input
-                      value={inventoryMaxPrice}
-                      onChange={(event) => {
-                        setInventoryMaxPrice(event.target.value);
-                        setInventoryPage(1);
-                      }}
-                      type="number"
-                      min="0"
-                      className="h-10 rounded-lg border border-line px-3 font-semibold"
-                      placeholder="Đến"
-                    />
-                  </div>
+                  <select
+                    value={inventoryPriceRange}
+                    onChange={(event) => {
+                      setInventoryPriceRange(event.target.value);
+                      setInventoryPage(1);
+                    }}
+                    className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
+                  >
+                    <option value="all">Mọi mức giá</option>
+                    <option value="u1m">Dưới 1 triệu</option>
+                    <option value="1m-2m">1 - 2 triệu</option>
+                    <option value="2m-4m">2 - 4 triệu</option>
+                    <option value="4m-6m">4 - 6 triệu</option>
+                    <option value="6m-10m">6 - 10 triệu</option>
+                    <option value="o10m">Trên 10 triệu</option>
+                  </select>
                   <select value={inventorySort} onChange={(event) => setInventorySort(event.target.value)} className="h-10 rounded-lg border border-line bg-white px-3 font-semibold">
                     <option value="price-desc">Giá cao đến thấp</option>
                     <option value="price-asc">Giá thấp đến cao</option>
@@ -841,18 +845,54 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="grid gap-4 p-4 2xl:grid-cols-[1fr_300px]">
+              <div className="flex flex-col gap-4 p-4">
+                <aside className="rounded-lg border border-line bg-slate-50 p-4">
+                  <div className="mb-4 flex items-center justify-between">
+                    <div>
+                      <h3 className="font-black">Phân tích trực quan</h3>
+                      <p className="text-sm font-semibold text-muted">Tỷ trọng giá trị tồn.</p>
+                    </div>
+                    <span className="rounded-md bg-white px-2 py-1 text-xs font-black text-muted">{storeName(storeFilter)}</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-8 py-2">
+                    <div
+                      className="grid h-32 w-32 shrink-0 place-items-center rounded-full"
+                      style={{
+                        background: `conic-gradient(#0f8b62 0 ${inventorySummary.phonePercent}%, #e2b33c ${inventorySummary.phonePercent}% 100%)`,
+                      }}
+                    >
+                      <div className="grid h-20 w-20 place-items-center rounded-full bg-slate-50 text-center">
+                        <div>
+                          <p className="text-[10px] font-black text-muted">TỔNG TỒN</p>
+                          <strong>{formatMoney(inventorySummary.totalValue)}</strong>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex flex-1 flex-col gap-4">
+                      <InventoryBar label="Máy cũ" value={inventorySummary.phonePercent} color="bg-brand" />
+                      <InventoryBar label="Phụ kiện" value={inventorySummary.accessoryPercent} color="bg-gold" />
+                      <InventoryBar label="Sắp hết" value={Math.min(100, inventorySummary.lowAccessories * 12)} color="bg-red-500" />
+                    </div>
+                  </div>
+                </aside>
+
                 <div className="min-w-0">
               {inventoryTab === "phones" ? (
                 <DataTable
-                  headers={["Hãng", "Máy", "IMEI", "Cửa hàng", "Giá nhập", "Giá dự kiến", "Trạng thái", "Thao tác"]}
+                  headers={["Hãng", "Tên máy", "Tình trạng", "Màu sắc", "Dung lượng", "Quốc Gia", "Pin", "Ghi chú", "IMEI", "Giá nhập", "Giá bán", "Lợi nhuận", "Trạng thái", "Thao tác"]}
                   rows={paginatedPhones.map((item) => [
-                    item.brand,
-                    `${item.name} • ${item.color} • ${item.storage}`,
-                    item.imei,
-                    storeName(item.storeId),
-                    formatMoney(item.cost),
-                    formatMoney(item.expectedPrice),
+                    <div className="flex items-center gap-1.5 font-bold text-slate-700" key={`brand-${item.id}`}><Smartphone size={14} className="text-brand"/>{item.brand}</div>,
+                    <span className="font-bold text-brand" key={`name-${item.id}`}>{item.name}</span>,
+                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600" key={`cond-${item.id}`}>{item.condition}</span>,
+                    item.color,
+                    <span className="font-semibold text-slate-700" key={`storage-${item.id}`}>{item.storage}</span>,
+                    `${item.madeIn} (${item.networkVersion})`,
+                    <div className="flex items-center gap-1 font-semibold text-amber-700" key={`bat-${item.id}`}><Activity size={12} />{item.batteryCondition}</div>,
+                    <span className="text-xs text-muted max-w-[120px] truncate block" title={item.note || "-"} key={`note-${item.id}`}>{item.note || "-"}</span>,
+                    <span className="text-xs font-mono text-muted" key={`imei-${item.id}`}>{item.imei}</span>,
+                    <span className="font-semibold" key={`cost-${item.id}`}>{formatMoney(item.cost)}</span>,
+                    <span className="font-semibold text-emerald-600" key={`price-${item.id}`}>{formatMoney(item.expectedPrice)}</span>,
+                    <span className="font-black text-brand" key={`profit-${item.id}`}>{formatMoney(item.expectedPrice - item.cost)}</span>,
                     <StatusBadge key={item.id} tone={item.status === "Còn hàng" ? "ok" : item.status === "Đã bán" ? "warn" : "danger"}>{item.status}</StatusBadge>,
                     <div key={item.id} className="flex flex-wrap gap-2">
                       <button onClick={() => openPhoneEditModal(item.id)} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-brand-soft px-3 text-xs font-black text-brand">
@@ -872,14 +912,14 @@ export default function Home() {
                 />
               ) : (
                 <DataTable
-                  headers={["Mã", "Tên phụ kiện", "Cửa hàng", "SL", "Giá nhập", "Giá bán", "Trạng thái", "Thao tác"]}
+                  headers={["Mã", "Tên phụ kiện", "SL", "Giá nhập", "Giá bán", "Lợi nhuận", "Trạng thái", "Thao tác"]}
                   rows={paginatedAccessories.map((item) => [
                     item.code,
                     item.name,
-                    storeName(item.storeId),
                     item.quantity,
                     formatMoney(item.cost),
                     formatMoney(item.price),
+                    formatMoney(item.price - item.cost),
                     <StatusBadge key={item.id} tone={item.status === "Còn hàng" ? "ok" : item.status === "Hết hàng" ? "warn" : "danger"}>{item.status}</StatusBadge>,
                     <div key={item.id} className="flex flex-wrap gap-2">
                       <button onClick={() => openAccessoryEditModal(item.id)} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-brand-soft px-3 text-xs font-black text-brand">
@@ -924,36 +964,6 @@ export default function Home() {
                 </div>
               </div>
                 </div>
-
-                <aside className="rounded-lg border border-line bg-slate-50 p-4">
-                  <div className="mb-4 flex items-center justify-between">
-                    <div>
-                      <h3 className="font-black">Phân tích trực quan</h3>
-                      <p className="text-sm font-semibold text-muted">Tỷ trọng giá trị tồn.</p>
-                    </div>
-                    <span className="rounded-md bg-white px-2 py-1 text-xs font-black text-muted">{storeName(storeFilter)}</span>
-                  </div>
-                  <div className="grid place-items-center py-5">
-                    <div
-                      className="grid h-40 w-40 place-items-center rounded-full"
-                      style={{
-                        background: `conic-gradient(#0f8b62 0 ${inventorySummary.phonePercent}%, #e2b33c ${inventorySummary.phonePercent}% 100%)`,
-                      }}
-                    >
-                      <div className="grid h-24 w-24 place-items-center rounded-full bg-slate-50 text-center">
-                        <div>
-                          <p className="text-xs font-black text-muted">TỔNG TỒN</p>
-                          <strong>{formatMoney(inventorySummary.totalValue)}</strong>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="grid gap-4">
-                    <InventoryBar label="Máy cũ" value={inventorySummary.phonePercent} color="bg-brand" />
-                    <InventoryBar label="Phụ kiện" value={inventorySummary.accessoryPercent} color="bg-gold" />
-                    <InventoryBar label="Sắp hết" value={Math.min(100, inventorySummary.lowAccessories * 12)} color="bg-red-500" />
-                  </div>
-                </aside>
               </div>
             </section>
 
@@ -1000,12 +1010,12 @@ export default function Home() {
                         <div className="grid gap-3 sm:grid-cols-2">
                           <SelectField label="Hãng" name="brand" options={["iPhone", "Samsung", "Oppo", "Xiaomi"].map((b) => [b, b])} defaultValue={editingPhone?.brand ?? "iPhone"} />
                           <Field label="Tên máy">
-                            <input name="name" required list="phone-models" defaultValue={editingPhone?.name} className="h-10 w-full rounded-lg border border-line bg-white px-3" placeholder="iPhone 13 Pro" />
+                            <input name="name" required list="phone-models" defaultValue={editingPhone?.name} className="h-10 w-full rounded-lg border border-line bg-white px-3" placeholder="13 Pro" />
                             <datalist id="phone-models">
-                              <option value="iPhone 10" />
-                              <option value="iPhone 11" />
-                              <option value="iPhone 12" />
-                              <option value="iPhone 13 Pro" />
+                              <option value="10" />
+                              <option value="11" />
+                              <option value="12" />
+                              <option value="13 Pro" />
                               <option value="Galaxy S22" />
                               <option value="Galaxy Z Fold4" />
                               <option value="Reno 8" />
@@ -1017,10 +1027,18 @@ export default function Home() {
                         </div>
                         <Field label="IMEI"><input name="imei" required defaultValue={editingPhone?.imei} className="h-10 rounded-lg border border-line px-3" placeholder="356789..." /></Field>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <Field label="Màu"><input name="color" defaultValue={editingPhone?.color} className="h-10 rounded-lg border border-line px-3" placeholder="Xanh" /></Field>
+                          <Field label="Màu sắc"><input name="color" defaultValue={editingPhone?.color} className="h-10 rounded-lg border border-line px-3" placeholder="Xanh" /></Field>
                           <Field label="Dung lượng"><input name="storage" defaultValue={editingPhone?.storage} className="h-10 rounded-lg border border-line px-3" placeholder="256GB" /></Field>
                         </div>
-                        <Field label="Tình trạng"><input name="condition" defaultValue={editingPhone?.condition} className="h-10 rounded-lg border border-line px-3" placeholder="Đẹp 98%" /></Field>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <Field label="Made In"><input name="madeIn" defaultValue={editingPhone?.madeIn} className="h-10 rounded-lg border border-line px-3" placeholder="VN/A, LL/A..." /></Field>
+                          <SelectField label="Phiên bản" name="networkVersion" options={["4G", "5G"].map((v) => [v, v])} defaultValue={editingPhone?.networkVersion ?? "5G"} />
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <SelectField label="Tình trạng pin" name="batteryCondition" options={["Zin", "Đã thay", "80-90%"].map((v) => [v, v])} defaultValue={editingPhone?.batteryCondition ?? "Zin"} />
+                          <SelectField label="Tình trạng máy" name="condition" options={["Zin", "Cũ", "Like New", "Mới 100%"].map((v) => [v, v])} defaultValue={editingPhone?.condition ?? "Like New"} />
+                        </div>
+                        <Field label="Ghi chú"><input name="note" defaultValue={editingPhone?.note} className="h-10 rounded-lg border border-line px-3" placeholder="Màn đẹp, trầy viền nhẹ..." /></Field>
                         <SelectField label="Cửa hàng" name="storeId" options={stores.map((s) => [s.id, s.name])} defaultValue={editingPhone?.storeId} />
                         <div className="grid gap-3 sm:grid-cols-2">
                           <Field label="Giá nhập"><input name="cost" type="number" min="0" defaultValue={editingPhone?.cost} className="h-10 rounded-lg border border-line px-3" /></Field>
@@ -1258,7 +1276,7 @@ function DataTable({ headers, rows }: { headers: string[]; rows: ReactNode[][] }
         </thead>
         <tbody>
           {rows.map((row, rowIndex) => (
-            <tr key={rowIndex} className="border-b border-line last:border-b-0">
+            <tr key={rowIndex} className="border-b border-line transition-colors hover:bg-slate-50/80 last:border-b-0">
               {row.map((cell, cellIndex) => (
                 <td key={`${rowIndex}-${cellIndex}`} className="px-3 py-3 align-top">
                   {cell}
