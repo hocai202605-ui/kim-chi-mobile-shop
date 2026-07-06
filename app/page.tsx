@@ -49,6 +49,7 @@ type Customer = {
 
 type PhoneItem = {
   id: string;
+  brand: string;
   name: string;
   imei: string;
   color: string;
@@ -139,9 +140,13 @@ const customersSeed: Customer[] = [
 ];
 
 const phoneSeed: PhoneItem[] = [
-  { id: "p1", name: "iPhone 13 Pro", imei: "356789101234561", color: "Xanh", storage: "256GB", condition: "Đẹp 98%", storeId: "store-1", cost: 11700000, expectedPrice: 13200000, status: "Còn hàng" },
-  { id: "p2", name: "iPhone 12", imei: "356789101234562", color: "Đen", storage: "128GB", condition: "Pin 88%", storeId: "store-2", cost: 7200000, expectedPrice: 8200000, status: "Còn hàng" },
-  { id: "p3", name: "Samsung S22", imei: "356789101234563", color: "Trắng", storage: "128GB", condition: "Trầy nhẹ", storeId: "store-3", cost: 6500000, expectedPrice: 7600000, status: "Còn hàng" },
+  { id: "p1", brand: "iPhone", name: "iPhone 13 Pro", imei: "356789101234561", color: "Xanh", storage: "256GB", condition: "Đẹp 98%", storeId: "store-1", cost: 11700000, expectedPrice: 13200000, status: "Còn hàng" },
+  { id: "p2", brand: "iPhone", name: "iPhone 12", imei: "356789101234562", color: "Đen", storage: "128GB", condition: "Pin 88%", storeId: "store-2", cost: 7200000, expectedPrice: 8200000, status: "Còn hàng" },
+  { id: "p3", brand: "Samsung", name: "Galaxy S22", imei: "356789101234563", color: "Trắng", storage: "128GB", condition: "Trầy nhẹ", storeId: "store-3", cost: 6500000, expectedPrice: 7600000, status: "Còn hàng" },
+  { id: "p4", brand: "iPhone", name: "iPhone 11", imei: "356789101234564", color: "Tím", storage: "64GB", condition: "Đẹp 99%", storeId: "store-1", cost: 5500000, expectedPrice: 6500000, status: "Còn hàng" },
+  { id: "p5", brand: "Oppo", name: "Reno 8", imei: "356789101234565", color: "Vàng", storage: "256GB", condition: "Mới 100%", storeId: "store-2", cost: 7000000, expectedPrice: 8500000, status: "Còn hàng" },
+  { id: "p6", brand: "Xiaomi", name: "Redmi Note 12", imei: "356789101234566", color: "Xám", storage: "128GB", condition: "Đẹp 99%", storeId: "store-3", cost: 3500000, expectedPrice: 4200000, status: "Còn hàng" },
+  { id: "p7", brand: "iPhone", name: "iPhone 10", imei: "356789101234567", color: "Đen", storage: "64GB", condition: "Trầy nhiều", storeId: "store-1", cost: 2500000, expectedPrice: 3200000, status: "Còn hàng" },
 ];
 
 const accessorySeed: Accessory[] = [
@@ -248,6 +253,12 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [inventoryTab, setInventoryTab] = useState<"phones" | "accessories">("phones");
   const [inventoryPage, setInventoryPage] = useState(1);
+  const [inventoryTypeFilter, setInventoryTypeFilter] = useState("all");
+  const [inventoryNameFilter, setInventoryNameFilter] = useState("");
+  const [inventoryMinPrice, setInventoryMinPrice] = useState("");
+  const [inventoryMaxPrice, setInventoryMaxPrice] = useState("");
+  const [inventorySort, setInventorySort] = useState("price-desc");
+  const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false);
   const [editingPhoneId, setEditingPhoneId] = useState<string | null>(null);
   const [editingAccessoryId, setEditingAccessoryId] = useState<string | null>(null);
   const [customers, setCustomers] = useState(customersSeed);
@@ -260,17 +271,37 @@ export default function Home() {
 
   const canCancel = currentUser?.role === "owner";
 
-  const filteredPhones = phones.filter((item) => {
-    const matchesStore = storeFilter === "all" || item.storeId === storeFilter;
-    const q = query.toLowerCase();
-    return matchesStore && [item.name, item.imei, item.condition, item.color].join(" ").toLowerCase().includes(q);
-  });
+  const minInventoryPrice = Number(inventoryMinPrice || 0);
+  const maxInventoryPrice = Number(inventoryMaxPrice || Number.MAX_SAFE_INTEGER);
+  const phoneTypeOptions = Array.from(new Set(phones.map((item) => item.name.split(" ")[0]).filter(Boolean)));
+  const accessoryTypeOptions = Array.from(new Set(accessories.map((item) => item.code.split("-")[0]).filter(Boolean)));
+  const inventoryTypeOptions = inventoryTab === "phones" ? phoneTypeOptions : accessoryTypeOptions;
 
-  const filteredAccessories = accessories.filter((item) => {
-    const matchesStore = storeFilter === "all" || item.storeId === storeFilter;
-    const q = query.toLowerCase();
-    return matchesStore && [item.name, item.code].join(" ").toLowerCase().includes(q);
-  });
+  const filteredPhones = phones
+    .filter((item) => {
+      const matchesStore = storeFilter === "all" || item.storeId === storeFilter;
+      const q = query.toLowerCase();
+      const name = inventoryNameFilter.toLowerCase();
+      const matchesQuickSearch = [item.name, item.imei, item.condition, item.color].join(" ").toLowerCase().includes(q);
+      const matchesName = item.name.toLowerCase().includes(name);
+      const matchesType = inventoryTypeFilter === "all" || item.name.toLowerCase().startsWith(inventoryTypeFilter.toLowerCase());
+      const matchesPrice = item.expectedPrice >= minInventoryPrice && item.expectedPrice <= maxInventoryPrice;
+      return matchesStore && matchesQuickSearch && matchesName && matchesType && matchesPrice;
+    })
+    .sort((a, b) => (inventorySort === "price-asc" ? a.expectedPrice - b.expectedPrice : b.expectedPrice - a.expectedPrice));
+
+  const filteredAccessories = accessories
+    .filter((item) => {
+      const matchesStore = storeFilter === "all" || item.storeId === storeFilter;
+      const q = query.toLowerCase();
+      const name = inventoryNameFilter.toLowerCase();
+      const matchesQuickSearch = [item.name, item.code].join(" ").toLowerCase().includes(q);
+      const matchesName = item.name.toLowerCase().includes(name);
+      const matchesType = inventoryTypeFilter === "all" || item.code.toLowerCase().startsWith(inventoryTypeFilter.toLowerCase());
+      const matchesPrice = item.price >= minInventoryPrice && item.price <= maxInventoryPrice;
+      return matchesStore && matchesQuickSearch && matchesName && matchesType && matchesPrice;
+    })
+    .sort((a, b) => (inventorySort === "price-asc" ? a.price - b.price : b.price - a.price));
 
   const filteredRepairs = repairs.filter((item) => storeFilter === "all" || item.storeId === storeFilter);
   const filteredLedger = ledger.filter((item) => storeFilter === "all" || item.storeId === storeFilter);
@@ -284,6 +315,25 @@ export default function Home() {
   const paginatedAccessories = filteredAccessories.slice(inventoryStart, inventoryStart + inventoryPageSize);
   const editingPhone = editingPhoneId ? phones.find((item) => item.id === editingPhoneId) : null;
   const editingAccessory = editingAccessoryId ? accessories.find((item) => item.id === editingAccessoryId) : null;
+  const inventorySummary = useMemo(() => {
+    const visiblePhones = phones.filter((item) => storeFilter === "all" || item.storeId === storeFilter);
+    const visibleAccessories = accessories.filter((item) => storeFilter === "all" || item.storeId === storeFilter);
+    const availablePhones = visiblePhones.filter((item) => item.status === "Còn hàng");
+    const activeAccessories = visibleAccessories.filter((item) => item.status !== "Đã hủy");
+    const phoneValue = availablePhones.reduce((sum, item) => sum + item.expectedPrice, 0);
+    const accessoryValue = activeAccessories.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const totalValue = phoneValue + accessoryValue;
+    const lowAccessories = activeAccessories.filter((item) => item.quantity <= 10).length;
+
+    return {
+      availablePhones: availablePhones.length,
+      accessoryQuantity: activeAccessories.reduce((sum, item) => sum + item.quantity, 0),
+      totalValue,
+      lowAccessories,
+      phonePercent: totalValue ? Math.round((phoneValue / totalValue) * 100) : 0,
+      accessoryPercent: totalValue ? Math.round((accessoryValue / totalValue) * 100) : 0,
+    };
+  }, [accessories, phones, storeFilter]);
 
   const dashboard = useMemo(() => {
     const activePhones = phones.filter((item) => item.status === "Còn hàng" && (storeFilter === "all" || item.storeId === storeFilter));
@@ -328,12 +378,40 @@ export default function Home() {
     setStoreFilter(selected.role === "owner" ? "all" : selected.storeId);
   }
 
+  function openInventoryCreateModal(tab: "phones" | "accessories" = inventoryTab) {
+    setInventoryTab(tab);
+    setEditingPhoneId(null);
+    setEditingAccessoryId(null);
+    setIsInventoryModalOpen(true);
+  }
+
+  function openPhoneEditModal(id: string) {
+    setInventoryTab("phones");
+    setEditingPhoneId(id);
+    setEditingAccessoryId(null);
+    setIsInventoryModalOpen(true);
+  }
+
+  function openAccessoryEditModal(id: string) {
+    setInventoryTab("accessories");
+    setEditingAccessoryId(id);
+    setEditingPhoneId(null);
+    setIsInventoryModalOpen(true);
+  }
+
+  function closeInventoryModal() {
+    setIsInventoryModalOpen(false);
+    setEditingPhoneId(null);
+    setEditingAccessoryId(null);
+  }
+
   function savePhone(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const storeId = String(form.get("storeId")) as Exclude<StoreId, "all">;
     const payload: PhoneItem = {
       id: editingPhoneId ?? `p${Date.now()}`,
+      brand: String(form.get("brand")),
       name: String(form.get("name")),
       imei: String(form.get("imei")),
       color: String(form.get("color")),
@@ -347,7 +425,7 @@ export default function Home() {
 
     setPhones((prev) => (editingPhoneId ? prev.map((item) => (item.id === editingPhoneId ? payload : item)) : [payload, ...prev]));
     pushLog(editingPhoneId ? "Sửa máy trong kho" : "Thêm máy vào kho", payload.imei, storeId);
-    setEditingPhoneId(null);
+    closeInventoryModal();
     setInventoryPage(1);
     event.currentTarget.reset();
   }
@@ -370,7 +448,7 @@ export default function Home() {
 
     setAccessories((prev) => (editingAccessoryId ? prev.map((item) => (item.id === editingAccessoryId ? payload : item)) : [payload, ...prev]));
     pushLog(editingAccessoryId ? "Sửa phụ kiện trong kho" : "Thêm phụ kiện vào kho", payload.code, storeId);
-    setEditingAccessoryId(null);
+    closeInventoryModal();
     setInventoryPage(1);
     event.currentTarget.reset();
   }
@@ -619,110 +697,157 @@ export default function Home() {
         )}
 
         {activePage === "inventory" && (
-          <section className="grid gap-4 xl:grid-cols-[390px_1fr]">
-            <Panel title={inventoryTab === "phones" ? (editingPhone ? "Sửa máy trong kho" : "Thêm máy vào kho") : editingAccessory ? "Sửa phụ kiện" : "Thêm phụ kiện"}>
-              <div className="mb-4 inline-flex w-full rounded-lg border border-line bg-slate-100 p-1">
-                <button
-                  onClick={() => {
-                    setInventoryTab("phones");
-                    setInventoryPage(1);
-                    setEditingAccessoryId(null);
-                  }}
-                  className={`flex-1 rounded-md px-3 py-2 text-sm font-bold ${inventoryTab === "phones" ? "bg-white text-brand shadow-sm" : "text-muted"}`}
-                >
-                  Máy cũ
-                </button>
-                <button
-                  onClick={() => {
-                    setInventoryTab("accessories");
-                    setInventoryPage(1);
-                    setEditingPhoneId(null);
-                  }}
-                  className={`flex-1 rounded-md px-3 py-2 text-sm font-bold ${inventoryTab === "accessories" ? "bg-white text-brand shadow-sm" : "text-muted"}`}
-                >
-                  Phụ kiện
-                </button>
-              </div>
-
-              {inventoryTab === "phones" ? (
-                <form key={editingPhone?.id ?? "new-phone"} onSubmit={savePhone} className="grid gap-3">
-                  <Field label="Tên máy"><input name="name" required defaultValue={editingPhone?.name} className="h-10 rounded-lg border border-line px-3" placeholder="iPhone 13 Pro" /></Field>
-                  <Field label="IMEI"><input name="imei" required defaultValue={editingPhone?.imei} className="h-10 rounded-lg border border-line px-3" placeholder="356789..." /></Field>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Field label="Màu"><input name="color" defaultValue={editingPhone?.color} className="h-10 rounded-lg border border-line px-3" placeholder="Xanh" /></Field>
-                    <Field label="Dung lượng"><input name="storage" defaultValue={editingPhone?.storage} className="h-10 rounded-lg border border-line px-3" placeholder="256GB" /></Field>
-                  </div>
-                  <Field label="Tình trạng"><input name="condition" defaultValue={editingPhone?.condition} className="h-10 rounded-lg border border-line px-3" placeholder="Đẹp 98%" /></Field>
-                  <SelectField label="Cửa hàng" name="storeId" options={stores.map((s) => [s.id, s.name])} defaultValue={editingPhone?.storeId} />
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Field label="Giá nhập"><input name="cost" type="number" min="0" defaultValue={editingPhone?.cost} className="h-10 rounded-lg border border-line px-3" /></Field>
-                    <Field label="Giá dự kiến"><input name="expectedPrice" type="number" min="0" defaultValue={editingPhone?.expectedPrice} className="h-10 rounded-lg border border-line px-3" /></Field>
-                  </div>
-                  <SelectField label="Trạng thái" name="status" options={["Còn hàng", "Đã bán", "Đã hủy"].map((status) => [status, status])} defaultValue={editingPhone?.status ?? "Còn hàng"} />
-                  <div className="flex gap-2">
-                    <button className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark">
-                      <Plus size={18} />
-                      {editingPhone ? "Lưu sửa" : "Thêm máy"}
-                    </button>
-                    {editingPhone && (
-                      <button type="button" onClick={() => setEditingPhoneId(null)} className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted">
-                        Hủy
-                      </button>
-                    )}
-                  </div>
-                </form>
-              ) : (
-                <form key={editingAccessory?.id ?? "new-accessory"} onSubmit={saveAccessory} className="grid gap-3">
-                  <Field label="Mã hàng"><input name="code" required defaultValue={editingAccessory?.code} className="h-10 rounded-lg border border-line px-3" placeholder="PK-CAP20" /></Field>
-                  <Field label="Tên phụ kiện"><input name="name" required defaultValue={editingAccessory?.name} className="h-10 rounded-lg border border-line px-3" placeholder="Cáp sạc nhanh 20W" /></Field>
-                  <SelectField label="Cửa hàng" name="storeId" options={stores.map((s) => [s.id, s.name])} defaultValue={editingAccessory?.storeId} />
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Field label="Số lượng"><input name="quantity" type="number" min="0" defaultValue={editingAccessory?.quantity ?? 1} className="h-10 rounded-lg border border-line px-3" /></Field>
-                    <Field label="Giá nhập"><input name="cost" type="number" min="0" defaultValue={editingAccessory?.cost} className="h-10 rounded-lg border border-line px-3" /></Field>
-                  </div>
-                  <Field label="Giá bán"><input name="price" type="number" min="0" defaultValue={editingAccessory?.price} className="h-10 rounded-lg border border-line px-3" /></Field>
-                  <SelectField label="Trạng thái" name="status" options={["Còn hàng", "Hết hàng", "Đã hủy"].map((status) => [status, status])} defaultValue={editingAccessory?.status ?? "Còn hàng"} />
-                  <div className="flex gap-2">
-                    <button className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark">
-                      <Plus size={18} />
-                      {editingAccessory ? "Lưu sửa" : "Thêm phụ kiện"}
-                    </button>
-                    {editingAccessory && (
-                      <button type="button" onClick={() => setEditingAccessoryId(null)} className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted">
-                        Hủy
-                      </button>
-                    )}
-                  </div>
-                </form>
-              )}
-            </Panel>
-
-            <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
-              <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <section className="grid gap-4">
+            <div className="rounded-lg border border-amber-200 bg-white p-5 shadow-panel">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <h2 className="text-lg font-black">Quản lý kho hàng</h2>
-                  <p className="text-sm font-semibold text-muted">
-                    {inventoryRowsCount} kết quả • Trang {safeInventoryPage}/{inventoryTotalPages}
-                  </p>
+                  <p className="text-sm font-black text-amber-700">Inventory Management</p>
+                  <h2 className="mt-2 text-3xl font-black">Quản lý kho hàng</h2>
+                  <p className="mt-2 text-sm font-semibold text-muted">Theo dõi máy cũ theo IMEI, phụ kiện theo số lượng, lọc giá và sắp xếp tồn kho.</p>
                 </div>
-                <label className="relative w-full max-w-md">
-                  <Search className="pointer-events-none absolute left-3 top-2.5 text-muted" size={18} />
+                <div className="rounded-lg border border-line bg-slate-50 px-4 py-3">
+                  <p className="text-xs font-bold text-muted">Đang xem</p>
+                  <strong className="text-base">{storeName(storeFilter)}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
+                <p className="text-sm font-bold text-muted">Máy còn hàng</p>
+                <div className="mt-4 flex items-center justify-between">
+                  <strong className="text-3xl">{inventorySummary.availablePhones}</strong>
+                  <span className="grid h-11 w-11 place-items-center rounded-lg bg-red-50 text-danger"><Smartphone size={20} /></span>
+                </div>
+                <p className="mt-4 text-sm font-semibold text-muted">{inventoryRowsCount} kết quả sau lọc</p>
+              </section>
+              <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
+                <p className="text-sm font-bold text-muted">Phụ kiện tồn</p>
+                <div className="mt-4 flex items-center justify-between">
+                  <strong className="text-3xl">{inventorySummary.accessoryQuantity}</strong>
+                  <span className="grid h-11 w-11 place-items-center rounded-lg bg-brand-soft text-brand"><PackagePlus size={20} /></span>
+                </div>
+                <p className="mt-4 text-sm font-semibold text-muted">{inventorySummary.lowAccessories} mặt hàng sắp hết</p>
+              </section>
+              <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
+                <p className="text-sm font-bold text-muted">Giá trị tồn dự kiến</p>
+                <strong className="mt-4 block text-3xl text-amber-700">{formatMoney(inventorySummary.totalValue)}</strong>
+                <div className="mt-5 h-2 rounded-full bg-slate-100">
+                  <div className="h-2 rounded-full bg-brand" style={{ width: `${Math.max(8, inventorySummary.phonePercent)}%` }} />
+                </div>
+                <p className="mt-3 text-sm font-semibold text-muted">Máy chiếm {inventorySummary.phonePercent}% giá trị tồn</p>
+              </section>
+            </div>
+
+            <section className="rounded-lg border border-line bg-white shadow-panel">
+              <div className="border-b border-line p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <h2 className="text-xl font-black">Danh sách tồn kho</h2>
+                    <p className="text-sm font-semibold text-muted">Tìm kiếm nâng cao theo loại, tên máy, khoảng giá và thứ tự giá.</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="inline-flex w-fit rounded-lg border border-line bg-slate-100 p-1">
+                      <button
+                        onClick={() => {
+                          setInventoryTab("phones");
+                          setInventoryTypeFilter("all");
+                          setInventoryPage(1);
+                        }}
+                        className={`rounded-md px-3 py-2 text-sm font-bold ${inventoryTab === "phones" ? "bg-white text-brand shadow-sm" : "text-muted"}`}
+                      >
+                        Máy cũ
+                      </button>
+                      <button
+                        onClick={() => {
+                          setInventoryTab("accessories");
+                          setInventoryTypeFilter("all");
+                          setInventoryPage(1);
+                        }}
+                        className={`rounded-md px-3 py-2 text-sm font-bold ${inventoryTab === "accessories" ? "bg-white text-brand shadow-sm" : "text-muted"}`}
+                      >
+                        Phụ kiện
+                      </button>
+                    </div>
+                    <button onClick={() => openInventoryCreateModal(inventoryTab)} className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 text-sm font-black text-white hover:bg-brand-dark">
+                      <Plus size={17} />
+                      Thêm vào kho
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-3 lg:grid-cols-[1.2fr_0.9fr_0.8fr_0.8fr_0.9fr]">
+                  <label className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-2.5 text-muted" size={18} />
+                    <input
+                      value={query}
+                      onChange={(event) => {
+                        setQuery(event.target.value);
+                        setInventoryPage(1);
+                      }}
+                      className="h-10 w-full rounded-lg border border-line bg-slate-50 pl-10 pr-3 font-semibold outline-none transition focus:border-brand focus:bg-white"
+                      placeholder="Tìm nhanh IMEI, mã hàng..."
+                    />
+                  </label>
                   <input
-                    value={query}
+                    value={inventoryNameFilter}
                     onChange={(event) => {
-                      setQuery(event.target.value);
+                      setInventoryNameFilter(event.target.value);
                       setInventoryPage(1);
                     }}
-                    className="h-10 w-full rounded-lg border border-line bg-slate-50 pl-10 pr-3 font-semibold outline-none transition focus:border-brand focus:bg-white"
-                    placeholder="Tìm tên, IMEI, mã hàng..."
+                    className="h-10 rounded-lg border border-line bg-white px-3 font-semibold outline-none focus:border-brand"
+                    placeholder={inventoryTab === "phones" ? "Tên máy..." : "Tên phụ kiện..."}
                   />
-                </label>
+                  <select
+                    value={inventoryTypeFilter}
+                    onChange={(event) => {
+                      setInventoryTypeFilter(event.target.value);
+                      setInventoryPage(1);
+                    }}
+                    className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
+                  >
+                    <option value="all">{inventoryTab === "phones" ? "Tất cả loại máy" : "Tất cả nhóm"}</option>
+                    {inventoryTypeOptions.map((type) => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      value={inventoryMinPrice}
+                      onChange={(event) => {
+                        setInventoryMinPrice(event.target.value);
+                        setInventoryPage(1);
+                      }}
+                      type="number"
+                      min="0"
+                      className="h-10 rounded-lg border border-line px-3 font-semibold"
+                      placeholder="Giá từ"
+                    />
+                    <input
+                      value={inventoryMaxPrice}
+                      onChange={(event) => {
+                        setInventoryMaxPrice(event.target.value);
+                        setInventoryPage(1);
+                      }}
+                      type="number"
+                      min="0"
+                      className="h-10 rounded-lg border border-line px-3 font-semibold"
+                      placeholder="Đến"
+                    />
+                  </div>
+                  <select value={inventorySort} onChange={(event) => setInventorySort(event.target.value)} className="h-10 rounded-lg border border-line bg-white px-3 font-semibold">
+                    <option value="price-desc">Giá cao đến thấp</option>
+                    <option value="price-asc">Giá thấp đến cao</option>
+                  </select>
+                </div>
               </div>
 
+              <div className="grid gap-4 p-4 2xl:grid-cols-[1fr_300px]">
+                <div className="min-w-0">
               {inventoryTab === "phones" ? (
                 <DataTable
-                  headers={["Máy", "IMEI", "Cửa hàng", "Giá nhập", "Giá dự kiến", "Trạng thái", "Thao tác"]}
+                  headers={["Hãng", "Máy", "IMEI", "Cửa hàng", "Giá nhập", "Giá dự kiến", "Trạng thái", "Thao tác"]}
                   rows={paginatedPhones.map((item) => [
+                    item.brand,
                     `${item.name} • ${item.color} • ${item.storage}`,
                     item.imei,
                     storeName(item.storeId),
@@ -730,7 +855,7 @@ export default function Home() {
                     formatMoney(item.expectedPrice),
                     <StatusBadge key={item.id} tone={item.status === "Còn hàng" ? "ok" : item.status === "Đã bán" ? "warn" : "danger"}>{item.status}</StatusBadge>,
                     <div key={item.id} className="flex flex-wrap gap-2">
-                      <button onClick={() => setEditingPhoneId(item.id)} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-brand-soft px-3 text-xs font-black text-brand">
+                      <button onClick={() => openPhoneEditModal(item.id)} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-brand-soft px-3 text-xs font-black text-brand">
                         <Edit3 size={14} />
                         Sửa
                       </button>
@@ -757,7 +882,7 @@ export default function Home() {
                     formatMoney(item.price),
                     <StatusBadge key={item.id} tone={item.status === "Còn hàng" ? "ok" : item.status === "Hết hàng" ? "warn" : "danger"}>{item.status}</StatusBadge>,
                     <div key={item.id} className="flex flex-wrap gap-2">
-                      <button onClick={() => setEditingAccessoryId(item.id)} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-brand-soft px-3 text-xs font-black text-brand">
+                      <button onClick={() => openAccessoryEditModal(item.id)} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-brand-soft px-3 text-xs font-black text-brand">
                         <Edit3 size={14} />
                         Sửa
                       </button>
@@ -798,7 +923,142 @@ export default function Home() {
                   </button>
                 </div>
               </div>
+                </div>
+
+                <aside className="rounded-lg border border-line bg-slate-50 p-4">
+                  <div className="mb-4 flex items-center justify-between">
+                    <div>
+                      <h3 className="font-black">Phân tích trực quan</h3>
+                      <p className="text-sm font-semibold text-muted">Tỷ trọng giá trị tồn.</p>
+                    </div>
+                    <span className="rounded-md bg-white px-2 py-1 text-xs font-black text-muted">{storeName(storeFilter)}</span>
+                  </div>
+                  <div className="grid place-items-center py-5">
+                    <div
+                      className="grid h-40 w-40 place-items-center rounded-full"
+                      style={{
+                        background: `conic-gradient(#0f8b62 0 ${inventorySummary.phonePercent}%, #e2b33c ${inventorySummary.phonePercent}% 100%)`,
+                      }}
+                    >
+                      <div className="grid h-24 w-24 place-items-center rounded-full bg-slate-50 text-center">
+                        <div>
+                          <p className="text-xs font-black text-muted">TỔNG TỒN</p>
+                          <strong>{formatMoney(inventorySummary.totalValue)}</strong>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid gap-4">
+                    <InventoryBar label="Máy cũ" value={inventorySummary.phonePercent} color="bg-brand" />
+                    <InventoryBar label="Phụ kiện" value={inventorySummary.accessoryPercent} color="bg-gold" />
+                    <InventoryBar label="Sắp hết" value={Math.min(100, inventorySummary.lowAccessories * 12)} color="bg-red-500" />
+                  </div>
+                </aside>
+              </div>
             </section>
+
+            {isInventoryModalOpen && (
+              <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4 backdrop-blur-sm">
+                <section className="max-h-[92vh] w-full max-w-[760px] overflow-auto rounded-lg border border-line bg-white shadow-[0_24px_80px_rgba(15,23,42,0.28)]">
+                  <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-line bg-white p-4">
+                    <div>
+                      <p className="text-sm font-black text-amber-700">Inventory Form</p>
+                      <h2 className="text-2xl font-black">
+                        {inventoryTab === "phones" ? (editingPhone ? "Sửa máy trong kho" : "Thêm máy vào kho") : editingAccessory ? "Sửa phụ kiện" : "Thêm phụ kiện"}
+                      </h2>
+                    </div>
+                    <button onClick={closeInventoryModal} className="h-9 rounded-lg border border-line bg-slate-50 px-3 text-sm font-black text-muted">
+                      Đóng
+                    </button>
+                  </div>
+                  <div className="p-4">
+                    <div className="mb-4 inline-flex w-full rounded-lg border border-line bg-slate-100 p-1">
+                      <button
+                        disabled={Boolean(editingAccessory)}
+                        onClick={() => {
+                          setInventoryTab("phones");
+                          setEditingAccessoryId(null);
+                        }}
+                        className={`flex-1 rounded-md px-3 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-40 ${inventoryTab === "phones" ? "bg-white text-brand shadow-sm" : "text-muted"}`}
+                      >
+                        Máy cũ
+                      </button>
+                      <button
+                        disabled={Boolean(editingPhone)}
+                        onClick={() => {
+                          setInventoryTab("accessories");
+                          setEditingPhoneId(null);
+                        }}
+                        className={`flex-1 rounded-md px-3 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-40 ${inventoryTab === "accessories" ? "bg-white text-brand shadow-sm" : "text-muted"}`}
+                      >
+                        Phụ kiện
+                      </button>
+                    </div>
+
+                    {inventoryTab === "phones" ? (
+                      <form key={editingPhone?.id ?? "new-phone"} onSubmit={savePhone} className="grid gap-3">
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <SelectField label="Hãng" name="brand" options={["iPhone", "Samsung", "Oppo", "Xiaomi"].map((b) => [b, b])} defaultValue={editingPhone?.brand ?? "iPhone"} />
+                          <Field label="Tên máy">
+                            <input name="name" required list="phone-models" defaultValue={editingPhone?.name} className="h-10 w-full rounded-lg border border-line bg-white px-3" placeholder="iPhone 13 Pro" />
+                            <datalist id="phone-models">
+                              <option value="iPhone 10" />
+                              <option value="iPhone 11" />
+                              <option value="iPhone 12" />
+                              <option value="iPhone 13 Pro" />
+                              <option value="Galaxy S22" />
+                              <option value="Galaxy Z Fold4" />
+                              <option value="Reno 8" />
+                              <option value="Find X5" />
+                              <option value="Redmi Note 12" />
+                              <option value="Xiaomi 13" />
+                            </datalist>
+                          </Field>
+                        </div>
+                        <Field label="IMEI"><input name="imei" required defaultValue={editingPhone?.imei} className="h-10 rounded-lg border border-line px-3" placeholder="356789..." /></Field>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <Field label="Màu"><input name="color" defaultValue={editingPhone?.color} className="h-10 rounded-lg border border-line px-3" placeholder="Xanh" /></Field>
+                          <Field label="Dung lượng"><input name="storage" defaultValue={editingPhone?.storage} className="h-10 rounded-lg border border-line px-3" placeholder="256GB" /></Field>
+                        </div>
+                        <Field label="Tình trạng"><input name="condition" defaultValue={editingPhone?.condition} className="h-10 rounded-lg border border-line px-3" placeholder="Đẹp 98%" /></Field>
+                        <SelectField label="Cửa hàng" name="storeId" options={stores.map((s) => [s.id, s.name])} defaultValue={editingPhone?.storeId} />
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <Field label="Giá nhập"><input name="cost" type="number" min="0" defaultValue={editingPhone?.cost} className="h-10 rounded-lg border border-line px-3" /></Field>
+                          <Field label="Giá dự kiến"><input name="expectedPrice" type="number" min="0" defaultValue={editingPhone?.expectedPrice} className="h-10 rounded-lg border border-line px-3" /></Field>
+                        </div>
+                        <SelectField label="Trạng thái" name="status" options={["Còn hàng", "Đã bán", "Đã hủy"].map((status) => [status, status])} defaultValue={editingPhone?.status ?? "Còn hàng"} />
+                        <div className="flex justify-end gap-2 border-t border-line pt-4">
+                          <button type="button" onClick={closeInventoryModal} className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted">Hủy</button>
+                          <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark">
+                            <Plus size={18} />
+                            {editingPhone ? "Lưu sửa" : "Thêm máy"}
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <form key={editingAccessory?.id ?? "new-accessory"} onSubmit={saveAccessory} className="grid gap-3">
+                        <Field label="Mã hàng"><input name="code" required defaultValue={editingAccessory?.code} className="h-10 rounded-lg border border-line px-3" placeholder="PK-CAP20" /></Field>
+                        <Field label="Tên phụ kiện"><input name="name" required defaultValue={editingAccessory?.name} className="h-10 rounded-lg border border-line px-3" placeholder="Cáp sạc nhanh 20W" /></Field>
+                        <SelectField label="Cửa hàng" name="storeId" options={stores.map((s) => [s.id, s.name])} defaultValue={editingAccessory?.storeId} />
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <Field label="Số lượng"><input name="quantity" type="number" min="0" defaultValue={editingAccessory?.quantity ?? 1} className="h-10 rounded-lg border border-line px-3" /></Field>
+                          <Field label="Giá nhập"><input name="cost" type="number" min="0" defaultValue={editingAccessory?.cost} className="h-10 rounded-lg border border-line px-3" /></Field>
+                        </div>
+                        <Field label="Giá bán"><input name="price" type="number" min="0" defaultValue={editingAccessory?.price} className="h-10 rounded-lg border border-line px-3" /></Field>
+                        <SelectField label="Trạng thái" name="status" options={["Còn hàng", "Hết hàng", "Đã hủy"].map((status) => [status, status])} defaultValue={editingAccessory?.status ?? "Còn hàng"} />
+                        <div className="flex justify-end gap-2 border-t border-line pt-4">
+                          <button type="button" onClick={closeInventoryModal} className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted">Hủy</button>
+                          <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark">
+                            <Plus size={18} />
+                            {editingAccessory ? "Lưu sửa" : "Thêm phụ kiện"}
+                          </button>
+                        </div>
+                      </form>
+                    )}
+                  </div>
+                </section>
+              </div>
+            )}
           </section>
         )}
 
@@ -962,6 +1222,20 @@ function SelectField({ label, name, options, defaultValue }: { label: string; na
         ))}
       </select>
     </Field>
+  );
+}
+
+function InventoryBar({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between text-sm font-bold">
+        <span>{label}</span>
+        <span className="text-muted">{value}%</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-white">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.max(2, Math.min(100, value))}%` }} />
+      </div>
+    </div>
   );
 }
 
