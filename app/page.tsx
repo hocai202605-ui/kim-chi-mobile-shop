@@ -3,8 +3,11 @@
 import {
   Activity,
   Boxes,
+  ChevronLeft,
+  ChevronRight,
   ClipboardList,
   CreditCard,
+  Edit3,
   FileText,
   LayoutDashboard,
   LogOut,
@@ -15,6 +18,7 @@ import {
   ShieldCheck,
   Smartphone,
   Store,
+  Trash2,
   UserCog,
   Users,
   Wrench,
@@ -171,7 +175,7 @@ const logSeed: AuditLog[] = [
 const navItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "inventory", label: "Kho hàng", icon: Boxes },
-  { id: "sales", label: "Bán hàng", icon: ReceiptText },
+  { id: "sales", label: "Quản lý bán hàng", icon: ReceiptText },
   { id: "customers", label: "Khách hàng", icon: Users },
   { id: "repairs", label: "Sửa chữa", icon: Wrench },
   { id: "ledger", label: "Thu chi", icon: CreditCard },
@@ -243,6 +247,9 @@ export default function Home() {
   const [storeFilter, setStoreFilter] = useState<StoreId>("all");
   const [query, setQuery] = useState("");
   const [inventoryTab, setInventoryTab] = useState<"phones" | "accessories">("phones");
+  const [inventoryPage, setInventoryPage] = useState(1);
+  const [editingPhoneId, setEditingPhoneId] = useState<string | null>(null);
+  const [editingAccessoryId, setEditingAccessoryId] = useState<string | null>(null);
   const [customers, setCustomers] = useState(customersSeed);
   const [phones, setPhones] = useState(phoneSeed);
   const [accessories, setAccessories] = useState(accessorySeed);
@@ -268,6 +275,15 @@ export default function Home() {
   const filteredRepairs = repairs.filter((item) => storeFilter === "all" || item.storeId === storeFilter);
   const filteredLedger = ledger.filter((item) => storeFilter === "all" || item.storeId === storeFilter);
   const filteredSales = sales.filter((item) => storeFilter === "all" || item.storeId === storeFilter);
+  const inventoryPageSize = 5;
+  const inventoryRowsCount = inventoryTab === "phones" ? filteredPhones.length : filteredAccessories.length;
+  const inventoryTotalPages = Math.max(1, Math.ceil(inventoryRowsCount / inventoryPageSize));
+  const safeInventoryPage = Math.min(inventoryPage, inventoryTotalPages);
+  const inventoryStart = (safeInventoryPage - 1) * inventoryPageSize;
+  const paginatedPhones = filteredPhones.slice(inventoryStart, inventoryStart + inventoryPageSize);
+  const paginatedAccessories = filteredAccessories.slice(inventoryStart, inventoryStart + inventoryPageSize);
+  const editingPhone = editingPhoneId ? phones.find((item) => item.id === editingPhoneId) : null;
+  const editingAccessory = editingAccessoryId ? accessories.find((item) => item.id === editingAccessoryId) : null;
 
   const dashboard = useMemo(() => {
     const activePhones = phones.filter((item) => item.status === "Còn hàng" && (storeFilter === "all" || item.storeId === storeFilter));
@@ -310,6 +326,67 @@ export default function Home() {
     const selected = users.find((user) => user.email === email) ?? users[0];
     setCurrentUser(selected);
     setStoreFilter(selected.role === "owner" ? "all" : selected.storeId);
+  }
+
+  function savePhone(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const storeId = String(form.get("storeId")) as Exclude<StoreId, "all">;
+    const payload: PhoneItem = {
+      id: editingPhoneId ?? `p${Date.now()}`,
+      name: String(form.get("name")),
+      imei: String(form.get("imei")),
+      color: String(form.get("color")),
+      storage: String(form.get("storage")),
+      condition: String(form.get("condition")),
+      storeId,
+      cost: Number(form.get("cost") || 0),
+      expectedPrice: Number(form.get("expectedPrice") || 0),
+      status: String(form.get("status")) as ProductStatus,
+    };
+
+    setPhones((prev) => (editingPhoneId ? prev.map((item) => (item.id === editingPhoneId ? payload : item)) : [payload, ...prev]));
+    pushLog(editingPhoneId ? "Sửa máy trong kho" : "Thêm máy vào kho", payload.imei, storeId);
+    setEditingPhoneId(null);
+    setInventoryPage(1);
+    event.currentTarget.reset();
+  }
+
+  function saveAccessory(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const storeId = String(form.get("storeId")) as Exclude<StoreId, "all">;
+    const quantity = Number(form.get("quantity") || 0);
+    const payload: Accessory = {
+      id: editingAccessoryId ?? `a${Date.now()}`,
+      code: String(form.get("code")),
+      name: String(form.get("name")),
+      storeId,
+      quantity,
+      cost: Number(form.get("cost") || 0),
+      price: Number(form.get("price") || 0),
+      status: String(form.get("status") || (quantity > 0 ? "Còn hàng" : "Hết hàng")) as AccessoryStatus,
+    };
+
+    setAccessories((prev) => (editingAccessoryId ? prev.map((item) => (item.id === editingAccessoryId ? payload : item)) : [payload, ...prev]));
+    pushLog(editingAccessoryId ? "Sửa phụ kiện trong kho" : "Thêm phụ kiện vào kho", payload.code, storeId);
+    setEditingAccessoryId(null);
+    setInventoryPage(1);
+    event.currentTarget.reset();
+  }
+
+  function cancelPhone(id: string) {
+    const phone = phones.find((item) => item.id === id);
+    if (!phone || !canCancel) return;
+    setPhones((prev) => prev.map((item) => (item.id === id ? { ...item, status: "Đã hủy" } : item)));
+    pushLog("Hủy mềm máy trong kho", phone.imei, phone.storeId);
+  }
+
+  function cancelAccessory(id: string) {
+    const accessory = accessories.find((item) => item.id === id);
+    if (!accessory || !canCancel) return;
+    setAccessories((prev) => prev.map((item) => (item.id === id ? { ...item, status: "Đã hủy" } : item)));
+    pushLog("Hủy mềm phụ kiện trong kho", accessory.code, accessory.storeId);
   }
 
   function createSale(event: FormEvent<HTMLFormElement>) {
@@ -428,17 +505,17 @@ export default function Home() {
 
   if (!currentUser) {
     return (
-      <main className="grid min-h-screen grid-cols-1 bg-white lg:grid-cols-[520px_1fr]">
-        <section className="flex flex-col justify-center px-6 py-10 sm:px-12">
-          <div className="mb-10 flex items-center gap-3">
+      <main className="phone-pattern flex min-h-screen items-center justify-center p-4">
+        <section className="w-full max-w-[460px] rounded-lg border border-white/40 bg-white/95 px-6 py-8 shadow-[0_24px_70px_rgba(15,35,27,0.28)] backdrop-blur sm:px-10">
+          <div className="mb-8 flex justify-center">
             <div className="grid h-12 w-12 place-items-center rounded-lg bg-brand text-lg font-black text-white">KC</div>
-            <div>
-              <strong className="block text-xl">Kim Chi Mobile Shop</strong>
-              <span className="text-sm font-semibold text-muted">Frontend MVP</span>
-            </div>
           </div>
-          <h1 className="mb-3 text-3xl font-bold">Đăng nhập quản trị</h1>
-          <p className="mb-8 text-muted">Chọn tài khoản demo để xem phân quyền Chủ cửa hàng và Nhân viên.</p>
+          <div className="mb-8 text-center">
+            <strong className="block text-xl">Kim Chi Mobile Shop</strong>
+            <span className="text-sm font-semibold text-muted">Frontend MVP</span>
+            <h1 className="mt-6 text-3xl font-black">Đăng nhập quản trị</h1>
+            <p className="mt-3 text-base font-semibold text-brand">Chào mừng ông Chủ Quỵnh Đẹp Zai</p>
+          </div>
           <form onSubmit={handleLogin} className="grid gap-4">
             <Field label="Tài khoản">
               <select name="email" className="h-11 rounded-lg border border-line px-3">
@@ -458,19 +535,13 @@ export default function Home() {
             </button>
           </form>
         </section>
-        <section className="phone-pattern hidden items-end p-12 text-white lg:flex">
-          <div className="max-w-2xl">
-            <h2 className="mb-4 text-6xl font-black leading-none">Quản lý 3 cửa hàng trên một màn hình.</h2>
-            <p className="text-lg leading-8">Kho theo IMEI, phụ kiện theo số lượng, phiếu sửa chữa, thu chi và dashboard vận hành được gom vào một trải nghiệm FE rõ ràng trước khi nối Supabase.</p>
-          </div>
-        </section>
       </main>
     );
   }
 
   return (
     <main className="grid min-h-screen grid-cols-1 bg-canvas text-ink lg:grid-cols-[260px_minmax(0,1fr)]">
-      <aside className="bg-[#14231d] p-4 text-white lg:sticky lg:top-0 lg:h-screen">
+      <aside className="bg-gradient-to-b from-[#12352a] via-[#14231d] to-[#0d1713] p-4 text-white lg:sticky lg:top-0 lg:h-screen">
         <div className="mb-6 flex items-center gap-3">
           <div className="grid h-11 w-11 place-items-center rounded-lg bg-brand font-black">KC</div>
           <div>
@@ -478,7 +549,7 @@ export default function Home() {
             <span className="text-xs font-semibold text-slate-300">{currentUser.role === "owner" ? "Chủ cửa hàng" : "Nhân viên"}</span>
           </div>
         </div>
-        <nav className="grid gap-1.5">
+        <nav className="grid gap-2">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isDisabled = item.id === "accounts" && currentUser.role !== "owner";
@@ -487,11 +558,19 @@ export default function Home() {
                 key={item.id}
                 disabled={isDisabled}
                 onClick={() => setActivePage(item.id)}
-                className={`flex h-11 items-center gap-3 rounded-lg px-3 text-left text-sm font-bold transition ${
-                  activePage === item.id ? "bg-[#20382e] text-white" : "text-slate-300 hover:bg-[#20382e]"
+                className={`group flex h-11 items-center gap-3 rounded-lg border px-3 text-left text-sm font-bold transition ${
+                  activePage === item.id
+                    ? "border-emerald-300/40 bg-brand text-white shadow-[0_10px_24px_rgba(15,139,98,0.32)]"
+                    : "border-white/5 bg-white/[0.04] text-slate-300 hover:border-emerald-300/25 hover:bg-white/[0.09] hover:text-white"
                 } ${isDisabled ? "cursor-not-allowed opacity-45" : ""}`}
               >
-                <Icon size={18} />
+                <span
+                  className={`grid h-7 w-7 place-items-center rounded-md transition ${
+                    activePage === item.id ? "bg-white/18 text-white" : "bg-white/[0.06] text-emerald-100 group-hover:bg-white/[0.12]"
+                  }`}
+                >
+                  <Icon size={17} />
+                </span>
                 {item.label}
               </button>
             );
@@ -540,43 +619,186 @@ export default function Home() {
         )}
 
         {activePage === "inventory" && (
-          <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
-            <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="inline-flex w-fit rounded-lg border border-line bg-slate-100 p-1">
-                <button onClick={() => setInventoryTab("phones")} className={`rounded-md px-3 py-2 text-sm font-bold ${inventoryTab === "phones" ? "bg-white shadow-sm" : "text-muted"}`}>Máy cũ</button>
-                <button onClick={() => setInventoryTab("accessories")} className={`rounded-md px-3 py-2 text-sm font-bold ${inventoryTab === "accessories" ? "bg-white shadow-sm" : "text-muted"}`}>Phụ kiện</button>
+          <section className="grid gap-4 xl:grid-cols-[390px_1fr]">
+            <Panel title={inventoryTab === "phones" ? (editingPhone ? "Sửa máy trong kho" : "Thêm máy vào kho") : editingAccessory ? "Sửa phụ kiện" : "Thêm phụ kiện"}>
+              <div className="mb-4 inline-flex w-full rounded-lg border border-line bg-slate-100 p-1">
+                <button
+                  onClick={() => {
+                    setInventoryTab("phones");
+                    setInventoryPage(1);
+                    setEditingAccessoryId(null);
+                  }}
+                  className={`flex-1 rounded-md px-3 py-2 text-sm font-bold ${inventoryTab === "phones" ? "bg-white text-brand shadow-sm" : "text-muted"}`}
+                >
+                  Máy cũ
+                </button>
+                <button
+                  onClick={() => {
+                    setInventoryTab("accessories");
+                    setInventoryPage(1);
+                    setEditingPhoneId(null);
+                  }}
+                  className={`flex-1 rounded-md px-3 py-2 text-sm font-bold ${inventoryTab === "accessories" ? "bg-white text-brand shadow-sm" : "text-muted"}`}
+                >
+                  Phụ kiện
+                </button>
               </div>
-              <label className="relative max-w-md">
-                <Search className="pointer-events-none absolute left-3 top-2.5 text-muted" size={18} />
-                <input value={query} onChange={(event) => setQuery(event.target.value)} className="h-10 w-full rounded-lg border border-line pl-10 pr-3" placeholder="Tìm tên, IMEI, mã hàng..." />
-              </label>
-            </div>
-            {inventoryTab === "phones" ? (
-              <DataTable
-                headers={["Máy", "IMEI", "Cửa hàng", "Giá nhập", "Giá dự kiến", "Trạng thái"]}
-                rows={filteredPhones.map((item) => [
-                  `${item.name} • ${item.color} • ${item.storage}`,
-                  item.imei,
-                  storeName(item.storeId),
-                  formatMoney(item.cost),
-                  formatMoney(item.expectedPrice),
-                  <StatusBadge key={item.id} tone={item.status === "Còn hàng" ? "ok" : item.status === "Đã bán" ? "warn" : "danger"}>{item.status}</StatusBadge>,
-                ])}
-              />
-            ) : (
-              <DataTable
-                headers={["Mã", "Tên phụ kiện", "Cửa hàng", "SL", "Giá nhập", "Giá bán", "Trạng thái"]}
-                rows={filteredAccessories.map((item) => [
-                  item.code,
-                  item.name,
-                  storeName(item.storeId),
-                  item.quantity,
-                  formatMoney(item.cost),
-                  formatMoney(item.price),
-                  <StatusBadge key={item.id} tone={item.status === "Còn hàng" ? "ok" : item.status === "Hết hàng" ? "warn" : "danger"}>{item.status}</StatusBadge>,
-                ])}
-              />
-            )}
+
+              {inventoryTab === "phones" ? (
+                <form key={editingPhone?.id ?? "new-phone"} onSubmit={savePhone} className="grid gap-3">
+                  <Field label="Tên máy"><input name="name" required defaultValue={editingPhone?.name} className="h-10 rounded-lg border border-line px-3" placeholder="iPhone 13 Pro" /></Field>
+                  <Field label="IMEI"><input name="imei" required defaultValue={editingPhone?.imei} className="h-10 rounded-lg border border-line px-3" placeholder="356789..." /></Field>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="Màu"><input name="color" defaultValue={editingPhone?.color} className="h-10 rounded-lg border border-line px-3" placeholder="Xanh" /></Field>
+                    <Field label="Dung lượng"><input name="storage" defaultValue={editingPhone?.storage} className="h-10 rounded-lg border border-line px-3" placeholder="256GB" /></Field>
+                  </div>
+                  <Field label="Tình trạng"><input name="condition" defaultValue={editingPhone?.condition} className="h-10 rounded-lg border border-line px-3" placeholder="Đẹp 98%" /></Field>
+                  <SelectField label="Cửa hàng" name="storeId" options={stores.map((s) => [s.id, s.name])} defaultValue={editingPhone?.storeId} />
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="Giá nhập"><input name="cost" type="number" min="0" defaultValue={editingPhone?.cost} className="h-10 rounded-lg border border-line px-3" /></Field>
+                    <Field label="Giá dự kiến"><input name="expectedPrice" type="number" min="0" defaultValue={editingPhone?.expectedPrice} className="h-10 rounded-lg border border-line px-3" /></Field>
+                  </div>
+                  <SelectField label="Trạng thái" name="status" options={["Còn hàng", "Đã bán", "Đã hủy"].map((status) => [status, status])} defaultValue={editingPhone?.status ?? "Còn hàng"} />
+                  <div className="flex gap-2">
+                    <button className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark">
+                      <Plus size={18} />
+                      {editingPhone ? "Lưu sửa" : "Thêm máy"}
+                    </button>
+                    {editingPhone && (
+                      <button type="button" onClick={() => setEditingPhoneId(null)} className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted">
+                        Hủy
+                      </button>
+                    )}
+                  </div>
+                </form>
+              ) : (
+                <form key={editingAccessory?.id ?? "new-accessory"} onSubmit={saveAccessory} className="grid gap-3">
+                  <Field label="Mã hàng"><input name="code" required defaultValue={editingAccessory?.code} className="h-10 rounded-lg border border-line px-3" placeholder="PK-CAP20" /></Field>
+                  <Field label="Tên phụ kiện"><input name="name" required defaultValue={editingAccessory?.name} className="h-10 rounded-lg border border-line px-3" placeholder="Cáp sạc nhanh 20W" /></Field>
+                  <SelectField label="Cửa hàng" name="storeId" options={stores.map((s) => [s.id, s.name])} defaultValue={editingAccessory?.storeId} />
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="Số lượng"><input name="quantity" type="number" min="0" defaultValue={editingAccessory?.quantity ?? 1} className="h-10 rounded-lg border border-line px-3" /></Field>
+                    <Field label="Giá nhập"><input name="cost" type="number" min="0" defaultValue={editingAccessory?.cost} className="h-10 rounded-lg border border-line px-3" /></Field>
+                  </div>
+                  <Field label="Giá bán"><input name="price" type="number" min="0" defaultValue={editingAccessory?.price} className="h-10 rounded-lg border border-line px-3" /></Field>
+                  <SelectField label="Trạng thái" name="status" options={["Còn hàng", "Hết hàng", "Đã hủy"].map((status) => [status, status])} defaultValue={editingAccessory?.status ?? "Còn hàng"} />
+                  <div className="flex gap-2">
+                    <button className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark">
+                      <Plus size={18} />
+                      {editingAccessory ? "Lưu sửa" : "Thêm phụ kiện"}
+                    </button>
+                    {editingAccessory && (
+                      <button type="button" onClick={() => setEditingAccessoryId(null)} className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted">
+                        Hủy
+                      </button>
+                    )}
+                  </div>
+                </form>
+              )}
+            </Panel>
+
+            <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
+              <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <h2 className="text-lg font-black">Quản lý kho hàng</h2>
+                  <p className="text-sm font-semibold text-muted">
+                    {inventoryRowsCount} kết quả • Trang {safeInventoryPage}/{inventoryTotalPages}
+                  </p>
+                </div>
+                <label className="relative w-full max-w-md">
+                  <Search className="pointer-events-none absolute left-3 top-2.5 text-muted" size={18} />
+                  <input
+                    value={query}
+                    onChange={(event) => {
+                      setQuery(event.target.value);
+                      setInventoryPage(1);
+                    }}
+                    className="h-10 w-full rounded-lg border border-line bg-slate-50 pl-10 pr-3 font-semibold outline-none transition focus:border-brand focus:bg-white"
+                    placeholder="Tìm tên, IMEI, mã hàng..."
+                  />
+                </label>
+              </div>
+
+              {inventoryTab === "phones" ? (
+                <DataTable
+                  headers={["Máy", "IMEI", "Cửa hàng", "Giá nhập", "Giá dự kiến", "Trạng thái", "Thao tác"]}
+                  rows={paginatedPhones.map((item) => [
+                    `${item.name} • ${item.color} • ${item.storage}`,
+                    item.imei,
+                    storeName(item.storeId),
+                    formatMoney(item.cost),
+                    formatMoney(item.expectedPrice),
+                    <StatusBadge key={item.id} tone={item.status === "Còn hàng" ? "ok" : item.status === "Đã bán" ? "warn" : "danger"}>{item.status}</StatusBadge>,
+                    <div key={item.id} className="flex flex-wrap gap-2">
+                      <button onClick={() => setEditingPhoneId(item.id)} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-brand-soft px-3 text-xs font-black text-brand">
+                        <Edit3 size={14} />
+                        Sửa
+                      </button>
+                      <button
+                        disabled={!canCancel || item.status === "Đã hủy"}
+                        onClick={() => cancelPhone(item.id)}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-red-50 px-3 text-xs font-black text-danger disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <Trash2 size={14} />
+                        Hủy
+                      </button>
+                    </div>,
+                  ])}
+                />
+              ) : (
+                <DataTable
+                  headers={["Mã", "Tên phụ kiện", "Cửa hàng", "SL", "Giá nhập", "Giá bán", "Trạng thái", "Thao tác"]}
+                  rows={paginatedAccessories.map((item) => [
+                    item.code,
+                    item.name,
+                    storeName(item.storeId),
+                    item.quantity,
+                    formatMoney(item.cost),
+                    formatMoney(item.price),
+                    <StatusBadge key={item.id} tone={item.status === "Còn hàng" ? "ok" : item.status === "Hết hàng" ? "warn" : "danger"}>{item.status}</StatusBadge>,
+                    <div key={item.id} className="flex flex-wrap gap-2">
+                      <button onClick={() => setEditingAccessoryId(item.id)} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-brand-soft px-3 text-xs font-black text-brand">
+                        <Edit3 size={14} />
+                        Sửa
+                      </button>
+                      <button
+                        disabled={!canCancel || item.status === "Đã hủy"}
+                        onClick={() => cancelAccessory(item.id)}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-red-50 px-3 text-xs font-black text-danger disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <Trash2 size={14} />
+                        Hủy
+                      </button>
+                    </div>,
+                  ])}
+                />
+              )}
+
+              <div className="mt-4 flex flex-col gap-3 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <span className="text-sm font-semibold text-muted">
+                  Hiển thị {inventoryRowsCount === 0 ? 0 : inventoryStart + 1}-{Math.min(inventoryStart + inventoryPageSize, inventoryRowsCount)} / {inventoryRowsCount}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    disabled={safeInventoryPage === 1}
+                    onClick={() => setInventoryPage((page) => Math.max(1, page - 1))}
+                    className="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <ChevronLeft size={16} />
+                    Trước
+                  </button>
+                  <span className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-black text-slate-700">{safeInventoryPage}</span>
+                  <button
+                    disabled={safeInventoryPage === inventoryTotalPages}
+                    onClick={() => setInventoryPage((page) => Math.min(inventoryTotalPages, page + 1))}
+                    className="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    Sau
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              </div>
+            </section>
           </section>
         )}
 
@@ -729,10 +951,10 @@ function Panel({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function SelectField({ label, name, options }: { label: string; name: string; options: string[][] }) {
+function SelectField({ label, name, options, defaultValue }: { label: string; name: string; options: string[][]; defaultValue?: string }) {
   return (
     <Field label={label}>
-      <select name={name} className="h-10 rounded-lg border border-line px-3">
+      <select name={name} defaultValue={defaultValue} className="h-10 rounded-lg border border-line px-3">
         {options.map(([value, text]) => (
           <option key={`${name}-${value}`} value={value}>
             {text}
