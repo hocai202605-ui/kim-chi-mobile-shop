@@ -147,37 +147,81 @@ const customersSeed: Customer[] = [
 ];
 
 const phoneSeed: PhoneItem[] = [
-  { id: "p1", brand: "iPhone", name: "13 Pro", imei: "356789101234561", color: "Xanh", storage: "256GB", madeIn: "VN/A", networkVersion: "5G", batteryCondition: "Zin", condition: "Like New", note: "Màn đẹp", storeId: "store-1", cost: 11700000, expectedPrice: 13200000, status: "Còn hàng", importDate: "2026-07-01" },
+  { id: "p1", brand: "iPhone", name: "13 Pro Max", imei: "356789101234561", color: "Xanh lá", storage: "256GB", madeIn: "VN/A", networkVersion: "5G", batteryCondition: "Zin 92%", condition: "Like New", note: "Máy đẹp keng, full box", storeId: "store-1", cost: 13500000, expectedPrice: 15200000, status: "Còn hàng", importDate: "2026-07-01" },
   { id: "p2", brand: "iPhone", name: "12", imei: "356789101234562", color: "Đen", storage: "128GB", madeIn: "LL/A", networkVersion: "5G", batteryCondition: "80-90%", condition: "Cũ", note: "Trầy viền nhẹ", storeId: "store-2", cost: 7200000, expectedPrice: 8200000, status: "Còn hàng", importDate: "2026-07-02" },
-  { id: "p3", brand: "Samsung", name: "Galaxy S22", imei: "356789101234563", color: "Trắng", storage: "128GB", madeIn: "VN/A", networkVersion: "5G", batteryCondition: "Zin", condition: "Like New", note: "", storeId: "store-3", cost: 6500000, expectedPrice: 7600000, status: "Còn hàng" },
-  { id: "p4", brand: "iPhone", name: "11", imei: "356789101234564", color: "Tím", storage: "64GB", madeIn: "VN/A", networkVersion: "4G", batteryCondition: "Đã thay", condition: "Cũ", storeId: "store-1", cost: 5500000, expectedPrice: 6500000, status: "Còn hàng" },
-  { id: "p5", brand: "Oppo", name: "Reno 8", imei: "356789101234565", color: "Vàng", storage: "256GB", madeIn: "Trung Quốc", networkVersion: "5G", batteryCondition: "Zin", condition: "Mới 100%", storeId: "store-2", cost: 7000000, expectedPrice: 8500000, status: "Còn hàng" },
-  { id: "p6", brand: "Xiaomi", name: "Redmi Note 12", imei: "356789101234566", color: "Xám", storage: "128GB", madeIn: "Trung Quốc", networkVersion: "5G", batteryCondition: "Zin", condition: "Like New", storeId: "store-3", cost: 3500000, expectedPrice: 4200000, status: "Còn hàng" },
-  { id: "p7", brand: "iPhone", name: "10", imei: "356789101234567", color: "Đen", storage: "64GB", madeIn: "LL/A", networkVersion: "4G", batteryCondition: "Đã thay", condition: "Cũ", storeId: "store-1", cost: 2500000, expectedPrice: 3200000, status: "Còn hàng" },
+  { id: "p3", brand: "Samsung", name: "Galaxy S22 Ultra", imei: "356789101234563", color: "Đỏ", storage: "256GB", madeIn: "VN/A", networkVersion: "5G", batteryCondition: "Zin", condition: "Like New", note: "Còn bảo hành hãng", storeId: "store-3", cost: 12500000, expectedPrice: 14000000, status: "Còn hàng", importDate: "2026-07-03" },
+  { id: "p4", brand: "iPhone", name: "11", imei: "356789101234564", color: "Tím", storage: "64GB", madeIn: "VN/A", networkVersion: "4G", batteryCondition: "Đã thay", condition: "Cũ", note: "Máy zin áp, thay pin pisen", storeId: "store-1", cost: 5500000, expectedPrice: 6500000, status: "Còn hàng", importDate: "2026-07-01" },
+  { id: "p5", brand: "Oppo", name: "Reno 8", imei: "356789101234565", color: "Vàng", storage: "256GB", madeIn: "Trung Quốc", networkVersion: "5G", batteryCondition: "Zin", condition: "Mới 100%", note: "Nguyên seal", storeId: "store-2", cost: 7000000, expectedPrice: 8500000, status: "Còn hàng", importDate: "2026-07-04" },
+  { id: "p6", brand: "Xiaomi", name: "Redmi Note 12", imei: "356789101234566", color: "Xám", storage: "128GB", madeIn: "Trung Quốc", networkVersion: "5G", batteryCondition: "Zin", condition: "Like New", note: "", storeId: "store-3", cost: 3500000, expectedPrice: 4200000, status: "Còn hàng", importDate: "2026-07-05" },
+  { id: "p7", brand: "iPhone", name: "14 Pro Max", imei: "356789101234567", color: "Tím", storage: "256GB", madeIn: "LL/A", networkVersion: "5G", batteryCondition: "Zin 98%", condition: "Like New", note: "Kèm ốp lưng xịn", storeId: "store-1", cost: 21500000, expectedPrice: 23200000, status: "Còn hàng", importDate: "2026-07-02" },
+  { id: "p8", brand: "iPhone", name: "15 Pro Max", imei: "356789101234568", color: "Titan", storage: "512GB", madeIn: "VN/A", networkVersion: "5G", batteryCondition: "Zin 100%", condition: "Mới 100%", note: "Chưa active", storeId: "store-1", cost: 29500000, expectedPrice: 32000000, status: "Còn hàng", importDate: "2026-07-05" },
+  { id: "p9", brand: "Samsung", name: "Z Fold 5", imei: "356789101234569", color: "Xanh dương", storage: "512GB", madeIn: "VN/A", networkVersion: "5G", batteryCondition: "Zin", condition: "Like New", note: "Có bút S-Pen", storeId: "store-2", cost: 25000000, expectedPrice: 28000000, status: "Còn hàng", importDate: "2026-07-06" },
+  { id: "p10", brand: "iPhone", name: "XS Max", imei: "356789101234570", color: "Vàng", storage: "256GB", madeIn: "LL/A", networkVersion: "4G", batteryCondition: "Đã thay pin", condition: "Cũ", note: "Màn hình xước dăm", storeId: "store-3", cost: 4500000, expectedPrice: 5500000, status: "Còn hàng", importDate: "2026-07-01" },
+  { id: "p11", brand: "Oppo", name: "Find X5 Pro", imei: "356789101234571", color: "Trắng", storage: "256GB", madeIn: "Trung Quốc", networkVersion: "5G", batteryCondition: "Zin", condition: "Like New", note: "Mặt lưng gốm", storeId: "store-2", cost: 9000000, expectedPrice: 10500000, status: "Còn hàng", importDate: "2026-07-03" },
+  { id: "p12", brand: "iPhone", name: "14", imei: "356789101234572", color: "Xanh biển", storage: "128GB", madeIn: "VN/A", networkVersion: "5G", batteryCondition: "Zin 88%", condition: "Cũ", note: "Phụ kiện sạc cáp", storeId: "store-1", cost: 13000000, expectedPrice: 14500000, status: "Đã bán", importDate: "2026-06-20", saleDate: "2026-07-05" },
+  { id: "p13", brand: "iPhone", name: "13", imei: "356789101234573", color: "Hồng", storage: "128GB", madeIn: "VN/A", networkVersion: "5G", batteryCondition: "Zin 90%", condition: "Like New", note: "Máy nữ dùng", storeId: "store-1", cost: 10500000, expectedPrice: 11800000, status: "Đã bán", importDate: "2026-06-25", saleDate: "2026-07-06" },
+  { id: "p14", brand: "Samsung", name: "Galaxy A54", imei: "356789101234574", color: "Tím", storage: "128GB", madeIn: "Việt Nam", networkVersion: "5G", batteryCondition: "Zin", condition: "Mới 100%", note: "Tặng kèm ốp", storeId: "store-3", cost: 6500000, expectedPrice: 7500000, status: "Còn hàng", importDate: "2026-07-06" },
 ];
 
 const accessorySeed: Accessory[] = [
-  { id: "a1", code: "PK-CAP20", name: "Cáp sạc nhanh 20W", storeId: "store-1", quantity: 34, cost: 55000, price: 120000, status: "Còn hàng" },
-  { id: "a2", code: "PK-OP13", name: "Ốp iPhone 13", storeId: "store-2", quantity: 18, cost: 30000, price: 90000, status: "Còn hàng" },
-  { id: "a3", code: "PK-KLCL", name: "Kính cường lực", storeId: "store-3", quantity: 8, cost: 18000, price: 70000, status: "Còn hàng" },
+  { id: "a1", code: "PK-CAP20", name: "Cáp sạc nhanh 20W Apple", storeId: "store-1", quantity: 34, cost: 55000, price: 120000, status: "Còn hàng" },
+  { id: "a2", code: "PK-OP13", name: "Ốp lưng Silicon iPhone 13 Pro Max", storeId: "store-2", quantity: 18, cost: 30000, price: 90000, status: "Còn hàng" },
+  { id: "a3", code: "PK-KLCL", name: "Kính cường lực Kingkong", storeId: "store-3", quantity: 50, cost: 18000, price: 70000, status: "Còn hàng" },
+  { id: "a4", code: "PK-SDP10", name: "Sạc dự phòng 10000mAh", storeId: "store-1", quantity: 12, cost: 250000, price: 400000, status: "Còn hàng" },
+  { id: "a5", code: "PK-TNAP", name: "Tai nghe AirPods Pro 2 Rep", storeId: "store-1", quantity: 5, cost: 350000, price: 550000, status: "Còn hàng" },
+  { id: "a6", code: "PK-OP14", name: "Ốp lưng chống sốc iPhone 14", storeId: "store-2", quantity: 0, cost: 40000, price: 110000, status: "Hết hàng" },
+  { id: "a7", code: "PK-SAC65", name: "Củ sạc GaN 65W Baseus", storeId: "store-3", quantity: 8, cost: 320000, price: 550000, status: "Còn hàng" },
+  { id: "a8", code: "PK-GIA", name: "Giá đỡ điện thoại ô tô", storeId: "store-1", quantity: 15, cost: 70000, price: 150000, status: "Còn hàng" },
+  { id: "a9", code: "PK-DNM", name: "Dây đeo Apple Watch cao su", storeId: "store-2", quantity: 22, cost: 45000, price: 120000, status: "Còn hàng" },
+  { id: "a10", code: "PK-KLCL-S22", name: "Cường lực Samsung S22", storeId: "store-3", quantity: 10, cost: 20000, price: 80000, status: "Còn hàng" },
 ];
 
 const salesSeed: Sale[] = [
-  { id: "s1", createdAt: "2026-07-06", customerId: "c1", storeId: "store-1", itemName: "iPhone 11 128GB", itemType: "Máy", quantity: 1, amount: 6100000, profit: 700000, payment: "Chuyển khoản", status: "Hoàn tất" },
-  { id: "s2", createdAt: "2026-07-06", customerId: "c3", storeId: "store-3", itemName: "Kính cường lực", itemType: "Phụ kiện", quantity: 2, amount: 140000, profit: 104000, payment: "Tiền mặt", status: "Hoàn tất" },
+  { id: "s1", createdAt: "2026-07-05", customerId: "c1", storeId: "store-1", itemName: "iPhone 14 128GB", itemType: "Máy", quantity: 1, amount: 14500000, profit: 1500000, payment: "Chuyển khoản", status: "Hoàn tất" },
+  { id: "s2", createdAt: "2026-07-06", customerId: "c3", storeId: "store-3", itemName: "Kính cường lực Kingkong", itemType: "Phụ kiện", quantity: 2, amount: 140000, profit: 104000, payment: "Tiền mặt", status: "Hoàn tất" },
+  { id: "s3", createdAt: "2026-07-06", customerId: "c2", storeId: "store-1", itemName: "iPhone 13 128GB Hồng", itemType: "Máy", quantity: 1, amount: 11800000, profit: 1300000, payment: "Thẻ", status: "Hoàn tất" },
+  { id: "s4", createdAt: "2026-07-05", customerId: "c1", storeId: "store-2", itemName: "Ốp lưng chống sốc iPhone 14", itemType: "Phụ kiện", quantity: 1, amount: 110000, profit: 70000, payment: "Tiền mặt", status: "Hoàn tất" },
+  { id: "s5", createdAt: "2026-07-04", customerId: "c2", storeId: "store-1", itemName: "Cáp sạc nhanh 20W Apple", itemType: "Phụ kiện", quantity: 1, amount: 120000, profit: 65000, payment: "Chuyển khoản", status: "Hoàn tất" },
+  { id: "s6", createdAt: "2026-07-03", customerId: "c3", storeId: "store-3", itemName: "Củ sạc GaN 65W Baseus", itemType: "Phụ kiện", quantity: 1, amount: 550000, profit: 230000, payment: "Tiền mặt", status: "Hoàn tất" },
 ];
 
 const repairsSeed: Repair[] = [
   { id: "r1", createdAt: "2026-07-06", customerId: "c2", storeId: "store-2", deviceName: "iPhone XS", screenPassword: "2580", issue: "Thay pin", intakeNote: "Màn trầy nhẹ, camera bình thường", quote: 650000, deposit: 200000, status: "Đang sửa" },
   { id: "r2", createdAt: "2026-07-05", customerId: "c1", storeId: "store-1", deviceName: "Samsung A52", screenPassword: "Không có", issue: "Lỗi sạc", intakeNote: "Máy móp góc dưới", quote: 450000, deposit: 0, status: "Đang chờ" },
+  { id: "r3", createdAt: "2026-07-06", customerId: "c3", storeId: "store-1", deviceName: "iPhone 11 Pro Max", screenPassword: "111", issue: "Ép kính", intakeNote: "Kính nứt nhiều, màn hình hiển thị tốt", quote: 900000, deposit: 300000, status: "Đang sửa" },
+  { id: "r4", createdAt: "2026-07-04", customerId: "c2", storeId: "store-3", deviceName: "Oppo Reno 5", screenPassword: "Vẽ tay", issue: "Thay loa trong", intakeNote: "Nghe gọi rè nhỏ", quote: 350000, deposit: 100000, status: "Đã xong" },
+  { id: "r5", createdAt: "2026-07-03", customerId: "c1", storeId: "store-2", deviceName: "iPad Air 4", screenPassword: "000000", issue: "Thay pin", intakeNote: "Pin phồng nhẹ mặt lưng", quote: 1200000, deposit: 500000, status: "Đã trả khách" },
 ];
 
 const ledgerSeed: Ledger[] = [
-  { id: "l1", createdAt: "2026-07-06", storeId: "store-1", type: "Thu", source: "Phiếu bán s1", amount: 6100000, payment: "Chuyển khoản", status: "Hiệu lực" },
+  { id: "l1", createdAt: "2026-07-05", storeId: "store-1", type: "Thu", source: "Phiếu bán s1", amount: 14500000, payment: "Chuyển khoản", status: "Hiệu lực" },
   { id: "l2", createdAt: "2026-07-06", storeId: "store-3", type: "Thu", source: "Phiếu bán s2", amount: 140000, payment: "Tiền mặt", status: "Hiệu lực" },
-  { id: "l3", createdAt: "2026-07-06", storeId: "store-2", type: "Thu", source: "Cọc sửa r1", amount: 200000, payment: "Tiền mặt", status: "Hiệu lực" },
-  { id: "l4", createdAt: "2026-07-06", storeId: "store-1", type: "Chi", source: "Tiền mặt bằng", amount: 3000000, payment: "Chuyển khoản", status: "Hiệu lực" },
+  { id: "l3", createdAt: "2026-07-06", storeId: "store-1", type: "Thu", source: "Phiếu bán s3", amount: 11800000, payment: "Thẻ", status: "Hiệu lực" },
+  { id: "l4", createdAt: "2026-07-05", storeId: "store-2", type: "Thu", source: "Phiếu bán s4", amount: 110000, payment: "Tiền mặt", status: "Hiệu lực" },
+  { id: "l5", createdAt: "2026-07-06", storeId: "store-2", type: "Thu", source: "Cọc sửa r1", amount: 200000, payment: "Tiền mặt", status: "Hiệu lực" },
+  { id: "l6", createdAt: "2026-07-06", storeId: "store-1", type: "Chi", source: "Tiền mặt bằng Tháng 7", amount: 30000000, payment: "Chuyển khoản", status: "Hiệu lực" },
+  { id: "l7", createdAt: "2026-07-06", storeId: "store-1", type: "Chi", source: "Tiền điện nước", amount: 2500000, payment: "Chuyển khoản", status: "Hiệu lực" },
+  { id: "l8", createdAt: "2026-07-05", storeId: "store-3", type: "Chi", source: "Nhập phụ kiện", amount: 5000000, payment: "Chuyển khoản", status: "Hiệu lực" },
+  { id: "l9", createdAt: "2026-07-04", storeId: "store-2", type: "Thu", source: "Thanh toán sửa r5", amount: 700000, payment: "Chuyển khoản", status: "Hiệu lực" },
+  { id: "l10", createdAt: "2026-07-06", storeId: "store-1", type: "Thu", source: "Cọc sửa r3", amount: 300000, payment: "Chuyển khoản", status: "Hiệu lực" },
 ];
+
+function getColorCode(colorName: string): string {
+  if (!colorName) return "#e2e8f0";
+  const name = colorName.toLowerCase();
+  if (name.includes("đỏ") || name.includes("red")) return "#ef4444";
+  if (name.includes("xanh dương") || name.includes("xanh biển") || name.includes("blue")) return "#3b82f6";
+  if (name.includes("xanh lá") || name.includes("xanh ngọc") || name.includes("green")) return "#22c55e";
+  if (name.includes("vàng") || name.includes("gold")) return "#eab308";
+  if (name.includes("đen") || name.includes("black") || name.includes("midnight")) return "#1e293b";
+  if (name.includes("trắng") || name.includes("white") || name.includes("starlight")) return "#ffffff";
+  if (name.includes("bạc") || name.includes("silver")) return "#cbd5e1";
+  if (name.includes("xám") || name.includes("gray") || name.includes("grey")) return "#64748b";
+  if (name.includes("tím") || name.includes("purple")) return "#a855f7";
+  if (name.includes("hồng") || name.includes("pink")) return "#ec4899";
+  if (name.includes("titan")) return "#a8a29e";
+  return "#e2e8f0";
+}
 
 const logSeed: AuditLog[] = [
   { id: "g1", createdAt: "2026-07-06 09:15", user: "Chủ cửa hàng", storeId: "store-1", action: "Tạo phiếu bán", target: "s1" },
@@ -898,15 +942,18 @@ export default function Home() {
                 <DataTable
                   headers={["Tên máy", "Dung lượng", "IMEI", "Giá bán", "Màu sắc", "Pin", "Thao tác"]}
                   rows={paginatedPhones.map((item) => [
-                    <div key={`name-${item.id}`} className="flex flex-col gap-1.5">
-                      <div className="flex items-center gap-2 text-lg font-black text-brand"><Smartphone size={18} className="text-slate-400" />{item.name}</div>
+                    <div key={`name-${item.id}`} className="flex flex-col items-center gap-1.5">
+                      <div className="flex items-center justify-center gap-2 text-lg font-black text-brand"><Smartphone size={18} className="text-slate-400" />{item.name}</div>
                       <span className="text-sm font-semibold text-slate-500">{item.brand} • <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-xs font-bold text-slate-600">{item.condition}</span></span>
                     </div>,
                     <span className="text-base font-bold text-slate-800" key={`storage-${item.id}`}>{item.storage}</span>,
-                    <span className="font-mono text-sm font-medium text-slate-500" key={`imei-${item.id}`}>{item.imei}</span>,
+                    <span className="rounded-md bg-red-50 px-3 py-1.5 font-mono text-xl font-black tracking-widest text-red-600 shadow-sm" key={`imei-${item.id}`}>{item.imei.slice(-5)}</span>,
                     <span className="text-lg font-black text-emerald-600" key={`price-${item.id}`}>{formatMoney(item.expectedPrice)}</span>,
-                    <span className="text-base font-medium text-slate-700" key={`color-${item.id}`}>{item.color}</span>,
-                    <div className="flex items-center gap-1.5 text-base font-bold text-amber-600" key={`bat-${item.id}`}><Activity size={16} />{item.batteryCondition}</div>,
+                    <div key={`color-${item.id}`} className="flex items-center justify-center gap-2">
+                      <div className="h-4 w-4 shrink-0 rounded-full border border-slate-200 shadow-sm" style={{ backgroundColor: getColorCode(item.color) }} />
+                      <span className="text-base font-medium text-slate-700">{item.color}</span>
+                    </div>,
+                    <div className="flex items-center justify-center gap-1.5 text-base font-bold text-amber-600" key={`bat-${item.id}`}><Activity size={16} />{item.batteryCondition}</div>,
                     <div key={item.id} className="flex flex-nowrap justify-center gap-2">
                       <button onClick={() => setViewingPhoneId(item.id)} title="Chi tiết" className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-900">
                         <Eye size={20} />
@@ -1097,7 +1144,7 @@ export default function Home() {
 
             {viewingPhone && (
               <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4 backdrop-blur-sm">
-                <section className="w-full max-w-[500px] overflow-hidden rounded-lg border border-line bg-white shadow-[0_24px_80px_rgba(15,23,42,0.28)]">
+                <section className="w-full max-w-[640px] overflow-hidden rounded-lg border border-line bg-white shadow-[0_24px_80px_rgba(15,23,42,0.28)]">
                   <div className="flex items-center justify-between border-b border-line bg-slate-50 p-4">
                     <h2 className="text-xl font-black text-brand">Chi tiết máy</h2>
                     <button onClick={() => setViewingPhoneId(null)} className="h-8 rounded-lg border border-line bg-white px-3 text-sm font-bold text-muted hover:bg-slate-100">Đóng</button>
@@ -1144,6 +1191,10 @@ export default function Home() {
                       <div>
                         <span className="block text-xs font-bold text-muted">Giá bán</span>
                         <strong className="text-emerald-600">{formatMoney(viewingPhone.expectedPrice)}</strong>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="block text-xs font-bold text-muted">Lợi nhuận dự kiến</span>
+                        <strong className="text-base font-black text-amber-600">{formatMoney(viewingPhone.expectedPrice - viewingPhone.cost)}</strong>
                       </div>
                       <div>
                         <span className="block text-xs font-bold text-muted">Ngày nhập</span>
@@ -1356,7 +1407,7 @@ function DataTable({ headers, rows }: { headers: string[]; rows: ReactNode[][] }
   return (
     <div className="overflow-auto rounded-xl border border-line bg-white shadow-sm">
       <table className="min-w-max w-full border-collapse text-base">
-        <thead className="bg-slate-50/80 text-left text-sm font-bold uppercase tracking-wider text-slate-500">
+        <thead className="bg-slate-50/80 text-center text-sm font-bold uppercase tracking-wider text-slate-500">
           <tr>
             {headers.map((header) => (
               <th key={header} className={`border-b border-line px-5 py-4 ${header === "Thao tác" ? "w-[180px] text-center" : ""}`}>
@@ -1369,7 +1420,7 @@ function DataTable({ headers, rows }: { headers: string[]; rows: ReactNode[][] }
           {rows.map((row, rowIndex) => (
             <tr key={rowIndex} className="transition-colors hover:bg-slate-50/60">
               {row.map((cell, cellIndex) => (
-                <td key={`${rowIndex}-${cellIndex}`} className={`px-5 py-4 align-middle ${headers[cellIndex] === "Thao tác" ? "text-center" : ""}`}>
+                <td key={`${rowIndex}-${cellIndex}`} className="px-5 py-4 text-center align-middle">
                   {cell}
                 </td>
               ))}
