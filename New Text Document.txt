@@ -1,0 +1,45 @@
+# KẾ HOẠCH PHÁT TRIỂN WEB QUẢN LÝ BÁN HÀNG - GIAI ĐOẠN 1 (MVP)
+
+## 1. Tổng quan dự án
+* [cite_start]**Mô hình kinh doanh:** Hệ thống 3 cửa hàng điện thoại (mua bán điện thoại, phụ kiện và sửa chữa)[cite: 1, 19].
+* [cite_start]**Mục tiêu Giai đoạn 1:** Tập trung xây dựng Trang quản trị (Admin Dashboard) đơn giản, thực tế, tránh ôm đồm tính năng để hệ thống nhẹ và dễ sử dụng[cite: 20, 21].
+* [cite_start]**Định hướng dữ liệu:** Hệ thống hóa và số hóa trực tiếp từ công cụ quản lý bằng Excel hiện tại[cite: 31, 33].
+
+---
+
+## 2. Nhân sự & Phân quyền
+* [cite_start]**Số lượng người dùng:** 4 người (Bao gồm chủ cửa hàng và 3 chị em)[cite: 71, 72].
+* [cite_start]**Cơ chế tài khoản:** Thiết lập 4 tài khoản có quyền truy cập đầy đủ và ngang nhau[cite: 76].
+* [cite_start]**Độ mở dữ liệu:** Tất cả đều có thể xem tồn kho, doanh thu, giá nhập và lãi/lỗ của toàn hệ thống[cite: 77].
+* [cite_start]**Kiểm soát an toàn (Log):** Hệ thống bắt buộc ghi nhận lịch sử thao tác gồm thông tin "Ai là người thao tác" và "Thao tác ở cửa hàng nào" để dễ dàng đối soát cuối ngày[cite: 78, 79].
+
+---
+
+## 3. Chi tiết 4 Mô-đun cốt lõi
+
+### Mô-đun 1: Quản lý Sản phẩm (Kho hàng)
+* [cite_start]**Số hóa dữ liệu:** Chuyển đổi toàn bộ bảng "Máy Cũ Tổng Hợp" từ Excel lên Web[cite: 46, 47].
+* [cite_start]**Chuẩn hóa nhập liệu:** Các trường thông tin (Màu, GB, Tình trạng máy) được tạo thành danh sách thả xuống (Dropdown) để thao tác nhanh, hạn chế gõ tay[cite: 39, 40].
+* [cite_start]**Định danh sản phẩm:** Lưu hồ sơ chi tiết và hỗ trợ lọc, tìm kiếm sát sao theo mã IMEI[cite: 41, 42].
+* [cite_start]**Quản lý liên thông:** Bắt buộc gắn nhãn (tag) phân định rõ kho dữ liệu của Cửa hàng 1, Cửa hàng 2 và Cửa hàng 3[cite: 24, 59]. 
+
+### Mô-đun 2: Quản lý Sửa chữa
+* [cite_start]**Công cụ cốt lõi:** Xây dựng tính năng tạo "Phiếu nhận máy" chuẩn chỉnh để kiểm soát quy trình[cite: 62].
+* [cite_start]**Thông tin khách hàng:** Lưu trữ Tên và Số điện thoại[cite: 63].
+* [cite_start]**Thông tin thiết bị:** Ghi nhận Tên máy, mật khẩu màn hình (để test) và ghi chú kỹ tình trạng lúc nhận (xước xát, lỗi hiện có) để tránh tranh chấp[cite: 63].
+* [cite_start]**Tài chính sửa chữa:** Ghi nhận lỗi cần sửa, báo giá dự kiến và số tiền khách đã đặt cọc[cite: 64].
+* [cite_start]**Theo dõi tiến độ:** Cập nhật theo luồng trạng thái chuẩn: Đang chờ -> Đang sửa -> Đã xong -> Đã trả khách[cite: 65].
+
+### Mô-đun 3: Quản lý Thu - Chi (Kế toán nội bộ)
+* [cite_start]**Thu Chi tự động:** Liên kết trực tiếp với Mô-đun 1 và 2[cite: 66]. [cite_start]Tiền nhập kho máy tự động tính vào cột Chi, tiền bán máy hoặc thu phí sửa chữa tự động cộng vào cột Thu[cite: 66, 67].
+* [cite_start]**Thu Chi thủ công:** Tạo tính năng lập phiếu phát sinh hàng ngày cho các khoản chi ngoài như tiền điện, nước, mặt bằng, mua vật tư lặt vặt[cite: 68].
+
+### Mô-đun 4: Bảng điều khiển (Dashboard)
+* [cite_start]**Mục tiêu:** Thay thế hoàn toàn dòng tính tổng thủ công trên Excel[cite: 50, 69].
+* [cite_start]**Hiển thị trực quan:** Cập nhật theo thời gian thực các chỉ số quan trọng: Tổng số máy tồn kho, Tổng vốn đã nhập và Tổng lãi dự kiến/thực tế[cite: 51, 69].
+* [cite_start]**Cảnh báo:** Bổ sung hiển thị số lượng máy đang sửa và tồn kho sắp hết[cite: 28].
+
+---
+
+## 4. Ghi chú Triển khai
+* Các tính năng phức tạp (như tích điểm, quét mã vạch chuyên sâu, phân quyền phức tạp) sẽ được tạm gác lại để đảm bảo Giai đoạn MVP ra mắt nhanh nhất và sát với thực tế vận hành thủ công hiện tại.
