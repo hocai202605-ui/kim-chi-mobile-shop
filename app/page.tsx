@@ -8,6 +8,7 @@ import {
   ClipboardList,
   CreditCard,
   Edit3,
+  Eye,
   FileText,
   LayoutDashboard,
   LogOut,
@@ -59,6 +60,8 @@ type PhoneItem = {
   batteryCondition: string;
   condition: string;
   note?: string;
+  importDate?: string;
+  saleDate?: string;
   storeId: Exclude<StoreId, "all">;
   cost: number;
   expectedPrice: number;
@@ -144,8 +147,8 @@ const customersSeed: Customer[] = [
 ];
 
 const phoneSeed: PhoneItem[] = [
-  { id: "p1", brand: "iPhone", name: "13 Pro", imei: "356789101234561", color: "Xanh", storage: "256GB", madeIn: "VN/A", networkVersion: "5G", batteryCondition: "Zin", condition: "Like New", note: "Màn đẹp", storeId: "store-1", cost: 11700000, expectedPrice: 13200000, status: "Còn hàng" },
-  { id: "p2", brand: "iPhone", name: "12", imei: "356789101234562", color: "Đen", storage: "128GB", madeIn: "LL/A", networkVersion: "5G", batteryCondition: "80-90%", condition: "Cũ", note: "Trầy viền nhẹ", storeId: "store-2", cost: 7200000, expectedPrice: 8200000, status: "Còn hàng" },
+  { id: "p1", brand: "iPhone", name: "13 Pro", imei: "356789101234561", color: "Xanh", storage: "256GB", madeIn: "VN/A", networkVersion: "5G", batteryCondition: "Zin", condition: "Like New", note: "Màn đẹp", storeId: "store-1", cost: 11700000, expectedPrice: 13200000, status: "Còn hàng", importDate: "2026-07-01" },
+  { id: "p2", brand: "iPhone", name: "12", imei: "356789101234562", color: "Đen", storage: "128GB", madeIn: "LL/A", networkVersion: "5G", batteryCondition: "80-90%", condition: "Cũ", note: "Trầy viền nhẹ", storeId: "store-2", cost: 7200000, expectedPrice: 8200000, status: "Còn hàng", importDate: "2026-07-02" },
   { id: "p3", brand: "Samsung", name: "Galaxy S22", imei: "356789101234563", color: "Trắng", storage: "128GB", madeIn: "VN/A", networkVersion: "5G", batteryCondition: "Zin", condition: "Like New", note: "", storeId: "store-3", cost: 6500000, expectedPrice: 7600000, status: "Còn hàng" },
   { id: "p4", brand: "iPhone", name: "11", imei: "356789101234564", color: "Tím", storage: "64GB", madeIn: "VN/A", networkVersion: "4G", batteryCondition: "Đã thay", condition: "Cũ", storeId: "store-1", cost: 5500000, expectedPrice: 6500000, status: "Còn hàng" },
   { id: "p5", brand: "Oppo", name: "Reno 8", imei: "356789101234565", color: "Vàng", storage: "256GB", madeIn: "Trung Quốc", networkVersion: "5G", batteryCondition: "Zin", condition: "Mới 100%", storeId: "store-2", cost: 7000000, expectedPrice: 8500000, status: "Còn hàng" },
@@ -258,9 +261,11 @@ export default function Home() {
   const [inventoryTypeFilter, setInventoryTypeFilter] = useState("all");
   const [inventoryNameFilter, setInventoryNameFilter] = useState("");
   const [inventoryPriceRange, setInventoryPriceRange] = useState("all");
+  const [inventoryStatusFilter, setInventoryStatusFilter] = useState("Còn hàng");
   const [inventorySort, setInventorySort] = useState("price-desc");
   const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false);
   const [editingPhoneId, setEditingPhoneId] = useState<string | null>(null);
+  const [viewingPhoneId, setViewingPhoneId] = useState<string | null>(null);
   const [editingAccessoryId, setEditingAccessoryId] = useState<string | null>(null);
   const [customers, setCustomers] = useState(customersSeed);
   const [phones, setPhones] = useState(phoneSeed);
@@ -294,7 +299,8 @@ export default function Home() {
       const matchesName = item.name.toLowerCase().includes(name);
       const matchesType = inventoryTypeFilter === "all" || item.name.toLowerCase().startsWith(inventoryTypeFilter.toLowerCase());
       const matchesPrice = item.expectedPrice >= minInventoryPrice && item.expectedPrice <= maxInventoryPrice;
-      return matchesStore && matchesQuickSearch && matchesName && matchesType && matchesPrice;
+      const matchesStatus = inventoryStatusFilter === "all" || item.status === inventoryStatusFilter;
+      return matchesStore && matchesQuickSearch && matchesName && matchesType && matchesPrice && matchesStatus;
     })
     .sort((a, b) => (inventorySort === "price-asc" ? a.expectedPrice - b.expectedPrice : b.expectedPrice - a.expectedPrice));
 
@@ -307,7 +313,8 @@ export default function Home() {
       const matchesName = item.name.toLowerCase().includes(name);
       const matchesType = inventoryTypeFilter === "all" || item.code.toLowerCase().startsWith(inventoryTypeFilter.toLowerCase());
       const matchesPrice = item.price >= minInventoryPrice && item.price <= maxInventoryPrice;
-      return matchesStore && matchesQuickSearch && matchesName && matchesType && matchesPrice;
+      const matchesStatus = inventoryStatusFilter === "all" || item.status === inventoryStatusFilter || (inventoryStatusFilter === "Đã bán" && item.status === "Hết hàng");
+      return matchesStore && matchesQuickSearch && matchesName && matchesType && matchesPrice && matchesStatus;
     })
     .sort((a, b) => (inventorySort === "price-asc" ? a.price - b.price : b.price - a.price));
 
@@ -323,6 +330,7 @@ export default function Home() {
   const paginatedAccessories = filteredAccessories.slice(inventoryStart, inventoryStart + inventoryPageSize);
   const editingPhone = editingPhoneId ? phones.find((item) => item.id === editingPhoneId) : null;
   const editingAccessory = editingAccessoryId ? accessories.find((item) => item.id === editingAccessoryId) : null;
+  const viewingPhone = viewingPhoneId ? phones.find((item) => item.id === viewingPhoneId) : null;
   const inventorySummary = useMemo(() => {
     const visiblePhones = phones.filter((item) => storeFilter === "all" || item.storeId === storeFilter);
     const visibleAccessories = accessories.filter((item) => storeFilter === "all" || item.storeId === storeFilter);
@@ -429,6 +437,8 @@ export default function Home() {
       batteryCondition: String(form.get("batteryCondition")),
       condition: String(form.get("condition")),
       note: String(form.get("note") || ""),
+      importDate: String(form.get("importDate") || new Date().toISOString().slice(0, 10)),
+      saleDate: String(form.get("saleDate") || ""),
       storeId,
       cost: Number(form.get("cost") || 0),
       expectedPrice: Number(form.get("expectedPrice") || 0),
@@ -787,7 +797,7 @@ export default function Home() {
                     </button>
                   </div>
                 </div>
-                <div className="mt-4 grid gap-3 lg:grid-cols-[1.2fr_0.9fr_0.8fr_0.8fr_0.9fr]">
+                <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_repeat(5,minmax(0,1fr))]">
                   <label className="relative">
                     <Search className="pointer-events-none absolute left-3 top-2.5 text-muted" size={18} />
                     <input
@@ -838,6 +848,18 @@ export default function Home() {
                     <option value="6m-10m">6 - 10 triệu</option>
                     <option value="o10m">Trên 10 triệu</option>
                   </select>
+                  <select
+                    value={inventoryStatusFilter}
+                    onChange={(event) => {
+                      setInventoryStatusFilter(event.target.value);
+                      setInventoryPage(1);
+                    }}
+                    className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
+                  >
+                    <option value="all">Tất cả trạng thái</option>
+                    <option value="Còn hàng">Còn hàng</option>
+                    <option value="Đã bán">Đã bán</option>
+                  </select>
                   <select value={inventorySort} onChange={(event) => setInventorySort(event.target.value)} className="h-10 rounded-lg border border-line bg-white px-3 font-semibold">
                     <option value="price-desc">Giá cao đến thấp</option>
                     <option value="price-asc">Giá thấp đến cao</option>
@@ -847,92 +869,83 @@ export default function Home() {
 
               <div className="flex flex-col gap-4 p-4">
                 <aside className="rounded-lg border border-line bg-slate-50 p-4">
-                  <div className="mb-4 flex items-center justify-between">
-                    <div>
-                      <h3 className="font-black">Phân tích trực quan</h3>
-                      <p className="text-sm font-semibold text-muted">Tỷ trọng giá trị tồn.</p>
-                    </div>
-                    <span className="rounded-md bg-white px-2 py-1 text-xs font-black text-muted">{storeName(storeFilter)}</span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-8 py-2">
-                    <div
-                      className="grid h-32 w-32 shrink-0 place-items-center rounded-full"
-                      style={{
-                        background: `conic-gradient(#0f8b62 0 ${inventorySummary.phonePercent}%, #e2b33c ${inventorySummary.phonePercent}% 100%)`,
-                      }}
-                    >
-                      <div className="grid h-20 w-20 place-items-center rounded-full bg-slate-50 text-center">
-                        <div>
-                          <p className="text-[10px] font-black text-muted">TỔNG TỒN</p>
-                          <strong>{formatMoney(inventorySummary.totalValue)}</strong>
-                        </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex flex-1 gap-6">
+                      <div>
+                        <span className="block text-sm font-bold text-muted">Số lượng đã bán</span>
+                        <strong className="text-2xl text-emerald-600">
+                          {inventoryTab === "phones"
+                            ? phones.filter((p) => p.status === "Đã bán" && (storeFilter === "all" || p.storeId === storeFilter)).length
+                            : sales.filter((s) => s.itemType === "Phụ kiện" && s.status === "Hoàn tất" && (storeFilter === "all" || s.storeId === storeFilter)).reduce((sum, s) => sum + s.quantity, 0)}
+                        </strong>
+                      </div>
+                      <div className="w-px bg-line" />
+                      <div>
+                        <span className="block text-sm font-bold text-muted">Số lượng còn hàng</span>
+                        <strong className="text-2xl text-brand">
+                          {inventoryTab === "phones"
+                            ? phones.filter((p) => p.status === "Còn hàng" && (storeFilter === "all" || p.storeId === storeFilter)).length
+                            : accessories.filter((a) => a.status === "Còn hàng" && (storeFilter === "all" || a.storeId === storeFilter)).reduce((sum, a) => sum + a.quantity, 0)}
+                        </strong>
                       </div>
                     </div>
-                    <div className="flex flex-1 flex-col gap-4">
-                      <InventoryBar label="Máy cũ" value={inventorySummary.phonePercent} color="bg-brand" />
-                      <InventoryBar label="Phụ kiện" value={inventorySummary.accessoryPercent} color="bg-gold" />
-                      <InventoryBar label="Sắp hết" value={Math.min(100, inventorySummary.lowAccessories * 12)} color="bg-red-500" />
-                    </div>
+                    <span className="rounded-md bg-white px-2 py-1 text-xs font-black text-muted shadow-sm">{storeName(storeFilter)}</span>
                   </div>
                 </aside>
 
                 <div className="min-w-0">
               {inventoryTab === "phones" ? (
                 <DataTable
-                  headers={["Hãng", "Tên máy", "Tình trạng", "Màu sắc", "Dung lượng", "Quốc Gia", "Pin", "Ghi chú", "IMEI", "Giá nhập", "Giá bán", "Lợi nhuận", "Trạng thái", "Thao tác"]}
+                  headers={["Tên máy", "Dung lượng", "IMEI", "Giá bán", "Màu sắc", "Pin", "Thao tác"]}
                   rows={paginatedPhones.map((item) => [
-                    <div className="flex items-center gap-1.5 font-bold text-slate-700" key={`brand-${item.id}`}><Smartphone size={14} className="text-brand"/>{item.brand}</div>,
-                    <span className="font-bold text-brand" key={`name-${item.id}`}>{item.name}</span>,
-                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600" key={`cond-${item.id}`}>{item.condition}</span>,
-                    item.color,
-                    <span className="font-semibold text-slate-700" key={`storage-${item.id}`}>{item.storage}</span>,
-                    `${item.madeIn} (${item.networkVersion})`,
-                    <div className="flex items-center gap-1 font-semibold text-amber-700" key={`bat-${item.id}`}><Activity size={12} />{item.batteryCondition}</div>,
-                    <span className="text-xs text-muted max-w-[120px] truncate block" title={item.note || "-"} key={`note-${item.id}`}>{item.note || "-"}</span>,
-                    <span className="text-xs font-mono text-muted" key={`imei-${item.id}`}>{item.imei}</span>,
-                    <span className="font-semibold" key={`cost-${item.id}`}>{formatMoney(item.cost)}</span>,
-                    <span className="font-semibold text-emerald-600" key={`price-${item.id}`}>{formatMoney(item.expectedPrice)}</span>,
-                    <span className="font-black text-brand" key={`profit-${item.id}`}>{formatMoney(item.expectedPrice - item.cost)}</span>,
-                    <StatusBadge key={item.id} tone={item.status === "Còn hàng" ? "ok" : item.status === "Đã bán" ? "warn" : "danger"}>{item.status}</StatusBadge>,
-                    <div key={item.id} className="flex flex-wrap gap-2">
-                      <button onClick={() => openPhoneEditModal(item.id)} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-brand-soft px-3 text-xs font-black text-brand">
-                        <Edit3 size={14} />
-                        Sửa
+                    <div key={`name-${item.id}`} className="flex flex-col gap-1.5">
+                      <div className="flex items-center gap-2 text-lg font-black text-brand"><Smartphone size={18} className="text-slate-400" />{item.name}</div>
+                      <span className="text-sm font-semibold text-slate-500">{item.brand} • <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-xs font-bold text-slate-600">{item.condition}</span></span>
+                    </div>,
+                    <span className="text-base font-bold text-slate-800" key={`storage-${item.id}`}>{item.storage}</span>,
+                    <span className="font-mono text-sm font-medium text-slate-500" key={`imei-${item.id}`}>{item.imei}</span>,
+                    <span className="text-lg font-black text-emerald-600" key={`price-${item.id}`}>{formatMoney(item.expectedPrice)}</span>,
+                    <span className="text-base font-medium text-slate-700" key={`color-${item.id}`}>{item.color}</span>,
+                    <div className="flex items-center gap-1.5 text-base font-bold text-amber-600" key={`bat-${item.id}`}><Activity size={16} />{item.batteryCondition}</div>,
+                    <div key={item.id} className="flex flex-nowrap justify-center gap-2">
+                      <button onClick={() => setViewingPhoneId(item.id)} title="Chi tiết" className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-900">
+                        <Eye size={20} />
+                      </button>
+                      <button onClick={() => openPhoneEditModal(item.id)} title="Sửa" className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20">
+                        <Edit3 size={20} />
                       </button>
                       <button
+                        title="Hủy"
                         disabled={!canCancel || item.status === "Đã hủy"}
                         onClick={() => cancelPhone(item.id)}
-                        className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-red-50 px-3 text-xs font-black text-danger disabled:cursor-not-allowed disabled:opacity-40"
+                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
                       >
-                        <Trash2 size={14} />
-                        Hủy
+                        <Trash2 size={20} />
                       </button>
                     </div>,
                   ])}
                 />
               ) : (
                 <DataTable
-                  headers={["Mã", "Tên phụ kiện", "SL", "Giá nhập", "Giá bán", "Lợi nhuận", "Trạng thái", "Thao tác"]}
+                  headers={["Mã", "Tên phụ kiện", "SL", "Giá nhập", "Giá bán", "Lợi nhuận", "Thao tác"]}
                   rows={paginatedAccessories.map((item) => [
-                    item.code,
-                    item.name,
-                    item.quantity,
-                    formatMoney(item.cost),
-                    formatMoney(item.price),
-                    formatMoney(item.price - item.cost),
-                    <StatusBadge key={item.id} tone={item.status === "Còn hàng" ? "ok" : item.status === "Hết hàng" ? "warn" : "danger"}>{item.status}</StatusBadge>,
-                    <div key={item.id} className="flex flex-wrap gap-2">
-                      <button onClick={() => openAccessoryEditModal(item.id)} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-brand-soft px-3 text-xs font-black text-brand">
-                        <Edit3 size={14} />
-                        Sửa
+                    <span className="font-mono text-sm font-medium text-slate-500" key={`code-${item.id}`}>{item.code}</span>,
+                    <span className="text-lg font-black text-brand" key={`name-${item.id}`}>{item.name}</span>,
+                    <span className="text-base font-bold text-slate-800" key={`qty-${item.id}`}>{item.quantity}</span>,
+                    <span className="text-base font-medium text-slate-600" key={`cost-${item.id}`}>{formatMoney(item.cost)}</span>,
+                    <span className="text-lg font-black text-emerald-600" key={`price-${item.id}`}>{formatMoney(item.price)}</span>,
+                    <span className="text-base font-bold text-amber-600" key={`profit-${item.id}`}>{formatMoney(item.price - item.cost)}</span>,
+                    <div key={item.id} className="flex flex-nowrap justify-center gap-2">
+                      <button onClick={() => openAccessoryEditModal(item.id)} title="Sửa" className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20">
+                        <Edit3 size={20} />
                       </button>
                       <button
+                        title="Hủy"
                         disabled={!canCancel || item.status === "Đã hủy"}
                         onClick={() => cancelAccessory(item.id)}
-                        className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-red-50 px-3 text-xs font-black text-danger disabled:cursor-not-allowed disabled:opacity-40"
+                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
                       >
-                        <Trash2 size={14} />
-                        Hủy
+                        <Trash2 size={20} />
                       </button>
                     </div>,
                   ])}
@@ -1041,6 +1054,10 @@ export default function Home() {
                         <Field label="Ghi chú"><input name="note" defaultValue={editingPhone?.note} className="h-10 rounded-lg border border-line px-3" placeholder="Màn đẹp, trầy viền nhẹ..." /></Field>
                         <SelectField label="Cửa hàng" name="storeId" options={stores.map((s) => [s.id, s.name])} defaultValue={editingPhone?.storeId} />
                         <div className="grid gap-3 sm:grid-cols-2">
+                          <Field label="Ngày nhập"><input name="importDate" type="date" defaultValue={editingPhone?.importDate || new Date().toISOString().slice(0, 10)} className="h-10 rounded-lg border border-line px-3" /></Field>
+                          <Field label="Ngày bán"><input name="saleDate" type="date" defaultValue={editingPhone?.saleDate} className="h-10 rounded-lg border border-line px-3" /></Field>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
                           <Field label="Giá nhập"><input name="cost" type="number" min="0" defaultValue={editingPhone?.cost} className="h-10 rounded-lg border border-line px-3" /></Field>
                           <Field label="Giá dự kiến"><input name="expectedPrice" type="number" min="0" defaultValue={editingPhone?.expectedPrice} className="h-10 rounded-lg border border-line px-3" /></Field>
                         </div>
@@ -1073,6 +1090,80 @@ export default function Home() {
                         </div>
                       </form>
                     )}
+                  </div>
+                </section>
+              </div>
+            )}
+
+            {viewingPhone && (
+              <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4 backdrop-blur-sm">
+                <section className="w-full max-w-[500px] overflow-hidden rounded-lg border border-line bg-white shadow-[0_24px_80px_rgba(15,23,42,0.28)]">
+                  <div className="flex items-center justify-between border-b border-line bg-slate-50 p-4">
+                    <h2 className="text-xl font-black text-brand">Chi tiết máy</h2>
+                    <button onClick={() => setViewingPhoneId(null)} className="h-8 rounded-lg border border-line bg-white px-3 text-sm font-bold text-muted hover:bg-slate-100">Đóng</button>
+                  </div>
+                  <div className="grid gap-4 p-5">
+                    <div className="flex items-center gap-3">
+                      <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-brand-soft text-brand">
+                        <Smartphone size={24} />
+                      </div>
+                      <div>
+                        <strong className="block text-lg">{viewingPhone.name}</strong>
+                        <span className="text-sm font-semibold text-muted">{viewingPhone.brand}</span>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-y-3 rounded-lg border border-line bg-slate-50 p-4 text-sm">
+                      <div>
+                        <span className="block text-xs font-bold text-muted">Màu sắc</span>
+                        <strong className="text-slate-800">{viewingPhone.color}</strong>
+                      </div>
+                      <div>
+                        <span className="block text-xs font-bold text-muted">Dung lượng</span>
+                        <strong className="text-slate-800">{viewingPhone.storage}</strong>
+                      </div>
+                      <div>
+                        <span className="block text-xs font-bold text-muted">Tình trạng máy</span>
+                        <strong className="text-slate-800">{viewingPhone.condition}</strong>
+                      </div>
+                      <div>
+                        <span className="block text-xs font-bold text-muted">Tình trạng pin</span>
+                        <strong className="text-slate-800">{viewingPhone.batteryCondition}</strong>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="block text-xs font-bold text-muted">Quốc gia/Phiên bản</span>
+                        <strong className="text-slate-800">{viewingPhone.madeIn} ({viewingPhone.networkVersion})</strong>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="block text-xs font-bold text-muted">IMEI</span>
+                        <strong className="font-mono text-slate-800">{viewingPhone.imei}</strong>
+                      </div>
+                      <div>
+                        <span className="block text-xs font-bold text-muted">Giá nhập</span>
+                        <strong className="text-slate-800">{formatMoney(viewingPhone.cost)}</strong>
+                      </div>
+                      <div>
+                        <span className="block text-xs font-bold text-muted">Giá bán</span>
+                        <strong className="text-emerald-600">{formatMoney(viewingPhone.expectedPrice)}</strong>
+                      </div>
+                      <div>
+                        <span className="block text-xs font-bold text-muted">Ngày nhập</span>
+                        <strong className="text-slate-800">{viewingPhone.importDate ? new Date(viewingPhone.importDate).toLocaleDateString("vi-VN") : "Chưa có"}</strong>
+                      </div>
+                      <div>
+                        <span className="block text-xs font-bold text-muted">Ngày bán</span>
+                        <strong className="text-slate-800">{viewingPhone.saleDate ? new Date(viewingPhone.saleDate).toLocaleDateString("vi-VN") : "Chưa bán"}</strong>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="block text-xs font-bold text-muted">Trạng thái</span>
+                        <StatusBadge tone={viewingPhone.status === "Còn hàng" ? "ok" : viewingPhone.status === "Đã bán" ? "warn" : "danger"}>{viewingPhone.status}</StatusBadge>
+                      </div>
+                      {viewingPhone.note && (
+                        <div className="col-span-2 mt-2 rounded-lg bg-white p-2 border border-line">
+                          <span className="block text-xs font-bold text-muted">Ghi chú</span>
+                          <span className="text-slate-800">{viewingPhone.note}</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </section>
               </div>
@@ -1263,22 +1354,22 @@ function DataTable({ headers, rows }: { headers: string[]; rows: ReactNode[][] }
   }
 
   return (
-    <div className="overflow-auto rounded-lg border border-line">
-      <table className="min-w-[860px] w-full border-collapse bg-white text-sm">
-        <thead className="bg-slate-50 text-left text-xs uppercase text-muted">
+    <div className="overflow-auto rounded-xl border border-line bg-white shadow-sm">
+      <table className="min-w-max w-full border-collapse text-base">
+        <thead className="bg-slate-50/80 text-left text-sm font-bold uppercase tracking-wider text-slate-500">
           <tr>
             {headers.map((header) => (
-              <th key={header} className="border-b border-line px-3 py-3 font-black">
+              <th key={header} className={`border-b border-line px-5 py-4 ${header === "Thao tác" ? "w-[180px] text-center" : ""}`}>
                 {header}
               </th>
             ))}
           </tr>
         </thead>
-        <tbody>
+        <tbody className="divide-y divide-line">
           {rows.map((row, rowIndex) => (
-            <tr key={rowIndex} className="border-b border-line transition-colors hover:bg-slate-50/80 last:border-b-0">
+            <tr key={rowIndex} className="transition-colors hover:bg-slate-50/60">
               {row.map((cell, cellIndex) => (
-                <td key={`${rowIndex}-${cellIndex}`} className="px-3 py-3 align-top">
+                <td key={`${rowIndex}-${cellIndex}`} className={`px-5 py-4 align-middle ${headers[cellIndex] === "Thao tác" ? "text-center" : ""}`}>
                   {cell}
                 </td>
               ))}
