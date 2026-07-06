@@ -24,7 +24,7 @@ import {
   Users,
   Wrench,
 } from "lucide-react";
-import { FormEvent, ReactNode, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useMemo, useRef, useState } from "react";
 
 type Role = "owner" | "staff";
 type StoreId = "all" | "store-1" | "store-2" | "store-3";
@@ -318,6 +318,13 @@ export default function Home() {
   const [repairs, setRepairs] = useState(repairsSeed);
   const [ledger, setLedger] = useState(ledgerSeed);
   const [logs, setLogs] = useState(logSeed);
+  const [brandOptions, setBrandOptions] = useState(["iPhone", "Samsung", "Oppo", "Xiaomi"]);
+  const [nameOptions, setNameOptions] = useState(["10", "11", "12", "13 Pro", "13 Pro Max", "14", "14 Pro Max", "15 Pro Max", "Galaxy S22 Ultra", "Galaxy A54", "Z Fold 5", "Reno 8", "Find X5 Pro", "Redmi Note 12"]);
+  const [colorOptions, setColorOptions] = useState(["Đen", "Trắng", "Xanh", "Xanh dương", "Xanh biển", "Xanh lá", "Đỏ", "Vàng", "Tím", "Xám", "Titan", "Hồng"]);
+  const [storageOptions, setStorageOptions] = useState(["64GB", "128GB", "256GB", "512GB", "1TB"]);
+  const [madeInOptions, setMadeInOptions] = useState(["VN/A", "LL/A", "Trung Quốc", "Việt Nam"]);
+  const [batteryOptions, setBatteryOptions] = useState(["Zin", "Đã thay", "Đã thay pin", "80-90%", "Zin 88%", "Zin 90%", "Zin 92%", "Zin 98%", "Zin 100%"]);
+  const [conditionOptions, setConditionOptions] = useState(["Zin", "Cũ", "Like New", "Mới 100%"]);
 
   const canCancel = currentUser?.role === "owner";
 
@@ -468,7 +475,7 @@ export default function Home() {
   function savePhone(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const storeId = String(form.get("storeId")) as Exclude<StoreId, "all">;
+    const storeId = (form.get("storeId") as Exclude<StoreId, "all">) || (storeFilter !== "all" ? storeFilter : currentUser?.storeId) || "store-1";
     const payload: PhoneItem = {
       id: editingPhoneId ?? `p${Date.now()}`,
       brand: String(form.get("brand")),
@@ -953,7 +960,7 @@ export default function Home() {
                       <div className="h-4 w-4 shrink-0 rounded-full border border-slate-200 shadow-sm" style={{ backgroundColor: getColorCode(item.color) }} />
                       <span className="text-base font-medium text-slate-700">{item.color}</span>
                     </div>,
-                    <div className="flex items-center justify-center gap-1.5 text-base font-bold text-amber-600" key={`bat-${item.id}`}><Activity size={16} />{item.batteryCondition}</div>,
+                    <div className="flex items-center justify-center gap-1.5 text-base font-bold text-amber-600" key={`bat-${item.id}`}>{item.batteryCondition}</div>,
                     <div key={item.id} className="flex flex-nowrap justify-center gap-2">
                       <button onClick={() => setViewingPhoneId(item.id)} title="Chi tiết" className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-900">
                         <Eye size={20} />
@@ -1068,38 +1075,23 @@ export default function Home() {
                     {inventoryTab === "phones" ? (
                       <form key={editingPhone?.id ?? "new-phone"} onSubmit={savePhone} className="grid gap-3">
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <SelectField label="Hãng" name="brand" options={["iPhone", "Samsung", "Oppo", "Xiaomi"].map((b) => [b, b])} defaultValue={editingPhone?.brand ?? "iPhone"} />
-                          <Field label="Tên máy">
-                            <input name="name" required list="phone-models" defaultValue={editingPhone?.name} className="h-10 w-full rounded-lg border border-line bg-white px-3" placeholder="13 Pro" />
-                            <datalist id="phone-models">
-                              <option value="10" />
-                              <option value="11" />
-                              <option value="12" />
-                              <option value="13 Pro" />
-                              <option value="Galaxy S22" />
-                              <option value="Galaxy Z Fold4" />
-                              <option value="Reno 8" />
-                              <option value="Find X5" />
-                              <option value="Redmi Note 12" />
-                              <option value="Xiaomi 13" />
-                            </datalist>
-                          </Field>
+                          <ManageableSelect label="Hãng" name="brand" options={brandOptions} setOptions={setBrandOptions} defaultValue={editingPhone?.brand ?? brandOptions[0]} />
+                          <ManageableSelect label="Tên máy" name="name" options={nameOptions} setOptions={setNameOptions} defaultValue={editingPhone?.name ?? nameOptions[0]} />
                         </div>
                         <Field label="IMEI"><input name="imei" required defaultValue={editingPhone?.imei} className="h-10 rounded-lg border border-line px-3" placeholder="356789..." /></Field>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <Field label="Màu sắc"><input name="color" defaultValue={editingPhone?.color} className="h-10 rounded-lg border border-line px-3" placeholder="Xanh" /></Field>
-                          <Field label="Dung lượng"><input name="storage" defaultValue={editingPhone?.storage} className="h-10 rounded-lg border border-line px-3" placeholder="256GB" /></Field>
+                          <ManageableSelect label="Màu sắc" name="color" options={colorOptions} setOptions={setColorOptions} defaultValue={editingPhone?.color ?? colorOptions[0]} />
+                          <ManageableSelect label="Dung lượng" name="storage" options={storageOptions} setOptions={setStorageOptions} defaultValue={editingPhone?.storage ?? storageOptions[0]} />
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <Field label="Made In"><input name="madeIn" defaultValue={editingPhone?.madeIn} className="h-10 rounded-lg border border-line px-3" placeholder="VN/A, LL/A..." /></Field>
+                          <ManageableSelect label="Made In" name="madeIn" options={madeInOptions} setOptions={setMadeInOptions} defaultValue={editingPhone?.madeIn ?? madeInOptions[0]} />
                           <SelectField label="Phiên bản" name="networkVersion" options={["4G", "5G"].map((v) => [v, v])} defaultValue={editingPhone?.networkVersion ?? "5G"} />
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <SelectField label="Tình trạng pin" name="batteryCondition" options={["Zin", "Đã thay", "80-90%"].map((v) => [v, v])} defaultValue={editingPhone?.batteryCondition ?? "Zin"} />
-                          <SelectField label="Tình trạng máy" name="condition" options={["Zin", "Cũ", "Like New", "Mới 100%"].map((v) => [v, v])} defaultValue={editingPhone?.condition ?? "Like New"} />
+                          <ManageableSelect label="Tình trạng pin" name="batteryCondition" options={batteryOptions} setOptions={setBatteryOptions} defaultValue={editingPhone?.batteryCondition ?? batteryOptions[0]} />
+                          <ManageableSelect label="Tình trạng máy" name="condition" options={conditionOptions} setOptions={setConditionOptions} defaultValue={editingPhone?.condition ?? conditionOptions[0]} />
                         </div>
                         <Field label="Ghi chú"><input name="note" defaultValue={editingPhone?.note} className="h-10 rounded-lg border border-line px-3" placeholder="Màn đẹp, trầy viền nhẹ..." /></Field>
-                        <SelectField label="Cửa hàng" name="storeId" options={stores.map((s) => [s.id, s.name])} defaultValue={editingPhone?.storeId} />
                         <div className="grid gap-3 sm:grid-cols-2">
                           <Field label="Ngày nhập"><input name="importDate" type="date" defaultValue={editingPhone?.importDate || new Date().toISOString().slice(0, 10)} className="h-10 rounded-lg border border-line px-3" /></Field>
                           <Field label="Ngày bán"><input name="saleDate" type="date" defaultValue={editingPhone?.saleDate} className="h-10 rounded-lg border border-line px-3" /></Field>
@@ -1381,6 +1373,57 @@ function SelectField({ label, name, options, defaultValue }: { label: string; na
           </option>
         ))}
       </select>
+    </Field>
+  );
+}
+
+function ManageableSelect({ label, name, options, setOptions, defaultValue }: { label: string; name: string; options: string[]; setOptions: (o: string[]) => void; defaultValue?: string }) {
+  const selectRef = useRef<HTMLSelectElement>(null);
+
+  const handleAdd = () => {
+    const val = window.prompt(`Thêm giá trị mới cho ${label}:`);
+    if (val && val.trim() && !options.includes(val.trim())) {
+      setOptions([...options, val.trim()]);
+      setTimeout(() => { if (selectRef.current) selectRef.current.value = val.trim(); }, 0);
+    }
+  };
+
+  const handleEdit = () => {
+    const select = selectRef.current;
+    if (!select || !select.value) return;
+    const oldVal = select.value;
+    const val = window.prompt(`Sửa giá trị "${oldVal}" thành:`, oldVal);
+    if (val && val.trim() && val.trim() !== oldVal) {
+      setOptions(options.map(o => o === oldVal ? val.trim() : o));
+      setTimeout(() => { if (selectRef.current) selectRef.current.value = val.trim(); }, 0);
+    }
+  };
+
+  const handleDelete = () => {
+    const select = selectRef.current;
+    if (!select || !select.value) return;
+    if (window.confirm(`Xóa giá trị "${select.value}" khỏi danh sách ${label}?`)) {
+      setOptions(options.filter(o => o !== select.value));
+    }
+  };
+
+  const displayOptions = useMemo(() => {
+    if (defaultValue && !options.includes(defaultValue)) {
+      return [defaultValue, ...options];
+    }
+    return options;
+  }, [options, defaultValue]);
+
+  return (
+    <Field label={label}>
+      <div className="flex gap-1">
+        <select ref={selectRef} name={name} defaultValue={defaultValue || displayOptions[0]} className="h-10 min-w-0 flex-1 rounded-lg border border-line px-3 outline-none focus:border-brand">
+          {displayOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+        </select>
+        <button type="button" onClick={handleAdd} title="Thêm" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100"><Plus size={18} /></button>
+        <button type="button" onClick={handleEdit} title="Sửa" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100"><Edit3 size={18} /></button>
+        <button type="button" onClick={handleDelete} title="Xóa" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger hover:bg-red-100"><Trash2 size={18} /></button>
+      </div>
     </Field>
   );
 }
