@@ -60,6 +60,7 @@ type PhoneItem = {
   madeIn: string;
   networkVersion: string;
   batteryCondition: string;
+  batteryCapacity?: string;
   condition: string;
   note?: string;
   importDate?: string;
@@ -261,7 +262,7 @@ function storeName(id: StoreId) {
 }
 
 function formatMoney(value: number) {
-  return (value / 1000).toLocaleString("vi-VN");
+  return value.toLocaleString("vi-VN");
 }
 
 function formatInputMoney(value?: number | string) {
@@ -288,14 +289,19 @@ function Field({
   label,
   children,
   className = "",
+  required = false,
 }: {
   label: string;
   children: ReactNode;
   className?: string;
+  required?: boolean;
 }) {
   return (
     <label className={`grid gap-1.5 ${className}`}>
-      <span className="text-base font-black text-slate-950">{label}</span>
+      <span className="text-base font-black text-slate-950">
+        {label}
+        {required && <span className="ml-1 text-red-500">*</span>}
+      </span>
       {children}
     </label>
   );
@@ -321,12 +327,12 @@ function StatCard({ label, value, hint, icon }: { label: string; value: string; 
 export default function Home() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isStatsHidden, setIsStatsHidden] = useState(false);
-  const [inventorySubPage, setInventorySubPage] = useState<"dashboard" | "manage">("dashboard");
+  const [inventorySubPage, setInventorySubPage] = useState<"dashboard" | "manage">("manage");
   const [reportYear, setReportYear] = useState(() => new Date().getFullYear().toString());
   const [hideReportSold, setHideReportSold] = useState(false);
   const [hideReportRevenue, setHideReportRevenue] = useState(false);
   const [hideReportProfit, setHideReportProfit] = useState(false);
-  const [activePage, setActivePage] = useState<PageId>("dashboard");
+  const [activePage, setActivePage] = useState<PageId>("inventory");
   const [storeFilter, setStoreFilter] = useState<StoreId>("all");
   const [query, setQuery] = useState("");
   const [inventoryTab, setInventoryTab] = useState<"phones" | "accessories">("phones");
@@ -354,6 +360,7 @@ export default function Home() {
   const [storageOptions, setStorageOptions] = useState(["64GB", "128GB", "256GB", "512GB", "1TB"]);
   const [madeInOptions, setMadeInOptions] = useState(["VN/A", "LL/A", "Trung Quốc", "Việt Nam"]);
   const [batteryOptions, setBatteryOptions] = useState(["Zin", "Đã thay", "Đã thay pin", "80-90%", "Zin 88%", "Zin 90%", "Zin 92%", "Zin 98%", "Zin 100%"]);
+  const [batteryCapacityOptions, setBatteryCapacityOptions] = useState(["100%", "99%", "98%", "95%", "90%", "85%", "80%", "Dưới 80%"]);
   const [conditionOptions, setConditionOptions] = useState(["Zin", "Cũ", "Like New", "Mới 100%"]);
 
   const canCancel = currentUser?.role === "owner";
@@ -538,6 +545,7 @@ export default function Home() {
       madeIn: String(form.get("madeIn")),
       networkVersion: String(form.get("networkVersion")),
       batteryCondition: String(form.get("batteryCondition")),
+      batteryCapacity: String(form.get("batteryCapacity") || ""),
       condition: String(form.get("condition")),
       note: String(form.get("note") || ""),
       importDate: String(form.get("importDate") || new Date().toISOString().slice(0, 10)),
@@ -1182,28 +1190,30 @@ export default function Home() {
                   </div>
                   <div className="p-5">
                     {inventoryTab === "phones" ? (
-                      <form key={editingPhone?.id ?? "new-phone"} onSubmit={savePhone} className="grid gap-3">
+                      <form key={editingPhone?.id ?? "new-phone"} onSubmit={savePhone} className="grid gap-3" autoComplete="off" spellCheck={false}>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <ManageableSelect label="Hãng" name="brand" options={brandOptions} setOptions={setBrandOptions} defaultValue={editingPhone?.brand ?? "iPhone"} />
-                          <ManageableSelect label="Tên máy" name="name" options={nameOptions} setOptions={setNameOptions} defaultValue={editingPhone?.name ?? nameOptions[0]} />
+                          <ManageableSelect label="Hãng" name="brand" options={brandOptions} setOptions={setBrandOptions} defaultValue={editingPhone?.brand} />
+                          <ManageableSelect label="Tên máy" name="name" options={nameOptions} setOptions={setNameOptions} defaultValue={editingPhone?.name} />
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <Field label="IMEI"><input name="imei" required defaultValue={editingPhone?.imei} className="h-10 rounded-lg border border-line px-3" placeholder="356789..." /></Field>
+                          <Field label="IMEI"><input name="imei" defaultValue={editingPhone?.imei} className="h-10 rounded-lg border border-line px-3" /></Field>
                           <SelectField label="Trạng thái" name="status" options={["Còn hàng", "Đã bán", "Đã hủy", "Chưa xử lý"].map((status) => [status, status])} defaultValue={editingPhone?.status ?? "Còn hàng"} />
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <ManageableSelect label="Màu sắc" name="color" options={colorOptions} setOptions={setColorOptions} defaultValue={editingPhone?.color ?? colorOptions[0]} />
-                          <ManageableSelect label="Dung lượng" name="storage" options={storageOptions} setOptions={setStorageOptions} defaultValue={editingPhone?.storage ?? storageOptions[0]} />
+                          <ManageableSelect label="Màu sắc" name="color" options={colorOptions} setOptions={setColorOptions} defaultValue={editingPhone?.color} />
+                          <ManageableSelect label="Dung lượng máy" name="storage" options={storageOptions} setOptions={setStorageOptions} defaultValue={editingPhone?.storage} />
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <ManageableSelect label="Made In" name="madeIn" options={madeInOptions} setOptions={setMadeInOptions} defaultValue={editingPhone?.madeIn ?? madeInOptions[0]} />
-                          <SelectField label="Phiên bản" name="networkVersion" options={["4G", "5G"].map((v) => [v, v])} defaultValue={editingPhone?.networkVersion ?? "5G"} />
+                          <ManageableSelect label="Quốc gia" name="madeIn" options={madeInOptions} setOptions={setMadeInOptions} defaultValue={editingPhone?.madeIn} required={false} />
+                          <ManageableSelect label="Tình trạng máy" name="condition" options={conditionOptions} setOptions={setConditionOptions} defaultValue={editingPhone?.condition} />
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <ManageableSelect label="Tình trạng pin" name="batteryCondition" options={batteryOptions} setOptions={setBatteryOptions} defaultValue={editingPhone?.batteryCondition ?? batteryOptions[0]} />
-                          <ManageableSelect label="Tình trạng máy" name="condition" options={conditionOptions} setOptions={setConditionOptions} defaultValue={editingPhone?.condition ?? conditionOptions[0]} />
+                          <ManageableSelect label="Tình trạng pin" name="batteryCondition" options={batteryOptions} setOptions={setBatteryOptions} defaultValue={editingPhone?.batteryCondition} />
+                          <ManageableSelect label="Dung lượng pin" name="batteryCapacity" options={batteryCapacityOptions} setOptions={setBatteryCapacityOptions} defaultValue={editingPhone?.batteryCapacity} required={false} />
                         </div>
-                        <Field label="Ghi chú"><input name="note" defaultValue={editingPhone?.note} className="h-10 rounded-lg border border-line px-3" placeholder="Màn đẹp, trầy viền nhẹ..." /></Field>
+                        <div className="grid gap-3 sm:grid-cols-1">
+                          <Field label="Ghi chú"><input name="note" defaultValue={editingPhone?.note} className="h-10 rounded-lg border border-line px-3" /></Field>
+                        </div>
                         <div className="grid gap-3 sm:grid-cols-2">
                           <Field label="Ngày nhập"><input name="importDate" type="date" defaultValue={editingPhone?.importDate || new Date().toISOString().slice(0, 10)} className="h-10 rounded-lg border border-line px-3" /></Field>
                           <Field label="Ngày bán"><input name="saleDate" type="date" defaultValue={editingPhone?.saleDate} className="h-10 rounded-lg border border-line px-3" /></Field>
@@ -1221,9 +1231,9 @@ export default function Home() {
                         </div>
                       </form>
                     ) : (
-                      <form key={editingAccessory?.id ?? "new-accessory"} onSubmit={saveAccessory} className="grid gap-3">
-                        <Field label="Mã hàng"><input name="code" required defaultValue={editingAccessory?.code} className="h-10 rounded-lg border border-line px-3" placeholder="PK-CAP20" /></Field>
-                        <Field label="Tên phụ kiện"><input name="name" required defaultValue={editingAccessory?.name} className="h-10 rounded-lg border border-line px-3" placeholder="Cáp sạc nhanh 20W" /></Field>
+                      <form key={editingAccessory?.id ?? "new-accessory"} onSubmit={saveAccessory} className="grid gap-3" autoComplete="off" spellCheck={false}>
+                        <Field label="Mã hàng" required><input name="code" required defaultValue={editingAccessory?.code} className="h-10 rounded-lg border border-line px-3" placeholder="PK-CAP20" /></Field>
+                        <Field label="Tên phụ kiện" required><input name="name" required defaultValue={editingAccessory?.name} className="h-10 rounded-lg border border-line px-3" placeholder="Cáp sạc nhanh 20W" /></Field>
                         <SelectField label="Cửa hàng" name="storeId" options={stores.map((s) => [s.id, s.name])} defaultValue={editingAccessory?.storeId} />
                         <div className="grid gap-3 sm:grid-cols-2">
                           <Field label="Số lượng"><input name="quantity" type="number" min="0" defaultValue={editingAccessory?.quantity ?? 1} className="h-10 rounded-lg border border-line px-3" /></Field>
@@ -1282,17 +1292,19 @@ export default function Home() {
                             {viewingPhone.color}
                           </div>
                         </Field>
-                        <Field label="Dung lượng"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.storage}</div></Field>
+                        <Field label="Dung lượng máy"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.storage}</div></Field>
                       </div>
                       <div className="grid gap-3 sm:grid-cols-2">
-                        <Field label="Xuất xứ/Phiên bản"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.madeIn}</div></Field>
-                        <Field label="Phiên bản mạng"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.networkVersion}</div></Field>
+                        <Field label="Quốc gia"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.madeIn}</div></Field>
+                        <Field label="Tình trạng máy"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.condition}</div></Field>
                       </div>
                       <div className="grid gap-3 sm:grid-cols-2">
                         <Field label="Tình trạng pin"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.batteryCondition}</div></Field>
-                        <Field label="Tình trạng máy"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.condition}</div></Field>
+                        <Field label="Dung lượng pin"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.batteryCapacity || "Không rõ"}</div></Field>
                       </div>
-                      <Field label="Ghi chú"><div className="flex min-h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 py-2 text-slate-800">{viewingPhone.note || "Không có ghi chú"}</div></Field>
+                      <div className="grid gap-3 sm:grid-cols-1">
+                        <Field label="Ghi chú"><div className="flex min-h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 py-2 text-slate-800">{viewingPhone.note || "Không có ghi chú"}</div></Field>
+                      </div>
                       <div className="grid gap-3 sm:grid-cols-2">
                         <Field label="Ngày nhập"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.importDate ? new Date(viewingPhone.importDate).toLocaleDateString("vi-VN") : "Chưa có"}</div></Field>
                         <Field label="Ngày bán"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.saleDate ? new Date(viewingPhone.saleDate).toLocaleDateString("vi-VN") : "Chưa bán"}</div></Field>
@@ -1467,8 +1479,9 @@ function Panel({ title, children }: { title: string; children: ReactNode }) {
 
 function SelectField({ label, name, options, defaultValue }: { label: string; name: string; options: string[][]; defaultValue?: string }) {
   return (
-    <Field label={label}>
-      <select name={name} defaultValue={defaultValue} className="h-10 rounded-lg border border-line px-3">
+    <Field label={label} required>
+      <select name={name} required defaultValue={defaultValue ?? ""} className="h-10 rounded-lg border border-line px-3">
+        <option value="" disabled hidden>Chọn</option>
         {options.map(([value, text]) => (
           <option key={`${name}-${value}`} value={value}>
             {text}
@@ -1496,7 +1509,7 @@ function MoneyInput({ name, defaultValue }: { name: string; defaultValue?: numbe
   );
 }
 
-function ManageableSelect({ label, name, options, setOptions, defaultValue }: { label: string; name: string; options: string[]; setOptions: (o: string[]) => void; defaultValue?: string }) {
+function ManageableSelect({ label, name, options, setOptions, defaultValue, required = true }: { label: string; name: string; options: string[]; setOptions: (o: string[]) => void; defaultValue?: string; required?: boolean }) {
   const selectRef = useRef<HTMLSelectElement>(null);
 
   const handleAdd = () => {
@@ -1534,9 +1547,10 @@ function ManageableSelect({ label, name, options, setOptions, defaultValue }: { 
   }, [options, defaultValue]);
 
   return (
-    <Field label={label}>
+    <Field label={label} required={required}>
       <div className="flex gap-1">
-        <select ref={selectRef} name={name} defaultValue={defaultValue || displayOptions[0]} className="h-10 min-w-0 flex-1 rounded-lg border border-line px-3 outline-none focus:border-brand">
+        <select ref={selectRef} name={name} required={required} defaultValue={defaultValue ?? ""} className="h-10 min-w-0 flex-1 rounded-lg border border-line px-3 outline-none focus:border-brand">
+          <option value="" disabled hidden>Chọn</option>
           {displayOptions.map((o) => <option key={o} value={o}>{o}</option>)}
         </select>
         <button type="button" onClick={handleAdd} title="Thêm" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100"><Plus size={18} /></button>
