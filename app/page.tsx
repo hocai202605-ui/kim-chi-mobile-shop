@@ -1,5 +1,6 @@
 "use client";
 
+import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
   Activity,
   Boxes,
@@ -9,6 +10,7 @@ import {
   CreditCard,
   Edit3,
   Eye,
+  EyeOff,
   FileText,
   LayoutDashboard,
   LogOut,
@@ -29,7 +31,7 @@ import { FormEvent, ReactNode, useMemo, useRef, useState } from "react";
 type Role = "owner" | "staff";
 type StoreId = "all" | "store-1" | "store-2" | "store-3";
 type PaymentMethod = "Tiền mặt" | "Chuyển khoản" | "Thẻ" | "Khác";
-type ProductStatus = "Còn hàng" | "Đã bán" | "Đã hủy";
+type ProductStatus = "Còn hàng" | "Đã bán" | "Đã hủy" | "Chưa xử lý";
 type AccessoryStatus = "Còn hàng" | "Hết hàng" | "Đã hủy";
 type RepairStatus = "Đang chờ" | "Đang sửa" | "Đã xong" | "Đã trả khách" | "Đã hủy";
 
@@ -183,6 +185,18 @@ const salesSeed: Sale[] = [
   { id: "s4", createdAt: "2026-07-05", customerId: "c1", storeId: "store-2", itemName: "Ốp lưng chống sốc iPhone 14", itemType: "Phụ kiện", quantity: 1, amount: 110000, profit: 70000, payment: "Tiền mặt", status: "Hoàn tất" },
   { id: "s5", createdAt: "2026-07-04", customerId: "c2", storeId: "store-1", itemName: "Cáp sạc nhanh 20W Apple", itemType: "Phụ kiện", quantity: 1, amount: 120000, profit: 65000, payment: "Chuyển khoản", status: "Hoàn tất" },
   { id: "s6", createdAt: "2026-07-03", customerId: "c3", storeId: "store-3", itemName: "Củ sạc GaN 65W Baseus", itemType: "Phụ kiện", quantity: 1, amount: 550000, profit: 230000, payment: "Tiền mặt", status: "Hoàn tất" },
+  { id: "s7", createdAt: "2026-01-15", customerId: "c1", storeId: "store-1", itemName: "iPhone 15 Pro Max", itemType: "Máy", quantity: 2, amount: 62000000, profit: 5000000, payment: "Chuyển khoản", status: "Hoàn tất" },
+  { id: "s8", createdAt: "2026-02-10", customerId: "c2", storeId: "store-2", itemName: "Samsung S22 Ultra", itemType: "Máy", quantity: 1, amount: 14000000, profit: 1200000, payment: "Tiền mặt", status: "Hoàn tất" },
+  { id: "s9", createdAt: "2026-03-20", customerId: "c3", storeId: "store-3", itemName: "iPhone 11 64GB", itemType: "Máy", quantity: 3, amount: 19500000, profit: 3000000, payment: "Thẻ", status: "Hoàn tất" },
+  { id: "s10", createdAt: "2026-04-05", customerId: "c1", storeId: "store-1", itemName: "Oppo Reno 8", itemType: "Máy", quantity: 1, amount: 8500000, profit: 1500000, payment: "Chuyển khoản", status: "Hoàn tất" },
+  { id: "s11", createdAt: "2026-05-12", customerId: "c2", storeId: "store-2", itemName: "Xiaomi Redmi Note 12", itemType: "Máy", quantity: 4, amount: 16800000, profit: 2800000, payment: "Tiền mặt", status: "Hoàn tất" },
+  { id: "s12", createdAt: "2026-06-25", customerId: "c3", storeId: "store-3", itemName: "iPhone 14 Pro Max", itemType: "Máy", quantity: 1, amount: 23200000, profit: 1700000, payment: "Chuyển khoản", status: "Hoàn tất" },
+  { id: "s13", createdAt: "2026-02-28", customerId: "c1", storeId: "store-1", itemName: "Z Fold 5", itemType: "Máy", quantity: 1, amount: 28000000, profit: 3000000, payment: "Thẻ", status: "Hoàn tất" },
+  { id: "s14", createdAt: "2026-04-18", customerId: "c2", storeId: "store-2", itemName: "iPhone XS Max", itemType: "Máy", quantity: 2, amount: 11000000, profit: 2000000, payment: "Tiền mặt", status: "Hoàn tất" },
+  { id: "s15", createdAt: "2026-01-05", customerId: "c3", storeId: "store-3", itemName: "Sạc dự phòng 10000mAh", itemType: "Phụ kiện", quantity: 5, amount: 2000000, profit: 750000, payment: "Chuyển khoản", status: "Hoàn tất" },
+  { id: "s16", createdAt: "2026-03-10", customerId: "c1", storeId: "store-1", itemName: "Tai nghe AirPods Pro 2", itemType: "Phụ kiện", quantity: 2, amount: 1100000, profit: 400000, payment: "Tiền mặt", status: "Hoàn tất" },
+  { id: "s17", createdAt: "2026-05-22", customerId: "c2", storeId: "store-2", itemName: "Giá đỡ điện thoại ô tô", itemType: "Phụ kiện", quantity: 3, amount: 450000, profit: 240000, payment: "Thẻ", status: "Hoàn tất" },
+  { id: "s18", createdAt: "2026-06-15", customerId: "c3", storeId: "store-3", itemName: "Dây đeo Apple Watch", itemType: "Phụ kiện", quantity: 4, amount: 480000, profit: 300000, payment: "Chuyển khoản", status: "Hoàn tất" },
 ];
 
 const repairsSeed: Repair[] = [
@@ -250,6 +264,15 @@ function formatMoney(value: number) {
   return (value / 1000).toLocaleString("vi-VN");
 }
 
+function formatInputMoney(value?: number | string) {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  return digits ? Number(digits).toLocaleString("vi-VN") : "";
+}
+
+function parseInputMoney(value: FormDataEntryValue | null) {
+  return Number(String(value ?? "").replace(/\D/g, "") || 0);
+}
+
 function StatusBadge({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "ok" | "warn" | "danger" }) {
   const toneClass = {
     neutral: "bg-slate-100 text-slate-700",
@@ -271,8 +294,8 @@ function Field({
   className?: string;
 }) {
   return (
-    <label className={`grid gap-1.5 text-sm font-bold text-slate-700 ${className}`}>
-      {label}
+    <label className={`grid gap-1.5 ${className}`}>
+      <span className="text-base font-black text-slate-950">{label}</span>
       {children}
     </label>
   );
@@ -297,16 +320,23 @@ function StatCard({ label, value, hint, icon }: { label: string; value: string; 
 
 export default function Home() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isStatsHidden, setIsStatsHidden] = useState(false);
+  const [inventorySubPage, setInventorySubPage] = useState<"dashboard" | "manage">("dashboard");
+  const [reportYear, setReportYear] = useState(() => new Date().getFullYear().toString());
+  const [hideReportSold, setHideReportSold] = useState(false);
+  const [hideReportRevenue, setHideReportRevenue] = useState(false);
+  const [hideReportProfit, setHideReportProfit] = useState(false);
   const [activePage, setActivePage] = useState<PageId>("dashboard");
   const [storeFilter, setStoreFilter] = useState<StoreId>("all");
   const [query, setQuery] = useState("");
   const [inventoryTab, setInventoryTab] = useState<"phones" | "accessories">("phones");
   const [inventoryPage, setInventoryPage] = useState(1);
+  const [inventoryReportMonth, setInventoryReportMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [inventoryTypeFilter, setInventoryTypeFilter] = useState("all");
+  const [inventoryBrandFilter, setInventoryBrandFilter] = useState("iPhone");
   const [inventoryNameFilter, setInventoryNameFilter] = useState("");
   const [inventoryPriceRange, setInventoryPriceRange] = useState("all");
   const [inventoryStatusFilter, setInventoryStatusFilter] = useState("Còn hàng");
-  const [inventorySort, setInventorySort] = useState("price-desc");
   const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false);
   const [editingPhoneId, setEditingPhoneId] = useState<string | null>(null);
   const [viewingPhoneId, setViewingPhoneId] = useState<string | null>(null);
@@ -346,14 +376,15 @@ export default function Home() {
       const matchesStore = storeFilter === "all" || item.storeId === storeFilter;
       const q = query.toLowerCase();
       const name = inventoryNameFilter.toLowerCase();
-      const matchesQuickSearch = [item.name, item.imei, item.condition, item.color].join(" ").toLowerCase().includes(q);
+      const matchesQuickSearch = [item.name, item.imei, item.condition, item.color, item.storage].join(" ").toLowerCase().includes(q);
       const matchesName = item.name.toLowerCase().includes(name);
+      const matchesBrand = inventoryBrandFilter === "all" || item.brand === inventoryBrandFilter;
       const matchesType = inventoryTypeFilter === "all" || item.name.toLowerCase().startsWith(inventoryTypeFilter.toLowerCase());
       const matchesPrice = item.expectedPrice >= minInventoryPrice && item.expectedPrice <= maxInventoryPrice;
       const matchesStatus = inventoryStatusFilter === "all" || item.status === inventoryStatusFilter;
-      return matchesStore && matchesQuickSearch && matchesName && matchesType && matchesPrice && matchesStatus;
+      return matchesStore && matchesQuickSearch && matchesName && matchesBrand && matchesType && matchesPrice && matchesStatus;
     })
-    .sort((a, b) => (inventorySort === "price-asc" ? a.expectedPrice - b.expectedPrice : b.expectedPrice - a.expectedPrice));
+    .sort((a, b) => b.expectedPrice - a.expectedPrice);
 
   const filteredAccessories = accessories
     .filter((item) => {
@@ -367,7 +398,7 @@ export default function Home() {
       const matchesStatus = inventoryStatusFilter === "all" || item.status === inventoryStatusFilter || (inventoryStatusFilter === "Đã bán" && item.status === "Hết hàng");
       return matchesStore && matchesQuickSearch && matchesName && matchesType && matchesPrice && matchesStatus;
     })
-    .sort((a, b) => (inventorySort === "price-asc" ? a.price - b.price : b.price - a.price));
+    .sort((a, b) => b.price - a.price);
 
   const filteredRepairs = repairs.filter((item) => storeFilter === "all" || item.storeId === storeFilter);
   const filteredLedger = ledger.filter((item) => storeFilter === "all" || item.storeId === storeFilter);
@@ -382,25 +413,20 @@ export default function Home() {
   const editingPhone = editingPhoneId ? phones.find((item) => item.id === editingPhoneId) : null;
   const editingAccessory = editingAccessoryId ? accessories.find((item) => item.id === editingAccessoryId) : null;
   const viewingPhone = viewingPhoneId ? phones.find((item) => item.id === viewingPhoneId) : null;
-  const inventorySummary = useMemo(() => {
-    const visiblePhones = phones.filter((item) => storeFilter === "all" || item.storeId === storeFilter);
-    const visibleAccessories = accessories.filter((item) => storeFilter === "all" || item.storeId === storeFilter);
-    const availablePhones = visiblePhones.filter((item) => item.status === "Còn hàng");
-    const activeAccessories = visibleAccessories.filter((item) => item.status !== "Đã hủy");
-    const phoneValue = availablePhones.reduce((sum, item) => sum + item.expectedPrice, 0);
-    const accessoryValue = activeAccessories.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const totalValue = phoneValue + accessoryValue;
-    const lowAccessories = activeAccessories.filter((item) => item.quantity <= 10).length;
+  const inventoryMonthlyReport = useMemo(() => {
+    const monthlySales = sales.filter((item) => {
+      const matchesStore = storeFilter === "all" || item.storeId === storeFilter;
+      return matchesStore && item.status === "Hoàn tất" && item.createdAt.startsWith(inventoryReportMonth);
+    });
 
     return {
-      availablePhones: availablePhones.length,
-      accessoryQuantity: activeAccessories.reduce((sum, item) => sum + item.quantity, 0),
-      totalValue,
-      lowAccessories,
-      phonePercent: totalValue ? Math.round((phoneValue / totalValue) * 100) : 0,
-      accessoryPercent: totalValue ? Math.round((accessoryValue / totalValue) * 100) : 0,
+      soldPhones: monthlySales
+        .filter((item) => item.itemType === "Máy")
+        .reduce((sum, item) => sum + item.quantity, 0),
+      revenue: monthlySales.reduce((sum, item) => sum + item.amount, 0),
+      profit: monthlySales.reduce((sum, item) => sum + item.profit, 0),
     };
-  }, [accessories, phones, storeFilter]);
+  }, [inventoryReportMonth, sales, storeFilter]);
 
   const dashboard = useMemo(() => {
     const activePhones = phones.filter((item) => item.status === "Còn hàng" && (storeFilter === "all" || item.storeId === storeFilter));
@@ -421,6 +447,32 @@ export default function Home() {
       repairs: activeRepairs.length,
     };
   }, [accessories, ledger, phones, repairs, sales, storeFilter]);
+
+  const yearlyReportData = useMemo(() => {
+    const months = Array.from({ length: 12 }, (_, i) => ({
+      month: `Tháng ${i + 1}`,
+      revenue: 0,
+      profit: 0,
+      sold: 0,
+    }));
+
+    sales.forEach((sale) => {
+      if (sale.status === "Hoàn tất" && (storeFilter === "all" || sale.storeId === storeFilter)) {
+        if (sale.createdAt.startsWith(reportYear)) {
+          const monthIndex = parseInt(sale.createdAt.split("-")[1], 10) - 1;
+          if (monthIndex >= 0 && monthIndex < 12) {
+            months[monthIndex].revenue += sale.amount;
+            months[monthIndex].profit += sale.profit;
+            if (sale.itemType === "Máy") {
+              months[monthIndex].sold += sale.quantity;
+            }
+          }
+        }
+      }
+    });
+
+    return months;
+  }, [sales, reportYear, storeFilter]);
 
   function pushLog(action: string, target: string, storeId: Exclude<StoreId, "all">) {
     setLogs((prev) => [
@@ -491,8 +543,8 @@ export default function Home() {
       importDate: String(form.get("importDate") || new Date().toISOString().slice(0, 10)),
       saleDate: String(form.get("saleDate") || ""),
       storeId,
-      cost: Number(form.get("cost") || 0),
-      expectedPrice: Number(form.get("expectedPrice") || 0),
+      cost: parseInputMoney(form.get("cost")),
+      expectedPrice: parseInputMoney(form.get("expectedPrice")),
       status: String(form.get("status")) as ProductStatus,
     };
 
@@ -514,8 +566,8 @@ export default function Home() {
       name: String(form.get("name")),
       storeId,
       quantity,
-      cost: Number(form.get("cost") || 0),
-      price: Number(form.get("price") || 0),
+      cost: parseInputMoney(form.get("cost")),
+      price: parseInputMoney(form.get("price")),
       status: String(form.get("status") || (quantity > 0 ? "Còn hàng" : "Hết hàng")) as AccessoryStatus,
     };
 
@@ -757,14 +809,14 @@ export default function Home() {
               Mật khẩu màn hình trong phiếu sửa đang được hiển thị như ghi chú thường theo phạm vi MVP; cần nâng cấp bảo mật ở giai đoạn backend.
             </div>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <StatCard label="Máy còn hàng" value={`${dashboard.phones}`} hint={storeName(storeFilter)} icon={<Smartphone size={20} />} />
-              <StatCard label="Phụ kiện tồn" value={`${dashboard.accessories}`} hint="Tổng số lượng khả dụng" icon={<PackagePlus size={20} />} />
-              <StatCard label="Tổng vốn" value={formatMoney(dashboard.capital)} hint="Máy + phụ kiện tồn" icon={<Store size={20} />} />
-              <StatCard label="Lãi đã ghi" value={formatMoney(dashboard.profit)} hint="Từ phiếu bán hiệu lực" icon={<Activity size={20} />} />
-              <StatCard label="Tổng thu" value={formatMoney(dashboard.income)} hint="Theo sổ thu chi" icon={<ReceiptText size={20} />} />
-              <StatCard label="Tổng chi" value={formatMoney(dashboard.expense)} hint="Theo sổ thu chi" icon={<CreditCard size={20} />} />
-              <StatCard label="Máy đang sửa" value={`${dashboard.repairs}`} hint="Chưa trả khách" icon={<Wrench size={20} />} />
-              <StatCard label="Dòng tiền ròng" value={formatMoney(dashboard.income - dashboard.expense)} hint="Thu trừ chi" icon={<FileText size={20} />} />
+              <StatCard label="Máy còn hàng" value={isStatsHidden ? "***" : `${dashboard.phones}`} hint={storeName(storeFilter)} icon={<Smartphone size={20} />} />
+              <StatCard label="Phụ kiện tồn" value={isStatsHidden ? "***" : `${dashboard.accessories}`} hint="Tổng số lượng khả dụng" icon={<PackagePlus size={20} />} />
+              <StatCard label="Tổng vốn" value={isStatsHidden ? "***" : formatMoney(dashboard.capital)} hint="Máy + phụ kiện tồn" icon={<Store size={20} />} />
+              <StatCard label="Lãi đã ghi" value={isStatsHidden ? "***" : formatMoney(dashboard.profit)} hint="Từ phiếu bán hiệu lực" icon={<Activity size={20} />} />
+              <StatCard label="Tổng thu" value={isStatsHidden ? "***" : formatMoney(dashboard.income)} hint="Theo sổ thu chi" icon={<ReceiptText size={20} />} />
+              <StatCard label="Tổng chi" value={isStatsHidden ? "***" : formatMoney(dashboard.expense)} hint="Theo sổ thu chi" icon={<CreditCard size={20} />} />
+              <StatCard label="Máy đang sửa" value={isStatsHidden ? "***" : `${dashboard.repairs}`} hint="Chưa trả khách" icon={<Wrench size={20} />} />
+              <StatCard label="Dòng tiền ròng" value={isStatsHidden ? "***" : formatMoney(dashboard.income - dashboard.expense)} hint="Thu trừ chi" icon={<FileText size={20} />} />
             </div>
           </div>
         )}
@@ -774,43 +826,111 @@ export default function Home() {
             <div className="rounded-lg border border-amber-200 bg-white p-5 shadow-panel">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <p className="text-sm font-black text-amber-700">Inventory Management</p>
-                  <h2 className="mt-2 text-3xl font-black">Quản lý kho hàng</h2>
-                  <p className="mt-2 text-sm font-semibold text-muted">Theo dõi máy cũ theo IMEI, phụ kiện theo số lượng, lọc giá và sắp xếp tồn kho.</p>
+                  <h2 className="text-3xl font-black">Quản lý điện thoại</h2>
                 </div>
-                <div className="rounded-lg border border-line bg-slate-50 px-4 py-3">
-                  <p className="text-xs font-bold text-muted">Đang xem</p>
-                  <strong className="text-base">{storeName(storeFilter)}</strong>
+                <div className="flex items-center gap-4">
+                  <div className="flex rounded-lg bg-slate-100 p-1">
+                    <button onClick={() => setInventorySubPage("dashboard")} className={`px-4 py-2 text-sm font-bold rounded-md transition ${inventorySubPage === "dashboard" ? "bg-white text-brand shadow-sm" : "text-muted hover:text-slate-900"}`}>Báo cáo năm</button>
+                    <button onClick={() => setInventorySubPage("manage")} className={`px-4 py-2 text-sm font-bold rounded-md transition ${inventorySubPage === "manage" ? "bg-white text-brand shadow-sm" : "text-muted hover:text-slate-900"}`}>Quản lý máy</button>
+                  </div>
+                  <div className="hidden rounded-lg border border-line bg-slate-50 px-4 py-3 sm:block">
+                    <p className="text-xs font-bold text-muted">Đang xem</p>
+                    <strong className="text-base">{storeName(storeFilter)}</strong>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-3">
-              <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
-                <p className="text-sm font-bold text-muted">Máy còn hàng</p>
-                <div className="mt-4 flex items-center justify-between">
-                  <strong className="text-3xl">{inventorySummary.availablePhones}</strong>
-                  <span className="grid h-11 w-11 place-items-center rounded-lg bg-red-50 text-danger"><Smartphone size={20} /></span>
+            {inventorySubPage === "dashboard" && (
+              <section className="rounded-lg border border-line bg-white p-5 shadow-panel">
+                <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <h2 className="text-xl font-black">Tổng quan năm {reportYear}</h2>
+                    <p className="text-sm font-semibold text-muted">Biểu đồ thống kê doanh thu, lợi nhuận và số máy bán ra theo từng tháng.</p>
+                  </div>
+                  <Field label="Chọn năm" className="w-full lg:w-32">
+                    <select value={reportYear} onChange={(e) => setReportYear(e.target.value)} className="h-10 rounded-lg border border-line bg-white px-3 font-bold">
+                      <option value="2024">2024</option>
+                      <option value="2025">2025</option>
+                      <option value="2026">2026</option>
+                    </select>
+                  </Field>
                 </div>
-                <p className="mt-4 text-sm font-semibold text-muted">{inventoryRowsCount} kết quả sau lọc</p>
-              </section>
-              <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
-                <p className="text-sm font-bold text-muted">Phụ kiện tồn</p>
-                <div className="mt-4 flex items-center justify-between">
-                  <strong className="text-3xl">{inventorySummary.accessoryQuantity}</strong>
-                  <span className="grid h-11 w-11 place-items-center rounded-lg bg-brand-soft text-brand"><PackagePlus size={20} /></span>
+                <div className="h-[400px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={yearlyReportData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                      <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12, fontWeight: 600 }} dy={10} />
+                      <YAxis yAxisId="left" orientation="left" stroke="#1e293b" axisLine={false} tickLine={false} tickFormatter={(val) => `${val / 1000000}M`} tick={{ fill: "#64748b", fontSize: 12, fontWeight: 600 }} dx={-10} />
+                      <YAxis yAxisId="right" orientation="right" stroke="#0ea5e9" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12, fontWeight: 600 }} dx={10} />
+                      <Tooltip
+                        cursor={{ fill: "#f1f5f9" }}
+                        contentStyle={{ borderRadius: "8px", border: "1px solid #e2e8f0", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)", fontWeight: "bold" }}
+                        formatter={(value: any, name: any) => {
+                          if (name === "Doanh thu" || name === "Lợi nhuận") return [formatMoney(value as number), name];
+                          return [value, name];
+                        }}
+                      />
+                      <Legend iconType="circle" wrapperStyle={{ paddingTop: "20px", fontWeight: "bold" }} />
+                      <Bar yAxisId="left" dataKey="revenue" name="Doanh thu" fill="#14b8a6" radius={[4, 4, 0, 0]} />
+                      <Bar yAxisId="left" dataKey="profit" name="Lợi nhuận" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                      <Bar yAxisId="right" dataKey="sold" name="Máy bán" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
-                <p className="mt-4 text-sm font-semibold text-muted">{inventorySummary.lowAccessories} mặt hàng sắp hết</p>
               </section>
-              <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
-                <p className="text-sm font-bold text-muted">Giá trị tồn dự kiến</p>
-                <strong className="mt-4 block text-3xl text-amber-700">{formatMoney(inventorySummary.totalValue)}</strong>
-                <div className="mt-5 h-2 rounded-full bg-slate-100">
-                  <div className="h-2 rounded-full bg-brand" style={{ width: `${Math.max(8, inventorySummary.phonePercent)}%` }} />
+            )}
+
+            {inventorySubPage === "manage" && (
+              <>
+            <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <h2 className="text-xl font-black">Báo cáo theo tháng</h2>
+                  <p className="text-sm font-semibold text-muted">Thống kê từ phiếu bán hoàn tất trong tháng đã chọn.</p>
                 </div>
-                <p className="mt-3 text-sm font-semibold text-muted">Máy chiếm {inventorySummary.phonePercent}% giá trị tồn</p>
-              </section>
-            </div>
+                <div className="flex items-end gap-2">
+                  <Field label="Chọn tháng" className="w-full lg:w-56">
+                    <input
+                      type="month"
+                      value={inventoryReportMonth}
+                      onChange={(event) => setInventoryReportMonth(event.target.value)}
+                      className="h-10 rounded-lg border border-line px-3 font-bold"
+                    />
+                  </Field>
+                  <button onClick={() => setIsStatsHidden(!isStatsHidden)} className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-50">
+                    {isStatsHidden ? <EyeOff size={17} /> : <Eye size={17} />}
+                    {isStatsHidden ? "Đã ẩn" : "Hiện số"}
+                  </button>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-4 md:grid-cols-3">
+                <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
+                  <p className="text-sm font-bold text-muted">Bán được</p>
+                  <div className="mt-4 flex items-center justify-between">
+                    <strong className="text-3xl text-sky-800">{isStatsHidden || hideReportSold ? "***" : `${inventoryMonthlyReport.soldPhones} con`}</strong>
+                    <button onClick={() => setHideReportSold(!hideReportSold)} className="grid h-11 w-11 place-items-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100"><Smartphone size={20} /></button>
+                  </div>
+                  <p className="mt-4 text-sm font-semibold text-muted">Số máy bán trong tháng</p>
+                </section>
+                <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
+                  <p className="text-sm font-bold text-muted">Tổng doanh thu tháng</p>
+                  <div className="mt-4 flex items-center justify-between">
+                    <strong className="text-3xl text-amber-700">{isStatsHidden || hideReportRevenue ? "***" : formatMoney(inventoryMonthlyReport.revenue)}</strong>
+                    <button onClick={() => setHideReportRevenue(!hideReportRevenue)} className="grid h-11 w-11 place-items-center rounded-lg bg-amber-50 text-amber-700 transition hover:bg-amber-100"><ReceiptText size={20} /></button>
+                  </div>
+                  <p className="mt-4 text-sm font-semibold text-muted">Từ phiếu bán hoàn tất</p>
+                </section>
+                <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
+                  <p className="text-sm font-bold text-muted">Tổng lợi nhuận tháng</p>
+                  <div className="mt-4 flex items-center justify-between">
+                    <strong className="text-3xl text-emerald-700">{isStatsHidden || hideReportProfit ? "***" : formatMoney(inventoryMonthlyReport.profit)}</strong>
+                    <button onClick={() => setHideReportProfit(!hideReportProfit)} className="grid h-11 w-11 place-items-center rounded-lg bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100"><Activity size={20} /></button>
+                  </div>
+                  <p className="mt-4 text-sm font-semibold text-muted">Lãi ghi nhận trong tháng</p>
+                </section>
+              </div>
+            </section>
 
             <section className="rounded-lg border border-line bg-white shadow-panel">
               <div className="border-b border-line p-4">
@@ -871,6 +991,20 @@ export default function Home() {
                     placeholder={inventoryTab === "phones" ? "Tên máy..." : "Tên phụ kiện..."}
                   />
                   <select
+                    value={inventoryBrandFilter}
+                    onChange={(event) => {
+                      setInventoryBrandFilter(event.target.value);
+                      setInventoryPage(1);
+                    }}
+                    disabled={inventoryTab !== "phones"}
+                    className="h-10 rounded-lg border border-line bg-white px-3 font-semibold disabled:bg-slate-100 disabled:text-muted"
+                  >
+                    <option value="all">Tất cả hãng</option>
+                    {brandOptions.map((brand) => (
+                      <option key={brand} value={brand}>{brand}</option>
+                    ))}
+                  </select>
+                  <select
                     value={inventoryTypeFilter}
                     onChange={(event) => {
                       setInventoryTypeFilter(event.target.value);
@@ -910,37 +1044,36 @@ export default function Home() {
                     <option value="all">Tất cả trạng thái</option>
                     <option value="Còn hàng">Còn hàng</option>
                     <option value="Đã bán">Đã bán</option>
-                  </select>
-                  <select value={inventorySort} onChange={(event) => setInventorySort(event.target.value)} className="h-10 rounded-lg border border-line bg-white px-3 font-semibold">
-                    <option value="price-desc">Giá cao đến thấp</option>
-                    <option value="price-asc">Giá thấp đến cao</option>
+                    <option value="Chưa xử lý">Chưa xử lý</option>
                   </select>
                 </div>
               </div>
 
               <div className="flex flex-col gap-4 p-4">
-                <aside className="rounded-lg border border-line bg-slate-50 p-4">
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex flex-1 gap-6">
-                      <div>
-                        <span className="block text-sm font-bold text-muted">Số lượng đã bán</span>
-                        <strong className="text-2xl text-emerald-600">
-                          {inventoryTab === "phones"
-                            ? phones.filter((p) => p.status === "Đã bán" && (storeFilter === "all" || p.storeId === storeFilter)).length
-                            : sales.filter((s) => s.itemType === "Phụ kiện" && s.status === "Hoàn tất" && (storeFilter === "all" || s.storeId === storeFilter)).reduce((sum, s) => sum + s.quantity, 0)}
-                        </strong>
-                      </div>
-                      <div className="w-px bg-line" />
-                      <div>
-                        <span className="block text-sm font-bold text-muted">Số lượng còn hàng</span>
-                        <strong className="text-2xl text-brand">
-                          {inventoryTab === "phones"
-                            ? phones.filter((p) => p.status === "Còn hàng" && (storeFilter === "all" || p.storeId === storeFilter)).length
-                            : accessories.filter((a) => a.status === "Còn hàng" && (storeFilter === "all" || a.storeId === storeFilter)).reduce((sum, a) => sum + a.quantity, 0)}
-                        </strong>
-                      </div>
-                    </div>
-                    <span className="rounded-md bg-white px-2 py-1 text-xs font-black text-muted shadow-sm">{storeName(storeFilter)}</span>
+                <aside className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+                    <span className="block text-sm font-bold text-emerald-700">Số lượng đã bán</span>
+                    <strong className="text-2xl text-emerald-700">
+                      {isStatsHidden ? "***" : (inventoryTab === "phones"
+                        ? phones.filter((p) => p.status === "Đã bán" && (storeFilter === "all" || p.storeId === storeFilter)).length
+                        : sales.filter((s) => s.itemType === "Phụ kiện" && s.status === "Hoàn tất" && (storeFilter === "all" || s.storeId === storeFilter)).reduce((sum, s) => sum + s.quantity, 0))}
+                    </strong>
+                  </div>
+                  <div className="rounded-lg border border-sky-200 bg-sky-50 p-4">
+                    <span className="block text-sm font-bold text-sky-700">Số lượng còn hàng</span>
+                    <strong className="text-2xl text-sky-700">
+                      {isStatsHidden ? "***" : (inventoryTab === "phones"
+                        ? phones.filter((p) => p.status === "Còn hàng" && (storeFilter === "all" || p.storeId === storeFilter)).length
+                        : accessories.filter((a) => a.status === "Còn hàng" && (storeFilter === "all" || a.storeId === storeFilter)).reduce((sum, a) => sum + a.quantity, 0))}
+                    </strong>
+                  </div>
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                    <span className="block text-sm font-bold text-amber-700">Số lượng chưa xử lý</span>
+                    <strong className="text-2xl text-amber-700">
+                      {isStatsHidden ? "***" : (inventoryTab === "phones"
+                        ? phones.filter((p) => p.status === "Chưa xử lý" && (storeFilter === "all" || p.storeId === storeFilter)).length
+                        : 0)}
+                    </strong>
                   </div>
                 </aside>
 
@@ -950,7 +1083,7 @@ export default function Home() {
                   headers={["Tên máy", "Dung lượng", "IMEI", "Giá bán", "Màu sắc", "Pin", "Thao tác"]}
                   rows={paginatedPhones.map((item) => [
                     <div key={`name-${item.id}`} className="flex flex-col items-center gap-1.5">
-                      <div className="flex items-center justify-center gap-2 text-lg font-black text-brand"><Smartphone size={18} className="text-slate-400" />{item.name}</div>
+                      <div className="flex items-center justify-center gap-2 text-lg font-black text-brand">{item.name}</div>
                       <span className="text-sm font-semibold text-slate-500">{item.brand} • <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-xs font-bold text-slate-600">{item.condition}</span></span>
                     </div>,
                     <span className="text-base font-bold text-slate-800" key={`storage-${item.id}`}>{item.storage}</span>,
@@ -1035,50 +1168,29 @@ export default function Home() {
             </section>
 
             {isInventoryModalOpen && (
-              <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4 backdrop-blur-sm">
-                <section className="max-h-[92vh] w-full max-w-[760px] overflow-auto rounded-lg border border-line bg-white shadow-[0_24px_80px_rgba(15,23,42,0.28)]">
-                  <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-line bg-white p-4">
+              <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-md">
+                <section className="max-h-[92vh] w-full max-w-[860px] overflow-auto rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
+                  <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-200/60 bg-white/80 p-5 backdrop-blur-md">
                     <div>
-                      <p className="text-sm font-black text-amber-700">Inventory Form</p>
-                      <h2 className="text-2xl font-black">
+                      <h2 className="text-2xl font-black text-slate-800">
                         {inventoryTab === "phones" ? (editingPhone ? "Sửa máy trong kho" : "Thêm máy vào kho") : editingAccessory ? "Sửa phụ kiện" : "Thêm phụ kiện"}
                       </h2>
                     </div>
-                    <button onClick={closeInventoryModal} className="h-9 rounded-lg border border-line bg-slate-50 px-3 text-sm font-black text-muted">
+                    <button onClick={closeInventoryModal} className="h-9 rounded-xl border border-slate-200/60 bg-white/50 px-4 text-sm font-black text-slate-600 backdrop-blur-md transition hover:bg-white hover:text-slate-900">
                       Đóng
                     </button>
                   </div>
-                  <div className="p-4">
-                    <div className="mb-4 inline-flex w-full rounded-lg border border-line bg-slate-100 p-1">
-                      <button
-                        disabled={Boolean(editingAccessory)}
-                        onClick={() => {
-                          setInventoryTab("phones");
-                          setEditingAccessoryId(null);
-                        }}
-                        className={`flex-1 rounded-md px-3 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-40 ${inventoryTab === "phones" ? "bg-white text-brand shadow-sm" : "text-muted"}`}
-                      >
-                        Máy cũ
-                      </button>
-                      <button
-                        disabled={Boolean(editingPhone)}
-                        onClick={() => {
-                          setInventoryTab("accessories");
-                          setEditingPhoneId(null);
-                        }}
-                        className={`flex-1 rounded-md px-3 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-40 ${inventoryTab === "accessories" ? "bg-white text-brand shadow-sm" : "text-muted"}`}
-                      >
-                        Phụ kiện
-                      </button>
-                    </div>
-
+                  <div className="p-5">
                     {inventoryTab === "phones" ? (
                       <form key={editingPhone?.id ?? "new-phone"} onSubmit={savePhone} className="grid gap-3">
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <ManageableSelect label="Hãng" name="brand" options={brandOptions} setOptions={setBrandOptions} defaultValue={editingPhone?.brand ?? brandOptions[0]} />
+                          <ManageableSelect label="Hãng" name="brand" options={brandOptions} setOptions={setBrandOptions} defaultValue={editingPhone?.brand ?? "iPhone"} />
                           <ManageableSelect label="Tên máy" name="name" options={nameOptions} setOptions={setNameOptions} defaultValue={editingPhone?.name ?? nameOptions[0]} />
                         </div>
-                        <Field label="IMEI"><input name="imei" required defaultValue={editingPhone?.imei} className="h-10 rounded-lg border border-line px-3" placeholder="356789..." /></Field>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <Field label="IMEI"><input name="imei" required defaultValue={editingPhone?.imei} className="h-10 rounded-lg border border-line px-3" placeholder="356789..." /></Field>
+                          <SelectField label="Trạng thái" name="status" options={["Còn hàng", "Đã bán", "Đã hủy", "Chưa xử lý"].map((status) => [status, status])} defaultValue={editingPhone?.status ?? "Còn hàng"} />
+                        </div>
                         <div className="grid gap-3 sm:grid-cols-2">
                           <ManageableSelect label="Màu sắc" name="color" options={colorOptions} setOptions={setColorOptions} defaultValue={editingPhone?.color ?? colorOptions[0]} />
                           <ManageableSelect label="Dung lượng" name="storage" options={storageOptions} setOptions={setStorageOptions} defaultValue={editingPhone?.storage ?? storageOptions[0]} />
@@ -1097,10 +1209,9 @@ export default function Home() {
                           <Field label="Ngày bán"><input name="saleDate" type="date" defaultValue={editingPhone?.saleDate} className="h-10 rounded-lg border border-line px-3" /></Field>
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <Field label="Giá nhập"><input name="cost" type="number" min="0" defaultValue={editingPhone?.cost} className="h-10 rounded-lg border border-line px-3" /></Field>
-                          <Field label="Giá dự kiến"><input name="expectedPrice" type="number" min="0" defaultValue={editingPhone?.expectedPrice} className="h-10 rounded-lg border border-line px-3" /></Field>
+                          <Field label="Giá nhập"><MoneyInput name="cost" defaultValue={editingPhone?.cost} /></Field>
+                          <Field label="Giá bán"><MoneyInput name="expectedPrice" defaultValue={editingPhone?.expectedPrice} /></Field>
                         </div>
-                        <SelectField label="Trạng thái" name="status" options={["Còn hàng", "Đã bán", "Đã hủy"].map((status) => [status, status])} defaultValue={editingPhone?.status ?? "Còn hàng"} />
                         <div className="flex justify-end gap-2 border-t border-line pt-4">
                           <button type="button" onClick={closeInventoryModal} className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted">Hủy</button>
                           <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark">
@@ -1116,9 +1227,9 @@ export default function Home() {
                         <SelectField label="Cửa hàng" name="storeId" options={stores.map((s) => [s.id, s.name])} defaultValue={editingAccessory?.storeId} />
                         <div className="grid gap-3 sm:grid-cols-2">
                           <Field label="Số lượng"><input name="quantity" type="number" min="0" defaultValue={editingAccessory?.quantity ?? 1} className="h-10 rounded-lg border border-line px-3" /></Field>
-                          <Field label="Giá nhập"><input name="cost" type="number" min="0" defaultValue={editingAccessory?.cost} className="h-10 rounded-lg border border-line px-3" /></Field>
+                          <Field label="Giá nhập"><MoneyInput name="cost" defaultValue={editingAccessory?.cost} /></Field>
                         </div>
-                        <Field label="Giá bán"><input name="price" type="number" min="0" defaultValue={editingAccessory?.price} className="h-10 rounded-lg border border-line px-3" /></Field>
+                        <Field label="Giá bán"><MoneyInput name="price" defaultValue={editingAccessory?.price} /></Field>
                         <SelectField label="Trạng thái" name="status" options={["Còn hàng", "Hết hàng", "Đã hủy"].map((status) => [status, status])} defaultValue={editingAccessory?.status ?? "Còn hàng"} />
                         <div className="flex justify-end gap-2 border-t border-line pt-4">
                           <button type="button" onClick={closeInventoryModal} className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted">Hủy</button>
@@ -1135,11 +1246,11 @@ export default function Home() {
             )}
 
             {viewingPhone && (
-              <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4 backdrop-blur-sm">
-                <section className="w-full max-w-[640px] overflow-hidden rounded-lg border border-line bg-white shadow-[0_24px_80px_rgba(15,23,42,0.28)]">
-                  <div className="flex items-center justify-between border-b border-line bg-slate-50 p-4">
+              <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-md">
+                <section className="max-h-[92vh] w-full max-w-[860px] overflow-auto rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
+                  <div className="flex items-center justify-between border-b border-slate-200/60 bg-gradient-to-r from-brand/10 to-transparent p-5">
                     <h2 className="text-xl font-black text-brand">Chi tiết máy</h2>
-                    <button onClick={() => setViewingPhoneId(null)} className="h-8 rounded-lg border border-line bg-white px-3 text-sm font-bold text-muted hover:bg-slate-100">Đóng</button>
+                    <button onClick={() => setViewingPhoneId(null)} className="h-9 rounded-xl border border-slate-200/60 bg-white/50 px-4 text-sm font-bold text-slate-600 backdrop-blur-md transition hover:bg-white hover:text-slate-900">Đóng</button>
                   </div>
                   <div className="grid gap-4 p-5">
                     <div className="flex items-center gap-3">
@@ -1151,65 +1262,56 @@ export default function Home() {
                         <span className="text-sm font-semibold text-muted">{viewingPhone.brand}</span>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-y-3 rounded-lg border border-line bg-slate-50 p-4 text-sm">
-                      <div>
-                        <span className="block text-xs font-bold text-muted">Màu sắc</span>
-                        <strong className="text-slate-800">{viewingPhone.color}</strong>
+                    <div className="grid gap-3">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Field label="Hãng"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.brand}</div></Field>
+                        <Field label="Tên máy"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.name}</div></Field>
                       </div>
-                      <div>
-                        <span className="block text-xs font-bold text-muted">Dung lượng</span>
-                        <strong className="text-slate-800">{viewingPhone.storage}</strong>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Field label="IMEI"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-mono text-slate-800">{viewingPhone.imei}</div></Field>
+                        <Field label="Trạng thái">
+                          <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3">
+                            <StatusBadge tone={viewingPhone.status === "Còn hàng" ? "ok" : viewingPhone.status === "Đã bán" ? "warn" : viewingPhone.status === "Chưa xử lý" ? "neutral" : "danger"}>{viewingPhone.status}</StatusBadge>
+                          </div>
+                        </Field>
                       </div>
-                      <div>
-                        <span className="block text-xs font-bold text-muted">Tình trạng máy</span>
-                        <strong className="text-slate-800">{viewingPhone.condition}</strong>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Field label="Màu sắc">
+                          <div className="flex h-10 w-full items-center gap-2 rounded-lg border border-line bg-slate-50 px-3 text-slate-800">
+                            <span className="h-3.5 w-3.5 rounded-full border border-slate-200" style={{ backgroundColor: getColorCode(viewingPhone.color) }} />
+                            {viewingPhone.color}
+                          </div>
+                        </Field>
+                        <Field label="Dung lượng"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.storage}</div></Field>
                       </div>
-                      <div>
-                        <span className="block text-xs font-bold text-muted">Tình trạng pin</span>
-                        <strong className="text-slate-800">{viewingPhone.batteryCondition}</strong>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Field label="Xuất xứ/Phiên bản"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.madeIn}</div></Field>
+                        <Field label="Phiên bản mạng"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.networkVersion}</div></Field>
                       </div>
-                      <div className="col-span-2">
-                        <span className="block text-xs font-bold text-muted">Quốc gia/Phiên bản</span>
-                        <strong className="text-slate-800">{viewingPhone.madeIn} ({viewingPhone.networkVersion})</strong>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Field label="Tình trạng pin"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.batteryCondition}</div></Field>
+                        <Field label="Tình trạng máy"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.condition}</div></Field>
                       </div>
-                      <div className="col-span-2">
-                        <span className="block text-xs font-bold text-muted">IMEI</span>
-                        <strong className="font-mono text-slate-800">{viewingPhone.imei}</strong>
+                      <Field label="Ghi chú"><div className="flex min-h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 py-2 text-slate-800">{viewingPhone.note || "Không có ghi chú"}</div></Field>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Field label="Ngày nhập"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.importDate ? new Date(viewingPhone.importDate).toLocaleDateString("vi-VN") : "Chưa có"}</div></Field>
+                        <Field label="Ngày bán"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.saleDate ? new Date(viewingPhone.saleDate).toLocaleDateString("vi-VN") : "Chưa bán"}</div></Field>
                       </div>
-                      <div>
-                        <span className="block text-xs font-bold text-muted">Giá nhập</span>
-                        <strong className="text-slate-800">{formatMoney(viewingPhone.cost)}</strong>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Field label="Mã máy"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-mono text-slate-800">{viewingPhone.id}</div></Field>
+                        <Field label="Cửa hàng"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{storeName(viewingPhone.storeId)}</div></Field>
                       </div>
-                      <div>
-                        <span className="block text-xs font-bold text-muted">Giá bán</span>
-                        <strong className="text-emerald-600">{formatMoney(viewingPhone.expectedPrice)}</strong>
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <Field label="Giá nhập"><div className="flex h-12 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-2xl font-black text-red-500">{formatMoney(viewingPhone.cost)}</div></Field>
+                        <Field label="Giá bán"><div className="flex h-12 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-2xl font-black text-emerald-600">{formatMoney(viewingPhone.expectedPrice)}</div></Field>
+                        <Field label="Lợi nhuận"><div className="flex h-12 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-2xl font-black text-amber-600">{formatMoney(viewingPhone.expectedPrice - viewingPhone.cost)}</div></Field>
                       </div>
-                      <div className="col-span-2">
-                        <span className="block text-xs font-bold text-muted">Lợi nhuận dự kiến</span>
-                        <strong className="text-base font-black text-amber-600">{formatMoney(viewingPhone.expectedPrice - viewingPhone.cost)}</strong>
-                      </div>
-                      <div>
-                        <span className="block text-xs font-bold text-muted">Ngày nhập</span>
-                        <strong className="text-slate-800">{viewingPhone.importDate ? new Date(viewingPhone.importDate).toLocaleDateString("vi-VN") : "Chưa có"}</strong>
-                      </div>
-                      <div>
-                        <span className="block text-xs font-bold text-muted">Ngày bán</span>
-                        <strong className="text-slate-800">{viewingPhone.saleDate ? new Date(viewingPhone.saleDate).toLocaleDateString("vi-VN") : "Chưa bán"}</strong>
-                      </div>
-                      <div className="col-span-2">
-                        <span className="block text-xs font-bold text-muted">Trạng thái</span>
-                        <StatusBadge tone={viewingPhone.status === "Còn hàng" ? "ok" : viewingPhone.status === "Đã bán" ? "warn" : "danger"}>{viewingPhone.status}</StatusBadge>
-                      </div>
-                      {viewingPhone.note && (
-                        <div className="col-span-2 mt-2 rounded-lg bg-white p-2 border border-line">
-                          <span className="block text-xs font-bold text-muted">Ghi chú</span>
-                          <span className="text-slate-800">{viewingPhone.note}</span>
-                        </div>
-                      )}
                     </div>
                   </div>
                 </section>
               </div>
+            )}
+              </>
             )}
           </section>
         )}
@@ -1374,6 +1476,23 @@ function SelectField({ label, name, options, defaultValue }: { label: string; na
         ))}
       </select>
     </Field>
+  );
+}
+
+function MoneyInput({ name, defaultValue }: { name: string; defaultValue?: number }) {
+  function handleInput(event: FormEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    input.value = formatInputMoney(input.value);
+  }
+
+  return (
+    <input
+      name={name}
+      inputMode="numeric"
+      defaultValue={formatInputMoney(defaultValue)}
+      onInput={handleInput}
+      className="h-10 rounded-lg border border-line px-3"
+    />
   );
 }
 
