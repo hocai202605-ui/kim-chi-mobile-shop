@@ -1751,22 +1751,22 @@ export default function Home() {
             )}
 
             <div className="grid gap-4">
-              <div className="rounded-xl bg-gradient-to-br from-indigo-800 via-blue-700 to-brand p-6 sm:p-8 text-white shadow-xl relative overflow-hidden flex flex-col justify-center items-center text-center gap-4 mb-4">
+              <div className="rounded-lg bg-gradient-to-br from-indigo-800 via-blue-700 to-brand p-4 sm:p-5 text-white shadow relative overflow-hidden flex flex-col md:flex-row justify-between items-center md:text-left text-center gap-4 mb-4">
                 <div className="absolute top-0 right-0 -mt-16 -mr-16 h-64 w-64 rounded-full bg-white/10 blur-3xl mix-blend-overlay pointer-events-none"></div>
                 <div className="absolute bottom-0 left-0 -mb-16 -ml-16 h-48 w-48 rounded-full bg-white/10 blur-2xl pointer-events-none"></div>
-                <div className="relative z-10 w-full max-w-2xl mx-auto">
-                  <h1 className="text-2xl sm:text-3xl md:text-4xl font-black mb-3 text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500 drop-shadow-sm uppercase tracking-tight">
-                    Trung Tâm Giải Mã Phần Mềm<br className="hidden sm:block" /> Điện Thoại Di Động Nam Sách
+                <div className="relative z-10 md:w-1/2">
+                  <h1 className="text-lg sm:text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500 drop-shadow-sm uppercase tracking-tight">
+                    Trung Tâm Giải Mã Phần Mềm Điện Thoại Di Động Nam Sách
                   </h1>
-                  <p className="font-bold text-white/95 flex items-center justify-center gap-2 mb-2 text-sm sm:text-base">
-                    <span className="flex h-1.5 w-1.5 rounded-full bg-yellow-400 shrink-0"></span>
+                </div>
+                <div className="relative z-10 md:w-1/2 flex flex-col md:items-end gap-1">
+                  <p className="font-bold text-white/95 flex items-center gap-2 text-xs sm:text-sm">
+                    <span className="flex h-1.5 w-1.5 rounded-full bg-yellow-400 shrink-0 hidden md:block"></span>
                     Chuyên Nghiệp - Nhanh Chóng - Giá Thành Hợp Lý
-                    <span className="flex h-1.5 w-1.5 rounded-full bg-yellow-400 shrink-0"></span>
                   </p>
-                  <p className="text-sm font-semibold text-white/80 flex items-center justify-center gap-2">
-                    <span className="flex h-1.5 w-1.5 rounded-full bg-white/50 shrink-0"></span>
+                  <p className="font-semibold text-white/80 flex items-center gap-2 text-xs sm:text-sm">
+                    <span className="flex h-1.5 w-1.5 rounded-full bg-white/50 shrink-0 hidden md:block"></span>
                     Địa chỉ tin cậy và uy tín số 1 TP. Hải Phòng
-                    <span className="flex h-1.5 w-1.5 rounded-full bg-white/50 shrink-0"></span>
                   </p>
                 </div>
               </div>
@@ -1839,27 +1839,14 @@ export default function Home() {
                         isOnlineRepairSensitiveHidden ? "***" : formatMoney(item.deposit),
                         <span key={item.id} className="font-black text-amber-700">{isOnlineRepairSensitiveHidden ? "***" : formatMoney(item.quote - item.deposit)}</span>,
                         <span key={item.id} className="text-xs font-semibold text-slate-500 whitespace-nowrap">{formatDateTime(item.receiveDate)}</span>,
-                        <select 
+                        <span
                           key={item.id}
-                          value={isDaThanhToan ? "Đã thanh toán" : item.paymentStatus}
-                          onChange={(e) => {
-                            const newStatus = e.target.value as OnlineRepair["paymentStatus"];
-                            const now = new Date().toISOString().slice(0, 16);
-                            setOnlineRepairs(onlineRepairs.map(r => r.id === item.id ? {
-                              ...r, 
-                              paymentStatus: newStatus,
-                              paymentDate: (newStatus === "Đã thanh toán") && !r.paymentDate ? now : r.paymentDate,
-                              isPaid: newStatus === "Đã thanh toán"
-                            } : r));
-                          }}
-                          className={`h-8 rounded text-xs font-bold outline-none cursor-pointer px-1 shadow-sm border border-line ${isNợ ? "bg-red-50 text-red-600" : isDaThanhToan ? "bg-emerald-50 text-emerald-600" : "bg-slate-50 text-slate-600"}`}
+                          className={`inline-flex h-8 items-center rounded text-xs font-bold px-2 shadow-sm border border-line ${isNợ ? "bg-red-50 text-red-600" : isDaThanhToan ? "bg-emerald-50 text-emerald-600" : "bg-slate-50 text-slate-600"}`}
                         >
-                          <option value="Đã thanh toán">✅ Đã thanh toán</option>
-                          <option value="Nợ dai">❌ Nợ dai</option>
-                        </select>,
+                          {isDaThanhToan ? "✅ Đã thanh toán" : "❌ Nợ dai"}
+                        </span>,
                         <div key={item.id} className="flex gap-2">
                           <button onClick={() => { setEditingOnlineRepairId(item.id); setIsOnlineRepairModalOpen(true); }} className="text-brand hover:text-brand-dark"><Edit3 size={16} /></button>
-                          <button onClick={() => setOnlineRepairs(onlineRepairs.filter(r => r.id !== item.id))} className="text-danger hover:text-red-700"><Trash2 size={16} /></button>
                         </div>
                       ];
                     })}
