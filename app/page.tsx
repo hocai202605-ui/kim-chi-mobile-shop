@@ -122,7 +122,7 @@ type OnlineRepair = {
   receiveDate: string;
   completeDate: string;
   paymentDate: string;
-  paymentStatus: "Thanh toán" | "Chưa thanh toán" | "Thanh toán 1 phần" | "Nợ" | "Free";
+  paymentStatus: "Đã thanh toán" | "Chưa thanh toán" | "Thanh toán 1 phần" | "Nợ" | "Free";
   rewardPoints: number;
   isPaid: boolean; // Kept for legacy compatibility / simple checks
 };
@@ -239,7 +239,7 @@ const softwareServiceSeed: SoftwareService[] = [
 
 const onlineRepairSeed: OnlineRepair[] = [
   { id: "or1", createdAt: "2026-07-08 09:15", customerName: "Hoàng Táo", customerType: "Ưu tiên", deviceName: "13 Pro Max", issue: "Xanh màn", quote: 1500000, deposit: 500000, isPaid: false, receiveDate: "2026-07-08 09:15", completeDate: "", paymentDate: "", paymentStatus: "Chưa thanh toán", rewardPoints: 0 },
-  { id: "or2", createdAt: "2026-07-08 10:30", customerName: "Khách Cần Thơ", customerType: "Vãng lai", deviceName: "Z Fold 4", issue: "Hư cáp gập", quote: 3000000, deposit: 3000000, isPaid: true, receiveDate: "2026-07-08 10:30", completeDate: "2026-07-08 14:00", paymentDate: "2026-07-08 14:05", paymentStatus: "Thanh toán", rewardPoints: 300 },
+  { id: "or2", createdAt: "2026-07-08 10:30", customerName: "Khách Cần Thơ", customerType: "Vãng lai", deviceName: "Z Fold 4", issue: "Hư cáp gập", quote: 3000000, deposit: 3000000, isPaid: true, receiveDate: "2026-07-08 10:30", completeDate: "2026-07-08 14:00", paymentDate: "2026-07-08 14:05", paymentStatus: "Đã thanh toán", rewardPoints: 300 },
 ];
 
 const repairsSeed: Repair[] = [
@@ -1689,15 +1689,15 @@ export default function Home() {
                   customerName: String(form.get("customerName")),
                   customerType: String(form.get("customerType")) as OnlineRepair["customerType"],
                   deviceName: String(form.get("deviceName")),
-                  issue: String(form.get("issue")),
+                  issue: "",
                   quote,
                   deposit,
                   receiveDate: String(form.get("receiveDate")),
-                  completeDate: String(form.get("completeDate")),
-                  paymentDate: String(form.get("paymentDate")),
+                  completeDate: "",
+                  paymentDate: "",
                   paymentStatus: pStatus,
                   rewardPoints: Number(form.get("rewardPoints") || 0),
-                  isPaid: pStatus === "Thanh toán" || pStatus === "Thanh toán 1 phần" || pStatus === "Free",
+                  isPaid: pStatus === "Đã thanh toán" || pStatus === "Thanh toán 1 phần" || pStatus === "Free",
                 };
                 
                 if (editingOnlineRepairId) {
@@ -1715,24 +1715,19 @@ export default function Home() {
               }} className="grid gap-3">
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="Khách hàng / Thợ" required><input name="customerName" required defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.customerName} className="h-10 rounded-lg border border-line px-3" placeholder="Ví dụ: Hoàng Táo" /></Field>
-                  <SelectField label="Loại KH" name="customerType" options={[["Thân thiết", "Thân thiết"], ["Vãng lai", "Vãng lai"], ["Mới", "Mới"], ["Ưu tiên", "Ưu tiên"]]} defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.customerType ?? "Vãng lai"} />
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="Tên máy" required><input name="deviceName" required defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.deviceName} className="h-10 rounded-lg border border-line px-3" /></Field>
-                  <Field label="Lỗi / Dịch vụ" required><input name="issue" required defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.issue} className="h-10 rounded-lg border border-line px-3" /></Field>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="Báo giá"><input name="quote" type="number" min="0" required defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.quote ?? 0} className="h-10 rounded-lg border border-line px-3" /></Field>
-                  <Field label="Đã cọc"><input name="deposit" type="number" min="0" required defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.deposit ?? 0} className="h-10 rounded-lg border border-line px-3" /></Field>
+                  <Field label="Phí dịch vụ"><input name="deposit" type="number" min="0" required defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.deposit ?? 0} className="h-10 rounded-lg border border-line px-3" /></Field>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <SelectField label="Thanh toán" name="paymentStatus" options={[["Chưa thanh toán", "Chưa thanh toán"], ["Thanh toán", "Thanh toán"], ["Thanh toán 1 phần", "Thanh toán 1 phần"], ["Nợ", "Nợ"], ["Free", "Free"]]} defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.paymentStatus ?? "Chưa thanh toán"} />
                   <Field label="Tích điểm"><input name="rewardPoints" type="number" min="0" defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.rewardPoints ?? 0} className="h-10 rounded-lg border border-line px-3" /></Field>
+                  <SelectField label="Loại KH" name="customerType" options={[["Thân thiết", "Thân thiết"], ["Vãng lai", "Vãng lai"], ["Mới", "Mới"], ["Ưu tiên", "Ưu tiên"]]} defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.customerType ?? "Vãng lai"} />
                 </div>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <Field label="Ngày nhận"><input name="receiveDate" type="datetime-local" defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.receiveDate || new Date().toISOString().slice(0, 16)} className="h-10 rounded-lg border border-line px-3 text-xs" /></Field>
-                  <Field label="Hoàn thành"><input name="completeDate" type="datetime-local" defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.completeDate} className="h-10 rounded-lg border border-line px-3 text-xs" /></Field>
-                  <Field label="Thanh toán"><input name="paymentDate" type="datetime-local" defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.paymentDate} className="h-10 rounded-lg border border-line px-3 text-xs" /></Field>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Giờ"><input name="receiveDate" type="datetime-local" defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.receiveDate || new Date().toISOString().slice(0, 16)} className="h-10 rounded-lg border border-line px-3 text-xs" /></Field>
+                  <SelectField label="Thanh toán" name="paymentStatus" options={[["Chưa thanh toán", "Chưa thanh toán"], ["Đã thanh toán", "Đã thanh toán"], ["Thanh toán 1 phần", "Thanh toán 1 phần"], ["Nợ", "Nợ"], ["Free", "Free"]]} defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.paymentStatus ?? "Chưa thanh toán"} />
                 </div>
                 <div className="flex gap-2 justify-end pt-4">
                   <button type="button" onClick={() => { setIsOnlineRepairModalOpen(false); setEditingOnlineRepairId(null); }} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-100 px-4 font-bold text-slate-700 hover:bg-slate-200">Hủy</button>
@@ -1745,11 +1740,27 @@ export default function Home() {
             )}
 
             <div className="grid gap-4">
-              <div className="flex items-center justify-between">
-                <h1 className="text-2xl font-black">Phần mềm</h1>
-                <button onClick={() => { setEditingOnlineRepairId(null); setIsOnlineRepairModalOpen(true); }} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white shadow hover:bg-brand-dark">
-                  <Plus size={18} /> Mở form Tạo đơn
-                </button>
+              <div className="rounded-xl bg-gradient-to-br from-indigo-800 via-blue-700 to-brand p-6 sm:p-8 text-white shadow-xl relative overflow-hidden flex flex-col xl:flex-row xl:items-center justify-between gap-6">
+                <div className="absolute top-0 right-0 -mt-16 -mr-16 h-64 w-64 rounded-full bg-white/10 blur-3xl mix-blend-overlay pointer-events-none"></div>
+                <div className="absolute bottom-0 left-0 -mb-16 -ml-16 h-48 w-48 rounded-full bg-white/10 blur-2xl pointer-events-none"></div>
+                <div className="relative z-10">
+                  <h1 className="text-2xl sm:text-3xl md:text-4xl font-black mb-3 text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500 drop-shadow-sm uppercase tracking-tight">
+                    Trung Tâm Giải Mã Phần Mềm<br className="hidden sm:block" /> Điện Thoại Di Động Nam Sách
+                  </h1>
+                  <p className="font-bold text-white/95 flex items-center gap-2 mb-2 text-sm sm:text-base">
+                    <span className="flex h-1.5 w-1.5 rounded-full bg-yellow-400 shrink-0"></span>
+                    Chuyên Nghiệp - Nhanh Chóng - Giá Thành Hợp Lý
+                  </p>
+                  <p className="text-sm font-semibold text-white/80 flex items-center gap-2">
+                    <span className="flex h-1.5 w-1.5 rounded-full bg-white/50 shrink-0"></span>
+                    Địa chỉ tin cậy và uy tín số 1 TP. Hải Phòng
+                  </p>
+                </div>
+                <div className="relative z-10 shrink-0">
+                  <button onClick={() => { setEditingOnlineRepairId(null); setIsOnlineRepairModalOpen(true); }} className="group inline-flex h-12 w-full sm:w-auto items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-yellow-400 to-yellow-500 px-6 font-black text-slate-900 shadow-lg hover:from-yellow-300 hover:to-yellow-400 transition-all hover:scale-105 active:scale-95">
+                    <Plus size={20} strokeWidth={3} className="transition-transform group-hover:rotate-90" /> TẠO ĐƠN MỚI
+                  </button>
+                </div>
               </div>
               
               <div className="grid gap-4 sm:grid-cols-2">
@@ -1785,16 +1796,8 @@ export default function Home() {
                 </div>
                 <div className="overflow-x-auto pb-4">
                   <DataTable
-                    headers={["Khách hàng", "Loại", "Tên máy", "Lỗi / Dịch vụ", "Báo giá", "Đã cọc", "Còn lại", "Điểm", "Nhận", "Hoàn thành", "Trạng thái TT", "Ngày TT", ""]}
+                    headers={["Khách hàng", "Tên máy", "Báo giá", "Phí dịch vụ", "Còn lại", "Điểm", "Loại KH", "Giờ", "Trạng thái TT", ""]}
                     rows={filteredRepairs.map((item) => {
-                      const ttColor = {
-                        "Thanh toán": "bg-emerald-100 text-emerald-800",
-                        "Chưa thanh toán": "bg-slate-100 text-slate-700",
-                        "Thanh toán 1 phần": "bg-blue-100 text-blue-800",
-                        "Nợ": "bg-red-100 text-red-800",
-                        "Free": "bg-purple-100 text-purple-800",
-                      }[item.paymentStatus] || "bg-slate-100 text-slate-700";
-                      
                       const typeColor = {
                         "Thân thiết": "text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full text-xs font-bold",
                         "Vãng lai": "text-slate-500 bg-slate-50 px-2 py-0.5 rounded-full text-xs font-bold",
@@ -1806,40 +1809,40 @@ export default function Home() {
                         if (!dt) return "-";
                         return dt.replace("T", " ");
                       };
+                      
+                      const isNợ = item.paymentStatus === "Nợ";
+                      const isDaThanhToan = item.paymentStatus === "Đã thanh toán";
 
                       return [
                         <span key={item.id} className="font-bold text-brand whitespace-nowrap">{item.customerName}</span>,
-                        <span key={item.id} className={typeColor}>{item.customerType}</span>,
                         <span key={item.id} className="font-semibold text-slate-700 whitespace-nowrap">{item.deviceName}</span>,
-                        <span key={item.id} className="text-sm whitespace-nowrap">{item.issue}</span>,
                         formatMoney(item.quote),
                         formatMoney(item.deposit),
                         <span key={item.id} className="font-black text-amber-700">{formatMoney(item.quote - item.deposit)}</span>,
                         <span key={item.id} className="text-sm font-bold text-orange-500">+{item.rewardPoints}</span>,
+                        <span key={item.id} className={typeColor}>{item.customerType}</span>,
                         <span key={item.id} className="text-xs font-semibold text-slate-500 whitespace-nowrap">{formatDateTime(item.receiveDate)}</span>,
-                        <span key={item.id} className="text-xs font-semibold text-slate-500 whitespace-nowrap">{formatDateTime(item.completeDate)}</span>,
                         <select 
                           key={item.id}
-                          value={item.paymentStatus}
+                          value={isDaThanhToan ? "Đã thanh toán" : item.paymentStatus}
                           onChange={(e) => {
                             const newStatus = e.target.value as OnlineRepair["paymentStatus"];
                             const now = new Date().toISOString().slice(0, 16);
                             setOnlineRepairs(onlineRepairs.map(r => r.id === item.id ? {
                               ...r, 
                               paymentStatus: newStatus,
-                              paymentDate: (newStatus === "Thanh toán" || newStatus === "Free") && !r.paymentDate ? now : r.paymentDate,
-                              isPaid: newStatus === "Thanh toán" || newStatus === "Thanh toán 1 phần" || newStatus === "Free"
+                              paymentDate: (newStatus === "Đã thanh toán" || newStatus === "Free") && !r.paymentDate ? now : r.paymentDate,
+                              isPaid: newStatus === "Đã thanh toán" || newStatus === "Thanh toán 1 phần" || newStatus === "Free"
                             } : r));
                           }}
-                          className={`h-7 rounded text-xs font-bold outline-none cursor-pointer ${ttColor}`}
+                          className={`h-8 rounded text-xs font-bold outline-none cursor-pointer px-1 shadow-sm border border-line ${isNợ ? "bg-red-50 text-red-600" : isDaThanhToan ? "bg-emerald-50 text-emerald-600" : "bg-slate-50 text-slate-600"}`}
                         >
                           <option value="Chưa thanh toán">Chưa thanh toán</option>
-                          <option value="Thanh toán">Thanh toán</option>
+                          <option value="Đã thanh toán">✅ Đã thanh toán</option>
                           <option value="Thanh toán 1 phần">Thanh toán 1 phần</option>
-                          <option value="Nợ">Nợ</option>
+                          <option value="Nợ">❌ Nợ</option>
                           <option value="Free">Free</option>
                         </select>,
-                        <span key={item.id} className="text-xs font-semibold text-slate-500 whitespace-nowrap">{formatDateTime(item.paymentDate)}</span>,
                         <div key={item.id} className="flex gap-2">
                           <button onClick={() => { setEditingOnlineRepairId(item.id); setIsOnlineRepairModalOpen(true); }} className="text-brand hover:text-brand-dark"><Edit3 size={16} /></button>
                           <button onClick={() => setOnlineRepairs(onlineRepairs.filter(r => r.id !== item.id))} className="text-danger hover:text-red-700"><Trash2 size={16} /></button>
