@@ -1627,13 +1627,13 @@ function DataTable({ headers, rows, compact = false }: { headers: string[]; rows
         <tbody className="divide-y divide-line">
           {rows.map((row, rowIndex) => {
             const isSelected = selectedRowIndex === rowIndex;
-            const rowTone = isSelected ? "bg-emerald-100/80 shadow-[inset_4px_0_0_#059669]" : rowIndex % 2 === 0 ? "bg-white" : "bg-slate-200/70";
+            const rowTone = isSelected ? "bg-fuchsia-100/90 shadow-[inset_4px_0_0_#c026d3]" : rowIndex % 2 === 0 ? "bg-slate-50" : "bg-slate-200/60";
 
             return (
               <tr
                 key={rowIndex}
                 onClick={() => setSelectedRowIndex(rowIndex)}
-                className={`cursor-pointer transition-all ${rowTone} hover:bg-emerald-50/80 hover:shadow-[inset_4px_0_0_#34d399]`}
+                className={`cursor-pointer transition-all ${rowTone} hover:bg-fuchsia-100/70 hover:shadow-[inset_4px_0_0_#e879f9]`}
               >
                 {row.map((cell, cellIndex) => (
                   <td key={`${rowIndex}-${cellIndex}`} className={`${compact ? "px-2 py-3" : "px-5 py-4"} text-center align-middle`}>
