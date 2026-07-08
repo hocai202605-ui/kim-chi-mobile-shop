@@ -246,6 +246,7 @@ const logSeed: AuditLog[] = [
 const navItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "inventory", label: "Kho hàng", icon: Boxes },
+  { id: "inventoryReports", label: "Báo cáo kho hàng", icon: FileText },
   { id: "sales", label: "Quản lý bán hàng", icon: ReceiptText },
   { id: "customers", label: "Khách hàng", icon: Users },
   { id: "repairs", label: "Sửa chữa", icon: Wrench },
@@ -327,7 +328,6 @@ function StatCard({ label, value, hint, icon }: { label: string; value: string; 
 export default function Home() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isStatsHidden, setIsStatsHidden] = useState(false);
-  const [inventorySubPage, setInventorySubPage] = useState<"dashboard" | "manage">("manage");
   const [reportYear, setReportYear] = useState(() => new Date().getFullYear().toString());
   const [hideReportSold, setHideReportSold] = useState(false);
   const [hideReportRevenue, setHideReportRevenue] = useState(false);
@@ -410,7 +410,7 @@ export default function Home() {
   const filteredRepairs = repairs.filter((item) => storeFilter === "all" || item.storeId === storeFilter);
   const filteredLedger = ledger.filter((item) => storeFilter === "all" || item.storeId === storeFilter);
   const filteredSales = sales.filter((item) => storeFilter === "all" || item.storeId === storeFilter);
-  const inventoryPageSize = 5;
+  const inventoryPageSize = 10;
   const inventoryRowsCount = inventoryTab === "phones" ? filteredPhones.length : filteredAccessories.length;
   const inventoryTotalPages = Math.max(1, Math.ceil(inventoryRowsCount / inventoryPageSize));
   const safeInventoryPage = Math.min(inventoryPage, inventoryTotalPages);
@@ -829,18 +829,14 @@ export default function Home() {
           </div>
         )}
 
-        {activePage === "inventory" && (
+        {activePage === "inventoryReports" && (
           <section className="grid gap-4">
             <div className="rounded-lg border border-amber-200 bg-white p-5 shadow-panel">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <h2 className="text-3xl font-black">Quản lý điện thoại</h2>
+                  <h2 className="text-3xl font-black">Báo cáo kho hàng</h2>
                 </div>
                 <div className="flex items-center gap-4">
-                  <div className="flex rounded-lg bg-slate-100 p-1">
-                    <button onClick={() => setInventorySubPage("dashboard")} className={`px-4 py-2 text-sm font-bold rounded-md transition ${inventorySubPage === "dashboard" ? "bg-white text-brand shadow-sm" : "text-muted hover:text-slate-900"}`}>Báo cáo năm</button>
-                    <button onClick={() => setInventorySubPage("manage")} className={`px-4 py-2 text-sm font-bold rounded-md transition ${inventorySubPage === "manage" ? "bg-white text-brand shadow-sm" : "text-muted hover:text-slate-900"}`}>Quản lý máy</button>
-                  </div>
                   <div className="hidden rounded-lg border border-line bg-slate-50 px-4 py-3 sm:block">
                     <p className="text-xs font-bold text-muted">Đang xem</p>
                     <strong className="text-base">{storeName(storeFilter)}</strong>
@@ -849,48 +845,6 @@ export default function Home() {
               </div>
             </div>
 
-            {inventorySubPage === "dashboard" && (
-              <section className="rounded-lg border border-line bg-white p-5 shadow-panel">
-                <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                  <div>
-                    <h2 className="text-xl font-black">Tổng quan năm {reportYear}</h2>
-                    <p className="text-sm font-semibold text-muted">Biểu đồ thống kê doanh thu, lợi nhuận và số máy bán ra theo từng tháng.</p>
-                  </div>
-                  <Field label="Chọn năm" className="w-full lg:w-32">
-                    <select value={reportYear} onChange={(e) => setReportYear(e.target.value)} className="h-10 rounded-lg border border-line bg-white px-3 font-bold">
-                      <option value="2024">2024</option>
-                      <option value="2025">2025</option>
-                      <option value="2026">2026</option>
-                    </select>
-                  </Field>
-                </div>
-                <div className="h-[400px] w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={yearlyReportData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                      <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12, fontWeight: 600 }} dy={10} />
-                      <YAxis yAxisId="left" orientation="left" stroke="#1e293b" axisLine={false} tickLine={false} tickFormatter={(val) => `${val / 1000000}M`} tick={{ fill: "#64748b", fontSize: 12, fontWeight: 600 }} dx={-10} />
-                      <YAxis yAxisId="right" orientation="right" stroke="#0ea5e9" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12, fontWeight: 600 }} dx={10} />
-                      <Tooltip
-                        cursor={{ fill: "#f1f5f9" }}
-                        contentStyle={{ borderRadius: "8px", border: "1px solid #e2e8f0", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)", fontWeight: "bold" }}
-                        formatter={(value: any, name: any) => {
-                          if (name === "Doanh thu" || name === "Lợi nhuận") return [formatMoney(value as number), name];
-                          return [value, name];
-                        }}
-                      />
-                      <Legend iconType="circle" wrapperStyle={{ paddingTop: "20px", fontWeight: "bold" }} />
-                      <Bar yAxisId="left" dataKey="revenue" name="Doanh thu" fill="#14b8a6" radius={[4, 4, 0, 0]} />
-                      <Bar yAxisId="left" dataKey="profit" name="Lợi nhuận" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                      <Bar yAxisId="right" dataKey="sold" name="Máy bán" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </section>
-            )}
-
-            {inventorySubPage === "manage" && (
-              <>
             <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
@@ -940,11 +894,53 @@ export default function Home() {
               </div>
             </section>
 
+            <section className="rounded-lg border border-line bg-white p-5 shadow-panel">
+              <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <h2 className="text-xl font-black">Tổng quan năm {reportYear}</h2>
+                  <p className="text-sm font-semibold text-muted">Biểu đồ thống kê doanh thu, lợi nhuận và số máy bán ra theo từng tháng.</p>
+                </div>
+                <Field label="Chọn năm" className="w-full lg:w-32">
+                  <select value={reportYear} onChange={(e) => setReportYear(e.target.value)} className="h-10 rounded-lg border border-line bg-white px-3 font-bold">
+                    <option value="2024">2024</option>
+                    <option value="2025">2025</option>
+                    <option value="2026">2026</option>
+                  </select>
+                </Field>
+              </div>
+              <div className="h-[400px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={yearlyReportData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                    <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12, fontWeight: 600 }} dy={10} />
+                    <YAxis yAxisId="left" orientation="left" stroke="#1e293b" axisLine={false} tickLine={false} tickFormatter={(val) => `${val / 1000000}M`} tick={{ fill: "#64748b", fontSize: 12, fontWeight: 600 }} dx={-10} />
+                    <YAxis yAxisId="right" orientation="right" stroke="#0ea5e9" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12, fontWeight: 600 }} dx={10} />
+                    <Tooltip
+                      cursor={{ fill: "#f1f5f9" }}
+                      contentStyle={{ borderRadius: "8px", border: "1px solid #e2e8f0", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)", fontWeight: "bold" }}
+                      formatter={(value: any, name: any) => {
+                        if (name === "Doanh thu" || name === "Lợi nhuận") return [formatMoney(value as number), name];
+                        return [value, name];
+                      }}
+                    />
+                    <Legend iconType="circle" wrapperStyle={{ paddingTop: "20px", fontWeight: "bold" }} />
+                    <Bar yAxisId="left" dataKey="revenue" name="Doanh thu" fill="#14b8a6" radius={[4, 4, 0, 0]} />
+                    <Bar yAxisId="left" dataKey="profit" name="Lợi nhuận" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                    <Bar yAxisId="right" dataKey="sold" name="Máy bán" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </section>
+          </section>
+        )}
+
+        {activePage === "inventory" && (
+          <section className="grid gap-4">
             <section className="rounded-lg border border-line bg-white shadow-panel">
               <div className="border-b border-line p-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <h2 className="text-xl font-black">Danh sách tồn kho</h2>
+                    <h2 className="text-xl font-black">Danh sách kho hàng</h2>
                     <p className="text-sm font-semibold text-muted">Tìm kiếm nâng cao theo loại, tên máy, khoảng giá và thứ tự giá.</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -957,7 +953,7 @@ export default function Home() {
                         }}
                         className={`rounded-md px-3 py-2 text-sm font-bold ${inventoryTab === "phones" ? "bg-white text-brand shadow-sm" : "text-muted"}`}
                       >
-                        Máy cũ
+                        Điện thoại
                       </button>
                       <button
                         onClick={() => {
@@ -1088,59 +1084,61 @@ export default function Home() {
                 <div className="min-w-0">
               {inventoryTab === "phones" ? (
                 <DataTable
+                  compact
                   headers={["Tên máy", "Dung lượng", "IMEI", "Giá bán", "Màu sắc", "Pin", "Thao tác"]}
                   rows={paginatedPhones.map((item) => [
                     <div key={`name-${item.id}`} className="flex flex-col items-center gap-1.5">
-                      <div className="flex items-center justify-center gap-2 text-lg font-black text-brand">{item.name}</div>
-                      <span className="text-sm font-semibold text-slate-500">{item.brand} • <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-xs font-bold text-slate-600">{item.condition}</span></span>
+                      <div className="flex items-center justify-center gap-2 text-base font-black text-brand">{item.name}</div>
+                      <span className="text-xs font-semibold text-slate-500">{item.brand} • <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-bold text-slate-600">{item.condition}</span></span>
                     </div>,
-                    <span className="text-base font-bold text-slate-800" key={`storage-${item.id}`}>{item.storage}</span>,
-                    <span className="rounded-md bg-red-50 px-3 py-1.5 font-mono text-xl font-black tracking-widest text-red-600 shadow-sm" key={`imei-${item.id}`}>{item.imei.slice(-5)}</span>,
-                    <span className="text-lg font-black text-emerald-600" key={`price-${item.id}`}>{formatMoney(item.expectedPrice)}</span>,
+                    <span className="text-sm font-bold text-slate-800" key={`storage-${item.id}`}>{item.storage}</span>,
+                    <span className="rounded-md bg-red-50 px-2.5 py-1 font-mono text-base font-black tracking-wide text-red-600 shadow-sm" key={`imei-${item.id}`}>{item.imei.slice(-5)}</span>,
+                    <span className="text-base font-black text-emerald-600" key={`price-${item.id}`}>{formatMoney(item.expectedPrice)}</span>,
                     <div key={`color-${item.id}`} className="flex items-center justify-center gap-2">
-                      <div className="h-4 w-4 shrink-0 rounded-full border border-slate-200 shadow-sm" style={{ backgroundColor: getColorCode(item.color) }} />
-                      <span className="text-base font-medium text-slate-700">{item.color}</span>
+                      <div className="h-3.5 w-3.5 shrink-0 rounded-full border border-slate-200 shadow-sm" style={{ backgroundColor: getColorCode(item.color) }} />
+                      <span className="text-sm font-medium text-slate-700">{item.color}</span>
                     </div>,
-                    <div className="flex items-center justify-center gap-1.5 text-base font-bold text-amber-600" key={`bat-${item.id}`}>{item.batteryCondition}</div>,
-                    <div key={item.id} className="flex flex-nowrap justify-center gap-2">
-                      <button onClick={() => setViewingPhoneId(item.id)} title="Chi tiết" className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-900">
-                        <Eye size={20} />
+                    <div className="flex items-center justify-center gap-1.5 text-sm font-bold text-amber-600" key={`bat-${item.id}`}>{item.batteryCondition}</div>,
+                    <div key={item.id} className="flex flex-nowrap justify-center gap-1.5">
+                      <button onClick={() => setViewingPhoneId(item.id)} title="Chi tiết" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-900">
+                        <Eye size={18} />
                       </button>
-                      <button onClick={() => openPhoneEditModal(item.id)} title="Sửa" className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20">
-                        <Edit3 size={20} />
+                      <button onClick={() => openPhoneEditModal(item.id)} title="Sửa" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20">
+                        <Edit3 size={18} />
                       </button>
                       <button
                         title="Hủy"
                         disabled={!canCancel || item.status === "Đã hủy"}
                         onClick={() => cancelPhone(item.id)}
-                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
                       >
-                        <Trash2 size={20} />
+                        <Trash2 size={18} />
                       </button>
                     </div>,
                   ])}
                 />
               ) : (
                 <DataTable
+                  compact
                   headers={["Mã", "Tên phụ kiện", "SL", "Giá nhập", "Giá bán", "Lợi nhuận", "Thao tác"]}
                   rows={paginatedAccessories.map((item) => [
-                    <span className="font-mono text-sm font-medium text-slate-500" key={`code-${item.id}`}>{item.code}</span>,
-                    <span className="text-lg font-black text-brand" key={`name-${item.id}`}>{item.name}</span>,
-                    <span className="text-base font-bold text-slate-800" key={`qty-${item.id}`}>{item.quantity}</span>,
-                    <span className="text-base font-medium text-slate-600" key={`cost-${item.id}`}>{formatMoney(item.cost)}</span>,
-                    <span className="text-lg font-black text-emerald-600" key={`price-${item.id}`}>{formatMoney(item.price)}</span>,
-                    <span className="text-base font-bold text-amber-600" key={`profit-${item.id}`}>{formatMoney(item.price - item.cost)}</span>,
-                    <div key={item.id} className="flex flex-nowrap justify-center gap-2">
-                      <button onClick={() => openAccessoryEditModal(item.id)} title="Sửa" className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20">
-                        <Edit3 size={20} />
+                    <span className="font-mono text-xs font-medium text-slate-500" key={`code-${item.id}`}>{item.code}</span>,
+                    <span className="text-base font-black text-brand" key={`name-${item.id}`}>{item.name}</span>,
+                    <span className="text-sm font-bold text-slate-800" key={`qty-${item.id}`}>{item.quantity}</span>,
+                    <span className="text-sm font-medium text-slate-600" key={`cost-${item.id}`}>{formatMoney(item.cost)}</span>,
+                    <span className="text-base font-black text-emerald-600" key={`price-${item.id}`}>{formatMoney(item.price)}</span>,
+                    <span className="text-sm font-bold text-amber-600" key={`profit-${item.id}`}>{formatMoney(item.price - item.cost)}</span>,
+                    <div key={item.id} className="flex flex-nowrap justify-center gap-1.5">
+                      <button onClick={() => openAccessoryEditModal(item.id)} title="Sửa" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20">
+                        <Edit3 size={18} />
                       </button>
                       <button
                         title="Hủy"
                         disabled={!canCancel || item.status === "Đã hủy"}
                         onClick={() => cancelAccessory(item.id)}
-                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
                       >
-                        <Trash2 size={20} />
+                        <Trash2 size={18} />
                       </button>
                     </div>,
                   ])}
@@ -1322,8 +1320,6 @@ export default function Home() {
                   </div>
                 </section>
               </div>
-            )}
-              </>
             )}
           </section>
         )}
@@ -1575,18 +1571,18 @@ function InventoryBar({ label, value, color }: { label: string; value: number; c
   );
 }
 
-function DataTable({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
+function DataTable({ headers, rows, compact = false }: { headers: string[]; rows: ReactNode[][]; compact?: boolean }) {
   if (!rows.length) {
     return <div className="rounded-lg border border-dashed border-line p-8 text-center text-sm font-semibold text-muted">Chưa có dữ liệu phù hợp.</div>;
   }
 
   return (
     <div className="overflow-auto rounded-xl border border-line bg-white shadow-sm">
-      <table className="min-w-max w-full border-collapse text-base">
-        <thead className="bg-slate-50/80 text-center text-sm font-bold uppercase tracking-wider text-slate-500">
+      <table className={`min-w-max w-full border-collapse ${compact ? "text-sm" : "text-base"}`}>
+        <thead className={`bg-slate-50/80 text-center font-bold uppercase tracking-wider text-slate-500 ${compact ? "text-xs" : "text-sm"}`}>
           <tr>
             {headers.map((header) => (
-              <th key={header} className={`border-b border-line px-5 py-4 ${header === "Thao tác" ? "w-[180px] text-center" : ""}`}>
+              <th key={header} className={`border-b border-line ${compact ? "px-3 py-3" : "px-5 py-4"} ${header === "Thao tác" ? "w-[180px] text-center" : ""}`}>
                 {header}
               </th>
             ))}
@@ -1596,7 +1592,7 @@ function DataTable({ headers, rows }: { headers: string[]; rows: ReactNode[][] }
           {rows.map((row, rowIndex) => (
             <tr key={rowIndex} className="transition-colors hover:bg-slate-50/60">
               {row.map((cell, cellIndex) => (
-                <td key={`${rowIndex}-${cellIndex}`} className="px-5 py-4 text-center align-middle">
+                <td key={`${rowIndex}-${cellIndex}`} className={`${compact ? "px-3 py-3" : "px-5 py-4"} text-center align-middle`}>
                   {cell}
                 </td>
               ))}
