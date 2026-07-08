@@ -122,7 +122,7 @@ type OnlineRepair = {
   receiveDate: string;
   completeDate: string;
   paymentDate: string;
-  paymentStatus: "Đã thanh toán" | "Nợ";
+  paymentStatus: "Đã thanh toán" | "Nợ dai";
   rewardPoints: number;
   isPaid: boolean; // Kept for legacy compatibility / simple checks
 };
@@ -238,8 +238,16 @@ const softwareServiceSeed: SoftwareService[] = [
 ];
 
 const onlineRepairSeed: OnlineRepair[] = [
-  { id: "or1", createdAt: "2026-07-08 09:15", customerName: "Hoàng Táo", customerType: "Ưu tiên", deviceName: "13 Pro Max", issue: "Xanh màn", quote: 1500000, deposit: 500000, isPaid: false, receiveDate: "2026-07-08 09:15", completeDate: "", paymentDate: "", paymentStatus: "Nợ", rewardPoints: 0 },
+  { id: "or1", createdAt: "2026-07-08 09:15", customerName: "Hoàng Táo", customerType: "Ưu tiên", deviceName: "13 Pro Max", issue: "Xanh màn", quote: 1500000, deposit: 500000, isPaid: false, receiveDate: "2026-07-08 09:15", completeDate: "", paymentDate: "", paymentStatus: "Nợ dai", rewardPoints: 0 },
   { id: "or2", createdAt: "2026-07-08 10:30", customerName: "Khách Cần Thơ", customerType: "Vãng lai", deviceName: "Z Fold 4", issue: "Hư cáp gập", quote: 3000000, deposit: 3000000, isPaid: true, receiveDate: "2026-07-08 10:30", completeDate: "2026-07-08 14:00", paymentDate: "2026-07-08 14:05", paymentStatus: "Đã thanh toán", rewardPoints: 300 },
+  { id: "or3", createdAt: "2026-07-08 11:00", customerName: "Anh Tuấn", customerType: "Thân thiết", deviceName: "14 Pro", issue: "Lỗi cam", quote: 2000000, deposit: 1000000, isPaid: false, receiveDate: "2026-07-08 11:00", completeDate: "", paymentDate: "", paymentStatus: "Nợ dai", rewardPoints: 100 },
+  { id: "or4", createdAt: "2026-07-07 14:20", customerName: "Chị Linh", customerType: "Mới", deviceName: "S23 Ultra", issue: "Ép kính", quote: 800000, deposit: 800000, isPaid: true, receiveDate: "2026-07-07 14:20", completeDate: "2026-07-07 16:30", paymentDate: "2026-07-07 16:35", paymentStatus: "Đã thanh toán", rewardPoints: 50 },
+  { id: "or5", createdAt: "2026-07-07 16:45", customerName: "Thợ Hùng", customerType: "Ưu tiên", deviceName: "iPhone 11", issue: "Thay pin", quote: 450000, deposit: 0, isPaid: false, receiveDate: "2026-07-07 16:45", completeDate: "", paymentDate: "", paymentStatus: "Nợ dai", rewardPoints: 0 },
+  { id: "or6", createdAt: "2026-07-06 09:30", customerName: "Em Trang", customerType: "Vãng lai", deviceName: "Oppo Reno 6", issue: "Mất nguồn", quote: 1200000, deposit: 1200000, isPaid: true, receiveDate: "2026-07-06 09:30", completeDate: "2026-07-06 17:00", paymentDate: "2026-07-06 17:15", paymentStatus: "Đã thanh toán", rewardPoints: 120 },
+  { id: "or7", createdAt: "2026-07-06 11:15", customerName: "Bác Tâm", customerType: "Thân thiết", deviceName: "iPad Gen 9", issue: "Thay vỏ", quote: 900000, deposit: 500000, isPaid: false, receiveDate: "2026-07-06 11:15", completeDate: "", paymentDate: "", paymentStatus: "Nợ dai", rewardPoints: 80 },
+  { id: "or8", createdAt: "2026-07-05 13:40", customerName: "Cửa hàng Nam", customerType: "Ưu tiên", deviceName: "iPhone 12", issue: "Fix face ID", quote: 600000, deposit: 600000, isPaid: true, receiveDate: "2026-07-05 13:40", completeDate: "2026-07-05 15:20", paymentDate: "2026-07-05 15:25", paymentStatus: "Đã thanh toán", rewardPoints: 0 },
+  { id: "or9", createdAt: "2026-07-05 15:00", customerName: "Chị Phương", customerType: "Mới", deviceName: "Samsung A54", issue: "Thay màn", quote: 1100000, deposit: 0, isPaid: false, receiveDate: "2026-07-05 15:00", completeDate: "", paymentDate: "", paymentStatus: "Nợ dai", rewardPoints: 0 },
+  { id: "or10", createdAt: "2026-07-04 10:10", customerName: "Chú Bình", customerType: "Vãng lai", deviceName: "Redmi Note 11", issue: "Thay chân sạc", quote: 250000, deposit: 250000, isPaid: true, receiveDate: "2026-07-04 10:10", completeDate: "2026-07-04 11:30", paymentDate: "2026-07-04 11:35", paymentStatus: "Đã thanh toán", rewardPoints: 20 },
 ];
 
 const repairsSeed: Repair[] = [
@@ -871,8 +879,8 @@ export default function Home() {
       </aside>
 
       <section className="min-w-0 p-4 sm:p-6">
-        <header className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
+        <header className={`mb-5 flex flex-col gap-4 lg:flex-row lg:items-center ${activePage === "online-repairs" ? "justify-end" : "lg:justify-between"}`}>
+          <div className={activePage === "online-repairs" ? "hidden" : "block"}>
             <h1 className="text-2xl font-black sm:text-3xl">{navItems.find((item) => item.id === activePage)?.label}</h1>
             <p className="mt-1 text-sm font-semibold text-muted">Xin chào, {currentUser.name}. Chúc bạn một ngày làm việc hiệu quả!</p>
           </div>
@@ -1682,8 +1690,8 @@ export default function Home() {
                     <form key={editingOnlineRepairId ?? "new"} onSubmit={(e) => {
                 e.preventDefault();
                 const form = new FormData(e.currentTarget);
-                const quote = Number(form.get("quote") || 0);
-                const deposit = Number(form.get("deposit") || 0);
+                const quote = parseInputMoney(form.get("quote"));
+                const deposit = parseInputMoney(form.get("deposit"));
                 const pStatus = String(form.get("paymentStatus")) as OnlineRepair["paymentStatus"];
                 
                 const data = {
@@ -1719,12 +1727,18 @@ export default function Home() {
                   <Field label="Tên máy" required><input name="deviceName" required defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.deviceName} className="h-10 rounded-lg border border-line px-3" /></Field>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Báo giá"><input name="quote" type="number" min="0" required defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.quote ?? 0} className="h-10 rounded-lg border border-line px-3" /></Field>
-                  <Field label="Phí dịch vụ"><input name="deposit" type="number" min="0" required defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.deposit ?? 0} className="h-10 rounded-lg border border-line px-3" /></Field>
+                  <Field label="Báo giá"><input name="quote" type="text" required defaultValue={formatInputMoney(onlineRepairs.find(r => r.id === editingOnlineRepairId)?.quote ?? "")} onChange={e => e.target.value = formatInputMoney(e.target.value)} className="h-10 rounded-lg border border-line px-3" /></Field>
+                  <Field label="Phí dịch vụ"><input name="deposit" type="text" required defaultValue={formatInputMoney(onlineRepairs.find(r => r.id === editingOnlineRepairId)?.deposit ?? "")} onChange={e => e.target.value = formatInputMoney(e.target.value)} className="h-10 rounded-lg border border-line px-3" /></Field>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="Giờ"><input name="receiveDate" type="datetime-local" defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.receiveDate || new Date().toISOString().slice(0, 16)} className="h-10 rounded-lg border border-line px-3 text-xs" /></Field>
-                  <SelectField label="Thanh toán" name="paymentStatus" options={[["Đã thanh toán", "Đã thanh toán"], ["Nợ", "Nợ"]]} defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.paymentStatus ?? "Nợ"} />
+                  <Field label="Thanh toán" required>
+                    <select name="paymentStatus" required defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.paymentStatus ?? ""} className="h-10 rounded-lg border border-line bg-white px-3 font-semibold">
+                      <option value="" disabled hidden>Chọn</option>
+                      <option value="Đã thanh toán">Đã thanh toán</option>
+                      <option value="Nợ dai">Nợ dai</option>
+                    </select>
+                  </Field>
                 </div>
                 <div className="flex gap-2 justify-end pt-4">
                   <button type="button" onClick={() => { setIsOnlineRepairModalOpen(false); setEditingOnlineRepairId(null); }} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-100 px-4 font-bold text-slate-700 hover:bg-slate-200">Hủy</button>
@@ -1737,45 +1751,40 @@ export default function Home() {
             )}
 
             <div className="grid gap-4">
-              <div className="rounded-xl bg-gradient-to-br from-indigo-800 via-blue-700 to-brand p-6 sm:p-8 text-white shadow-xl relative overflow-hidden flex flex-col xl:flex-row xl:items-center justify-between gap-6">
+              <div className="rounded-xl bg-gradient-to-br from-indigo-800 via-blue-700 to-brand p-6 sm:p-8 text-white shadow-xl relative overflow-hidden flex flex-col justify-center items-center text-center gap-4 mb-4">
                 <div className="absolute top-0 right-0 -mt-16 -mr-16 h-64 w-64 rounded-full bg-white/10 blur-3xl mix-blend-overlay pointer-events-none"></div>
                 <div className="absolute bottom-0 left-0 -mb-16 -ml-16 h-48 w-48 rounded-full bg-white/10 blur-2xl pointer-events-none"></div>
-                <div className="relative z-10">
+                <div className="relative z-10 w-full max-w-2xl mx-auto">
                   <h1 className="text-2xl sm:text-3xl md:text-4xl font-black mb-3 text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500 drop-shadow-sm uppercase tracking-tight">
                     Trung Tâm Giải Mã Phần Mềm<br className="hidden sm:block" /> Điện Thoại Di Động Nam Sách
                   </h1>
-                  <p className="font-bold text-white/95 flex items-center gap-2 mb-2 text-sm sm:text-base">
+                  <p className="font-bold text-white/95 flex items-center justify-center gap-2 mb-2 text-sm sm:text-base">
                     <span className="flex h-1.5 w-1.5 rounded-full bg-yellow-400 shrink-0"></span>
                     Chuyên Nghiệp - Nhanh Chóng - Giá Thành Hợp Lý
+                    <span className="flex h-1.5 w-1.5 rounded-full bg-yellow-400 shrink-0"></span>
                   </p>
-                  <p className="text-sm font-semibold text-white/80 flex items-center gap-2">
+                  <p className="text-sm font-semibold text-white/80 flex items-center justify-center gap-2">
                     <span className="flex h-1.5 w-1.5 rounded-full bg-white/50 shrink-0"></span>
                     Địa chỉ tin cậy và uy tín số 1 TP. Hải Phòng
+                    <span className="flex h-1.5 w-1.5 rounded-full bg-white/50 shrink-0"></span>
                   </p>
                 </div>
-              </div>
-              
-              <div className="flex items-center justify-end mt-4 mb-2">
-                <button onClick={() => setIsOnlineRepairSensitiveHidden(!isOnlineRepairSensitiveHidden)} className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-200">
-                  {isOnlineRepairSensitiveHidden ? <EyeOff size={16} /> : <Eye size={16} />}
-                  {isOnlineRepairSensitiveHidden ? "Hiện" : "Ẩn"} thông tin nhạy cảm
-                </button>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="rounded-lg border border-brand bg-emerald-50 p-4">
                   <div className="flex items-center justify-between gap-2 mb-2">
-                    <span className="block text-sm font-bold text-emerald-800">Doanh thu Tháng</span>
+                    <span className="block text-sm font-bold text-emerald-800">Lợi nhuận Tháng</span>
                     <input type="month" value={onlineRepairMonth} onChange={e => setOnlineRepairMonth(e.target.value)} className="h-8 rounded border border-emerald-200 bg-white px-2 text-sm font-semibold text-emerald-800" />
                   </div>
-                  <strong className="text-3xl text-emerald-700">{isOnlineRepairSensitiveHidden ? "*** ₫" : formatMoney(monthlyRepairs.reduce((sum, r) => sum + r.quote, 0))}</strong>
+                  <strong className="text-3xl text-emerald-700">{isOnlineRepairSensitiveHidden ? "*** ₫" : formatMoney(monthlyRepairs.reduce((sum, r) => sum + (r.quote - r.deposit), 0))}</strong>
                 </div>
                 <div className="rounded-lg border border-line bg-white p-4 shadow-sm">
                   <div className="flex items-center justify-between gap-2 mb-2">
-                    <span className="block text-sm font-bold text-slate-500">Doanh thu Ngày</span>
+                    <span className="block text-sm font-bold text-slate-500">Lợi nhuận Ngày</span>
                     <input type="date" value={displayDate} onChange={e => setOnlineRepairDate(e.target.value)} className="h-8 rounded border border-line bg-slate-50 px-2 text-sm font-semibold text-slate-700" />
                   </div>
-                  <strong className="text-3xl text-red-600">{isOnlineRepairSensitiveHidden ? "*** ₫" : formatMoney(dailyRepairs.reduce((sum, r) => sum + r.quote, 0))}</strong>
+                  <strong className="text-3xl text-red-600">{isOnlineRepairSensitiveHidden ? "*** ₫" : formatMoney(dailyRepairs.reduce((sum, r) => sum + (r.quote - r.deposit), 0))}</strong>
                 </div>
               </div>
 
@@ -1785,7 +1794,7 @@ export default function Home() {
                     <select value={onlineRepairFilter} onChange={(e) => setOnlineRepairFilter(e.target.value)} className="h-10 rounded-lg border border-line px-3 text-sm font-bold">
                       <option value="all">Tất cả trạng thái</option>
                       <option value="paid">Đã thanh toán</option>
-                      <option value="unpaid">Chưa thanh toán đủ</option>
+                      <option value="unpaid">Nợ dai</option>
                     </select>
                     
                     <div className="flex items-center gap-2 rounded-lg border border-line bg-slate-50 px-2">
@@ -1794,9 +1803,15 @@ export default function Home() {
                       {onlineRepairDate && <button onClick={() => setOnlineRepairDate("")} className="text-sm font-bold text-brand hover:underline">Tất cả tháng</button>}
                     </div>
                   </div>
-                  <button onClick={() => { setEditingOnlineRepairId(null); setIsOnlineRepairModalOpen(true); }} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white shadow hover:bg-brand-dark">
-                    <Plus size={18} /> Tạo đơn mới
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setIsOnlineRepairSensitiveHidden(!isOnlineRepairSensitiveHidden)} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-line bg-white px-3 font-bold text-slate-600 shadow-sm transition hover:bg-slate-50">
+                      {isOnlineRepairSensitiveHidden ? <EyeOff size={18} /> : <Eye size={18} />}
+                      {isOnlineRepairSensitiveHidden ? "Hiện" : "Ẩn"}
+                    </button>
+                    <button onClick={() => { setEditingOnlineRepairId(null); setIsOnlineRepairModalOpen(true); }} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white shadow hover:bg-brand-dark">
+                      <Plus size={18} /> Tạo đơn mới
+                    </button>
+                  </div>
                 </div>
                 <div className="overflow-x-auto pb-4">
                   <DataTable
@@ -1814,7 +1829,7 @@ export default function Home() {
                         return dt.replace("T", " ");
                       };
                       
-                      const isNợ = item.paymentStatus === "Nợ";
+                      const isNợ = item.paymentStatus === "Nợ dai";
                       const isDaThanhToan = item.paymentStatus === "Đã thanh toán";
 
                       return [
@@ -1840,7 +1855,7 @@ export default function Home() {
                           className={`h-8 rounded text-xs font-bold outline-none cursor-pointer px-1 shadow-sm border border-line ${isNợ ? "bg-red-50 text-red-600" : isDaThanhToan ? "bg-emerald-50 text-emerald-600" : "bg-slate-50 text-slate-600"}`}
                         >
                           <option value="Đã thanh toán">✅ Đã thanh toán</option>
-                          <option value="Nợ">❌ Nợ</option>
+                          <option value="Nợ dai">❌ Nợ dai</option>
                         </select>,
                         <div key={item.id} className="flex gap-2">
                           <button onClick={() => { setEditingOnlineRepairId(item.id); setIsOnlineRepairModalOpen(true); }} className="text-brand hover:text-brand-dark"><Edit3 size={16} /></button>
