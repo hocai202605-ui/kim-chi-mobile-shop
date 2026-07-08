@@ -1770,7 +1770,6 @@ export default function Home() {
                   </p>
                 </div>
               </div>
-
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="rounded-lg border border-brand bg-emerald-50 p-4">
                   <div className="flex items-center justify-between gap-2 mb-2">
@@ -1778,6 +1777,10 @@ export default function Home() {
                     <input type="month" value={onlineRepairMonth} onChange={e => setOnlineRepairMonth(e.target.value)} className="h-8 rounded border border-emerald-200 bg-white px-2 text-sm font-semibold text-emerald-800" />
                   </div>
                   <strong className="text-3xl text-emerald-700">{isOnlineRepairSensitiveHidden ? "*** ₫" : formatMoney(monthlyRepairs.reduce((sum, r) => sum + (r.quote - r.deposit), 0))}</strong>
+                  <div className="mt-2 flex items-center justify-between border-t border-emerald-200/50 pt-2 text-sm font-semibold text-emerald-700/80">
+                    <span>Dư nợ tháng:</span>
+                    <span>{isOnlineRepairSensitiveHidden ? "***" : formatMoney(monthlyRepairs.filter(r => r.paymentStatus === "Nợ dai").reduce((sum, r) => sum + r.quote, 0))}</span>
+                  </div>
                 </div>
                 <div className="rounded-lg border border-line bg-white p-4 shadow-sm">
                   <div className="flex items-center justify-between gap-2 mb-2">
@@ -1785,6 +1788,10 @@ export default function Home() {
                     <input type="date" value={displayDate} onChange={e => setOnlineRepairDate(e.target.value)} className="h-8 rounded border border-line bg-slate-50 px-2 text-sm font-semibold text-slate-700" />
                   </div>
                   <strong className="text-3xl text-red-600">{isOnlineRepairSensitiveHidden ? "*** ₫" : formatMoney(dailyRepairs.reduce((sum, r) => sum + (r.quote - r.deposit), 0))}</strong>
+                  <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 text-sm font-semibold text-slate-500">
+                    <span>Dư nợ ngày:</span>
+                    <span>{isOnlineRepairSensitiveHidden ? "***" : formatMoney(dailyRepairs.filter(r => r.paymentStatus === "Nợ dai").reduce((sum, r) => sum + r.quote, 0))}</span>
+                  </div>
                 </div>
               </div>
 
