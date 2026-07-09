@@ -28,7 +28,25 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { FormEvent, ReactNode, useMemo, useRef, useState } from "react";
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  cancelAccessory as apiCancelAccessory,
+  cancelPhone as apiCancelPhone,
+  listAccessories as apiListAccessories,
+  listPhones as apiListPhones,
+  upsertAccessory as apiUpsertAccessory,
+  upsertPhone as apiUpsertPhone,
+} from "@/services/inventoryService";
+import {
+  reportInventoryMonthly,
+  reportInventoryYearly,
+  toYearlyChartRows,
+} from "@/services/inventoryReportService";
+import { listLookupLabels, PHONE_LOOKUP_CATEGORIES } from "@/services/lookupService";
+
+function toUiError(err: unknown): string {
+  return err instanceof Error ? err.message : "Lỗi không xác định";
+}
 
 type Role = "owner" | "staff";
 type StoreId = "all" | "store-1" | "store-2" | "store-3";
@@ -178,36 +196,6 @@ const customersSeed: Customer[] = [
   { id: "c1", name: "Anh Minh", phone: "0901 234 567", note: "Hay mua iPhone cũ" },
   { id: "c2", name: "Chị Lan", phone: "0918 222 333", note: "Khách sửa máy" },
   { id: "c3", name: "Bạn Huy", phone: "0987 111 222", note: "Quan tâm phụ kiện" },
-];
-
-const phoneSeed: PhoneItem[] = [
-  { id: "p1", brand: "iPhone", name: "13 Pro Max", imei: "356789101234561", color: "Xanh lá", storage: "256GB", madeIn: "VN/A", networkVersion: "5G", batteryCondition: "Zin 92%", condition: "Like New", note: "Máy đẹp keng, full box", storeId: "store-1", cost: 13500000, expectedPrice: 15200000, status: "Còn hàng", importDate: "2026-07-01" },
-  { id: "p2", brand: "iPhone", name: "12", imei: "356789101234562", color: "Đen", storage: "128GB", madeIn: "LL/A", networkVersion: "5G", batteryCondition: "80-90%", condition: "Cũ", note: "Trầy viền nhẹ", storeId: "store-2", cost: 7200000, expectedPrice: 8200000, status: "Còn hàng", importDate: "2026-07-02" },
-  { id: "p3", brand: "Samsung", name: "Galaxy S22 Ultra", imei: "356789101234563", color: "Đỏ", storage: "256GB", madeIn: "VN/A", networkVersion: "5G", batteryCondition: "Zin", condition: "Like New", note: "Còn bảo hành hãng", storeId: "store-3", cost: 12500000, expectedPrice: 14000000, status: "Còn hàng", importDate: "2026-07-03" },
-  { id: "p4", brand: "iPhone", name: "11", imei: "356789101234564", color: "Tím", storage: "64GB", madeIn: "VN/A", networkVersion: "4G", batteryCondition: "Đã thay", condition: "Cũ", note: "Máy zin áp, thay pin pisen", storeId: "store-1", cost: 5500000, expectedPrice: 6500000, status: "Còn hàng", importDate: "2026-07-01" },
-  { id: "p5", brand: "Oppo", name: "Reno 8", imei: "356789101234565", color: "Vàng", storage: "256GB", madeIn: "Trung Quốc", networkVersion: "5G", batteryCondition: "Zin", condition: "Mới 100%", note: "Nguyên seal", storeId: "store-2", cost: 7000000, expectedPrice: 8500000, status: "Còn hàng", importDate: "2026-07-04" },
-  { id: "p6", brand: "Xiaomi", name: "Redmi Note 12", imei: "356789101234566", color: "Xám", storage: "128GB", madeIn: "Trung Quốc", networkVersion: "5G", batteryCondition: "Zin", condition: "Like New", note: "", storeId: "store-3", cost: 3500000, expectedPrice: 4200000, status: "Còn hàng", importDate: "2026-07-05" },
-  { id: "p7", brand: "iPhone", name: "14 Pro Max", imei: "356789101234567", color: "Tím", storage: "256GB", madeIn: "LL/A", networkVersion: "5G", batteryCondition: "Zin 98%", condition: "Like New", note: "Kèm ốp lưng xịn", storeId: "store-1", cost: 21500000, expectedPrice: 23200000, status: "Còn hàng", importDate: "2026-07-02" },
-  { id: "p8", brand: "iPhone", name: "15 Pro Max", imei: "356789101234568", color: "Titan", storage: "512GB", madeIn: "VN/A", networkVersion: "5G", batteryCondition: "Zin 100%", condition: "Mới 100%", note: "Chưa active", storeId: "store-1", cost: 29500000, expectedPrice: 32000000, status: "Còn hàng", importDate: "2026-07-05" },
-  { id: "p9", brand: "Samsung", name: "Z Fold 5", imei: "356789101234569", color: "Xanh dương", storage: "512GB", madeIn: "VN/A", networkVersion: "5G", batteryCondition: "Zin", condition: "Like New", note: "Có bút S-Pen", storeId: "store-2", cost: 25000000, expectedPrice: 28000000, status: "Còn hàng", importDate: "2026-07-06" },
-  { id: "p10", brand: "iPhone", name: "XS Max", imei: "356789101234570", color: "Vàng", storage: "256GB", madeIn: "LL/A", networkVersion: "4G", batteryCondition: "Đã thay pin", condition: "Cũ", note: "Màn hình xước dăm", storeId: "store-3", cost: 4500000, expectedPrice: 5500000, status: "Còn hàng", importDate: "2026-07-01" },
-  { id: "p11", brand: "Oppo", name: "Find X5 Pro", imei: "356789101234571", color: "Trắng", storage: "256GB", madeIn: "Trung Quốc", networkVersion: "5G", batteryCondition: "Zin", condition: "Like New", note: "Mặt lưng gốm", storeId: "store-2", cost: 9000000, expectedPrice: 10500000, status: "Còn hàng", importDate: "2026-07-03" },
-  { id: "p12", brand: "iPhone", name: "14", imei: "356789101234572", color: "Xanh biển", storage: "128GB", madeIn: "VN/A", networkVersion: "5G", batteryCondition: "Zin 88%", condition: "Cũ", note: "Phụ kiện sạc cáp", storeId: "store-1", cost: 13000000, expectedPrice: 14500000, status: "Đã bán", importDate: "2026-06-20", saleDate: "2026-07-05" },
-  { id: "p13", brand: "iPhone", name: "13", imei: "356789101234573", color: "Hồng", storage: "128GB", madeIn: "VN/A", networkVersion: "5G", batteryCondition: "Zin 90%", condition: "Like New", note: "Máy nữ dùng", storeId: "store-1", cost: 10500000, expectedPrice: 11800000, status: "Đã bán", importDate: "2026-06-25", saleDate: "2026-07-06" },
-  { id: "p14", brand: "Samsung", name: "Galaxy A54", imei: "356789101234574", color: "Tím", storage: "128GB", madeIn: "Việt Nam", networkVersion: "5G", batteryCondition: "Zin", condition: "Mới 100%", note: "Tặng kèm ốp", storeId: "store-3", cost: 6500000, expectedPrice: 7500000, status: "Còn hàng", importDate: "2026-07-06" },
-];
-
-const accessorySeed: Accessory[] = [
-  { id: "a1", code: "PK-CAP20", name: "Cáp sạc nhanh 20W Apple", storeId: "store-1", quantity: 34, cost: 55000, price: 120000, status: "Còn hàng" },
-  { id: "a2", code: "PK-OP13", name: "Ốp lưng Silicon iPhone 13 Pro Max", storeId: "store-2", quantity: 18, cost: 30000, price: 90000, status: "Còn hàng" },
-  { id: "a3", code: "PK-KLCL", name: "Kính cường lực Kingkong", storeId: "store-3", quantity: 50, cost: 18000, price: 70000, status: "Còn hàng" },
-  { id: "a4", code: "PK-SDP10", name: "Sạc dự phòng 10000mAh", storeId: "store-1", quantity: 12, cost: 250000, price: 400000, status: "Còn hàng" },
-  { id: "a5", code: "PK-TNAP", name: "Tai nghe AirPods Pro 2 Rep", storeId: "store-1", quantity: 5, cost: 350000, price: 550000, status: "Còn hàng" },
-  { id: "a6", code: "PK-OP14", name: "Ốp lưng chống sốc iPhone 14", storeId: "store-2", quantity: 0, cost: 40000, price: 110000, status: "Hết hàng" },
-  { id: "a7", code: "PK-SAC65", name: "Củ sạc GaN 65W Baseus", storeId: "store-3", quantity: 8, cost: 320000, price: 550000, status: "Còn hàng" },
-  { id: "a8", code: "PK-GIA", name: "Giá đỡ điện thoại ô tô", storeId: "store-1", quantity: 15, cost: 70000, price: 150000, status: "Còn hàng" },
-  { id: "a9", code: "PK-DNM", name: "Dây đeo Apple Watch cao su", storeId: "store-2", quantity: 22, cost: 45000, price: 120000, status: "Còn hàng" },
-  { id: "a10", code: "PK-KLCL-S22", name: "Cường lực Samsung S22", storeId: "store-3", quantity: 10, cost: 20000, price: 80000, status: "Còn hàng" },
 ];
 
 const salesSeed: Sale[] = [
@@ -409,8 +397,8 @@ export default function Home() {
   const [onlineRepairMonth, setOnlineRepairMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [onlineRepairDate, setOnlineRepairDate] = useState("");
   const [customers, setCustomers] = useState(customersSeed);
-  const [phones, setPhones] = useState(phoneSeed);
-  const [accessories, setAccessories] = useState(accessorySeed);
+  const [phones, setPhones] = useState<PhoneItem[]>([]);
+  const [accessories, setAccessories] = useState<Accessory[]>([]);
   const [sales, setSales] = useState(salesSeed);
   const [softwareServices, setSoftwareServices] = useState(softwareServiceSeed);
   const [onlineRepairs, setOnlineRepairs] = useState(onlineRepairSeed);
@@ -425,8 +413,83 @@ export default function Home() {
   const [batteryOptions, setBatteryOptions] = useState(["Zin", "Đã thay", "Đã thay pin", "80-90%", "Zin 88%", "Zin 90%", "Zin 92%", "Zin 98%", "Zin 100%"]);
   const [batteryCapacityOptions, setBatteryCapacityOptions] = useState(["100%", "99%", "98%", "95%", "90%", "85%", "80%", "Dưới 80%"]);
   const [conditionOptions, setConditionOptions] = useState(["Zin", "Cũ", "Like New", "Mới 100%"]);
-
+  const [inventoryBackendError, setInventoryBackendError] = useState("");
+  const [inventoryLoading, setInventoryLoading] = useState(false);
+  const [supabaseReportMonthly, setSupabaseReportMonthly] = useState<{ soldPhones: number; revenue: number; profit: number } | null>(null);
+  const [supabaseYearlyChart, setSupabaseYearlyChart] = useState<{ month: string; revenue: number; profit: number; sold: number }[] | null>(null);
   const canCancel = currentUser?.role === "owner";
+
+  /** Kho hàng luôn load từ Postgres (Supabase) qua API — không mock. */
+  const reloadInventoryFromDb = useCallback(async () => {
+    setInventoryLoading(true);
+    setInventoryBackendError("");
+    try {
+      const [phoneRows, accessoryRows] = await Promise.all([
+        apiListPhones({ storeId: "all" }),
+        apiListAccessories({ storeId: "all" }),
+      ]);
+      setPhones(phoneRows);
+      setAccessories(accessoryRows);
+
+      const [brands, names, colors, storages, madeIns, conditions, batteries, batCaps] = await Promise.all([
+        listLookupLabels(PHONE_LOOKUP_CATEGORIES.brand),
+        listLookupLabels(PHONE_LOOKUP_CATEGORIES.modelName),
+        listLookupLabels(PHONE_LOOKUP_CATEGORIES.color),
+        listLookupLabels(PHONE_LOOKUP_CATEGORIES.storage),
+        listLookupLabels(PHONE_LOOKUP_CATEGORIES.madeIn),
+        listLookupLabels(PHONE_LOOKUP_CATEGORIES.condition),
+        listLookupLabels(PHONE_LOOKUP_CATEGORIES.batteryCondition),
+        listLookupLabels(PHONE_LOOKUP_CATEGORIES.batteryCapacity),
+      ]);
+      if (brands.length) setBrandOptions(brands);
+      if (names.length) setNameOptions(names);
+      if (colors.length) setColorOptions(colors);
+      if (storages.length) setStorageOptions(storages);
+      if (madeIns.length) setMadeInOptions(madeIns);
+      if (conditions.length) setConditionOptions(conditions);
+      if (batteries.length) setBatteryOptions(batteries);
+      if (batCaps.length) setBatteryCapacityOptions(batCaps);
+    } catch (err) {
+      setPhones([]);
+      setAccessories([]);
+      setInventoryBackendError(toUiError(err));
+    } finally {
+      setInventoryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    void reloadInventoryFromDb();
+  }, [currentUser, reloadInventoryFromDb]);
+
+  useEffect(() => {
+    if (!currentUser) {
+      setSupabaseReportMonthly(null);
+      setSupabaseYearlyChart(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const [monthly, yearly] = await Promise.all([
+          reportInventoryMonthly(inventoryReportMonth, storeFilter),
+          reportInventoryYearly(Number(reportYear), storeFilter),
+        ]);
+        if (cancelled) return;
+        setSupabaseReportMonthly(monthly);
+        setSupabaseYearlyChart(toYearlyChartRows(yearly));
+      } catch {
+        if (!cancelled) {
+          setSupabaseReportMonthly(null);
+          setSupabaseYearlyChart(null);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser, inventoryReportMonth, reportYear, storeFilter]);
 
   let minInventoryPrice = 0;
   let maxInventoryPrice = Number.MAX_SAFE_INTEGER;
@@ -484,6 +547,8 @@ export default function Home() {
   const editingAccessory = editingAccessoryId ? accessories.find((item) => item.id === editingAccessoryId) : null;
   const viewingPhone = viewingPhoneId ? phones.find((item) => item.id === viewingPhoneId) : null;
   const inventoryMonthlyReport = useMemo(() => {
+    if (supabaseReportMonthly) return supabaseReportMonthly;
+
     const monthlySales = sales.filter((item) => {
       const matchesStore = storeFilter === "all" || item.storeId === storeFilter;
       return matchesStore && item.status === "Hoàn tất" && item.createdAt.startsWith(inventoryReportMonth);
@@ -496,7 +561,7 @@ export default function Home() {
       revenue: monthlySales.reduce((sum, item) => sum + item.amount, 0),
       profit: monthlySales.reduce((sum, item) => sum + item.profit, 0),
     };
-  }, [inventoryReportMonth, sales, storeFilter]);
+  }, [inventoryReportMonth, sales, storeFilter, supabaseReportMonthly]);
 
   const dashboard = useMemo(() => {
     const activePhones = phones.filter((item) => item.status === "Còn hàng" && (storeFilter === "all" || item.storeId === storeFilter));
@@ -544,6 +609,8 @@ export default function Home() {
     return months;
   }, [sales, reportYear, storeFilter]);
 
+  const chartYearlyData = supabaseYearlyChart ?? yearlyReportData;
+
   function pushLog(action: string, target: string, storeId: Exclude<StoreId, "all">) {
     setLogs((prev) => [
       {
@@ -558,7 +625,7 @@ export default function Home() {
     ]);
   }
 
-  function handleLogin(event: FormEvent<HTMLFormElement>) {
+  async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const email = String(form.get("email") || "");
@@ -567,12 +634,15 @@ export default function Home() {
       setLoginError("Vui lòng nhập mật khẩu.");
       return;
     }
+
+    // Login demo UI (role); dữ liệu kho luôn từ DB, không phụ thuộc mock seed.
     if (password !== "123456") {
-      setLoginError("Mật khẩu không đúng.");
+      setLoginError("Mật khẩu không đúng (demo: 123456).");
       return;
     }
     const selected = users.find((user) => user.email === email) ?? users[0];
     setLoginError("");
+    setInventoryBackendError("");
     setCurrentUser(selected);
     setStoreFilter(selected.role === "owner" ? "all" : selected.storeId);
   }
@@ -604,7 +674,7 @@ export default function Home() {
     setEditingAccessoryId(null);
   }
 
-  function savePhone(event: FormEvent<HTMLFormElement>) {
+  async function savePhone(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const storeId = (form.get("storeId") as Exclude<StoreId, "all">) || (storeFilter !== "all" ? storeFilter : currentUser?.storeId) || "store-1";
@@ -629,14 +699,24 @@ export default function Home() {
       status: String(form.get("status")) as ProductStatus,
     };
 
-    setPhones((prev) => (editingPhoneId ? prev.map((item) => (item.id === editingPhoneId ? payload : item)) : [payload, ...prev]));
-    pushLog(editingPhoneId ? "Sửa máy trong kho" : "Thêm máy vào kho", payload.imei, storeId);
+    try {
+      const saved = await apiUpsertPhone({ ...payload, id: editingPhoneId ?? undefined });
+      setPhones((prev) =>
+        editingPhoneId ? prev.map((item) => (item.id === editingPhoneId ? saved : item)) : [saved, ...prev]
+      );
+      pushLog(editingPhoneId ? "Sửa máy trong kho" : "Thêm máy vào kho", saved.imei, storeId);
+      setInventoryBackendError("");
+    } catch (err) {
+      setInventoryBackendError(toUiError(err));
+      return;
+    }
+
     closeInventoryModal();
     setInventoryPage(1);
     event.currentTarget.reset();
   }
 
-  function saveAccessory(event: FormEvent<HTMLFormElement>) {
+  async function saveAccessory(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const storeId = String(form.get("storeId")) as Exclude<StoreId, "all">;
@@ -652,25 +732,51 @@ export default function Home() {
       status: String(form.get("status") || (quantity > 0 ? "Còn hàng" : "Hết hàng")) as AccessoryStatus,
     };
 
-    setAccessories((prev) => (editingAccessoryId ? prev.map((item) => (item.id === editingAccessoryId ? payload : item)) : [payload, ...prev]));
-    pushLog(editingAccessoryId ? "Sửa phụ kiện trong kho" : "Thêm phụ kiện vào kho", payload.code, storeId);
+    try {
+      const saved = await apiUpsertAccessory({ ...payload, id: editingAccessoryId ?? undefined });
+      setAccessories((prev) =>
+        editingAccessoryId
+          ? prev.map((item) => (item.id === editingAccessoryId ? saved : item))
+          : [saved, ...prev]
+      );
+      pushLog(editingAccessoryId ? "Sửa phụ kiện trong kho" : "Thêm phụ kiện vào kho", saved.code, storeId);
+      setInventoryBackendError("");
+    } catch (err) {
+      setInventoryBackendError(toUiError(err));
+      return;
+    }
+
     closeInventoryModal();
     setInventoryPage(1);
     event.currentTarget.reset();
   }
 
-  function cancelPhone(id: string) {
+  async function cancelPhone(id: string) {
     const phone = phones.find((item) => item.id === id);
     if (!phone || !canCancel) return;
-    setPhones((prev) => prev.map((item) => (item.id === id ? { ...item, status: "Đã hủy" } : item)));
-    pushLog("Hủy mềm máy trong kho", phone.imei, phone.storeId);
+
+    try {
+      const saved = await apiCancelPhone(id);
+      setPhones((prev) => prev.map((item) => (item.id === id ? saved : item)));
+      pushLog("Hủy mềm máy trong kho", phone.imei, phone.storeId);
+      setInventoryBackendError("");
+    } catch (err) {
+      setInventoryBackendError(toUiError(err));
+    }
   }
 
-  function cancelAccessory(id: string) {
+  async function cancelAccessory(id: string) {
     const accessory = accessories.find((item) => item.id === id);
     if (!accessory || !canCancel) return;
-    setAccessories((prev) => prev.map((item) => (item.id === id ? { ...item, status: "Đã hủy" } : item)));
-    pushLog("Hủy mềm phụ kiện trong kho", accessory.code, accessory.storeId);
+
+    try {
+      const saved = await apiCancelAccessory(id);
+      setAccessories((prev) => prev.map((item) => (item.id === id ? saved : item)));
+      pushLog("Hủy mềm phụ kiện trong kho", accessory.code, accessory.storeId);
+      setInventoryBackendError("");
+    } catch (err) {
+      setInventoryBackendError(toUiError(err));
+    }
   }
 
   function createSale(event: FormEvent<HTMLFormElement>) {
@@ -896,6 +1002,9 @@ export default function Home() {
             <button
               onClick={() => {
                 setLoginError("");
+                setInventoryBackendError("");
+                setPhones([]);
+                setAccessories([]);
                 setCurrentUser(null);
               }}
               className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-3 text-sm font-bold"
@@ -905,6 +1014,17 @@ export default function Home() {
             </button>
           </div>
         </header>
+
+        {(inventoryBackendError || (inventoryLoading)) && (
+          <div className={`mb-4 rounded-lg border p-3 text-sm font-semibold ${inventoryBackendError ? "border-red-200 bg-red-50 text-danger" : "border-line bg-white text-muted"}`}>
+            {inventoryBackendError || "Đang tải kho từ Supabase…"}
+            {!inventoryLoading && inventoryBackendError ? (
+              <button type="button" className="ml-3 font-black text-brand underline" onClick={() => void reloadInventoryFromDb()}>
+                Thử lại
+              </button>
+            ) : null}
+          </div>
+        )}
 
         {activePage === "dashboard" && (
           <div className="grid gap-4">
@@ -1005,7 +1125,7 @@ export default function Home() {
               </div>
               <div className="h-[400px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={yearlyReportData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                  <BarChart data={chartYearlyData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                     <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12, fontWeight: 600 }} dy={10} />
                     <YAxis yAxisId="left" orientation="left" stroke="#1e293b" axisLine={false} tickLine={false} tickFormatter={(val) => `${val / 1000000}M`} tick={{ fill: "#64748b", fontSize: 12, fontWeight: 600 }} dx={-10} />
