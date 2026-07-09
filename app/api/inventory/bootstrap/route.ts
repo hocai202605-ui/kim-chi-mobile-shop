@@ -1,0 +1,35 @@
+import { NextResponse } from "next/server";
+import { repoInventoryBootstrap } from "@/lib/db/inventoryRepo";
+import { isMaxConnSessionError } from "@/lib/db/pool";
+
+export const dynamic = "force-dynamic";
+
+const PHONE_LOOKUP_CODES = [
+  "phone_brand",
+  "phone_model_name",
+  "phone_color",
+  "phone_storage",
+  "phone_made_in",
+  "phone_condition",
+  "phone_battery_condition",
+  "phone_battery_capacity",
+];
+
+export async function GET() {
+  try {
+    const data = await repoInventoryBootstrap(PHONE_LOOKUP_CODES);
+    return NextResponse.json({ data });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Lỗi tải kho";
+    if (isMaxConnSessionError(err)) {
+      return NextResponse.json(
+        {
+          error:
+            "Hết slot kết nối DB (session pool). Đợi vài giây rồi Thử lại, hoặc chạy: node scripts/kill-idle-sessions.js",
+        },
+        { status: 503 }
+      );
+    }
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

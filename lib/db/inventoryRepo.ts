@@ -257,6 +257,39 @@ export async function repoListLookupLabels(categoryCode: string): Promise<string
   return rows.map((r) => r.label);
 }
 
+/** One query for many lookup categories — avoids N parallel API/DB connections. */
+export async function repoListLookupsByCategories(
+  categoryCodes: string[]
+): Promise<Record<string, string[]>> {
+  const out: Record<string, string[]> = {};
+  for (const code of categoryCodes) out[code] = [];
+  if (!categoryCodes.length) return out;
+
+  const { rows } = await getPool().query<{ code: string; label: string }>(
+    `select c.code, i.label
+     from public.lookup_items i
+     join public.lookup_categories c on c.id = i.category_id
+     where c.code = any($1::text[]) and c.is_active and i.is_active
+     order by c.code, i.sort_order, i.label`,
+    [categoryCodes]
+  );
+  for (const row of rows) {
+    if (!out[row.code]) out[row.code] = [];
+    out[row.code].push(row.label);
+  }
+  return out;
+}
+
+/** Single round-trip bundle for inventory page bootstrap. */
+export async function repoInventoryBootstrap(lookupCategoryCodes: string[]) {
+  const [phones, accessories, lookups] = await Promise.all([
+    repoListPhones(),
+    repoListAccessories(),
+    repoListLookupsByCategories(lookupCategoryCodes),
+  ]);
+  return { phones, accessories, lookups };
+}
+
 export async function repoReportMonthly(yearMonth: string, storeCode?: StoreId) {
   const pool = getPool();
   let storeId: string | null = null;

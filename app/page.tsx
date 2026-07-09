@@ -30,8 +30,7 @@ import {
 } from "lucide-react";
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  listAccessories as apiListAccessories,
-  listPhones as apiListPhones,
+  loadInventoryBootstrap as apiLoadInventoryBootstrap,
   upsertAccessory as apiUpsertAccessory,
   upsertPhone as apiUpsertPhone,
 } from "@/services/inventoryService";
@@ -40,7 +39,7 @@ import {
   reportInventoryYearly,
   toYearlyChartRows,
 } from "@/services/inventoryReportService";
-import { listLookupLabels, PHONE_LOOKUP_CATEGORIES } from "@/services/lookupService";
+import { PHONE_LOOKUP_CATEGORIES } from "@/services/lookupService";
 import {
   listSoftwareOrders as apiListSoftwareOrders,
   upsertSoftwareOrder as apiUpsertSoftwareOrder,
@@ -410,28 +409,24 @@ export default function Home() {
   const [supabaseYearlyChart, setSupabaseYearlyChart] = useState<{ month: string; revenue: number; profit: number; sold: number }[] | null>(null);
   const canCancel = currentUser?.role === "owner";
 
-  /** Kho hàng luôn load từ Postgres (Supabase) qua API — không mock. */
+  /** Kho hàng: 1 request bootstrap (phones + accessories + lookups) — bớt storm kết nối. */
   const reloadInventoryFromDb = useCallback(async () => {
     setInventoryLoading(true);
     setInventoryBackendError("");
     try {
-      const [phoneRows, accessoryRows] = await Promise.all([
-        apiListPhones({ storeId: "all" }),
-        apiListAccessories({ storeId: "all" }),
-      ]);
-      setPhones(phoneRows);
-      setAccessories(accessoryRows);
+      const data = await apiLoadInventoryBootstrap();
+      setPhones(data.phones);
+      setAccessories(data.accessories);
 
-      const [brands, names, colors, storages, madeIns, conditions, batteries, batCaps] = await Promise.all([
-        listLookupLabels(PHONE_LOOKUP_CATEGORIES.brand),
-        listLookupLabels(PHONE_LOOKUP_CATEGORIES.modelName),
-        listLookupLabels(PHONE_LOOKUP_CATEGORIES.color),
-        listLookupLabels(PHONE_LOOKUP_CATEGORIES.storage),
-        listLookupLabels(PHONE_LOOKUP_CATEGORIES.madeIn),
-        listLookupLabels(PHONE_LOOKUP_CATEGORIES.condition),
-        listLookupLabels(PHONE_LOOKUP_CATEGORIES.batteryCondition),
-        listLookupLabels(PHONE_LOOKUP_CATEGORIES.batteryCapacity),
-      ]);
+      const L = data.lookups;
+      const brands = L[PHONE_LOOKUP_CATEGORIES.brand] ?? [];
+      const names = L[PHONE_LOOKUP_CATEGORIES.modelName] ?? [];
+      const colors = L[PHONE_LOOKUP_CATEGORIES.color] ?? [];
+      const storages = L[PHONE_LOOKUP_CATEGORIES.storage] ?? [];
+      const madeIns = L[PHONE_LOOKUP_CATEGORIES.madeIn] ?? [];
+      const conditions = L[PHONE_LOOKUP_CATEGORIES.condition] ?? [];
+      const batteries = L[PHONE_LOOKUP_CATEGORIES.batteryCondition] ?? [];
+      const batCaps = L[PHONE_LOOKUP_CATEGORIES.batteryCapacity] ?? [];
       if (brands.length) setBrandOptions(brands);
       if (names.length) setNameOptions(names);
       if (colors.length) setColorOptions(colors);
@@ -466,8 +461,11 @@ export default function Home() {
 
   useEffect(() => {
     if (!currentUser) return;
-    void reloadInventoryFromDb();
-    void reloadSoftwareFromDb();
+    // Sequential: inventory first, then software — fewer concurrent DB slots
+    void (async () => {
+      await reloadInventoryFromDb();
+      await reloadSoftwareFromDb();
+    })();
   }, [currentUser, reloadInventoryFromDb, reloadSoftwareFromDb]);
 
   useEffect(() => {
@@ -479,12 +477,12 @@ export default function Home() {
     let cancelled = false;
     (async () => {
       try {
-        const [monthly, yearly] = await Promise.all([
-          reportInventoryMonthly(inventoryReportMonth, storeFilter),
-          reportInventoryYearly(Number(reportYear), storeFilter),
-        ]);
+        // Sequential reports to avoid connection spikes
+        const monthly = await reportInventoryMonthly(inventoryReportMonth, storeFilter);
         if (cancelled) return;
         setSupabaseReportMonthly(monthly);
+        const yearly = await reportInventoryYearly(Number(reportYear), storeFilter);
+        if (cancelled) return;
         setSupabaseYearlyChart(toYearlyChartRows(yearly));
       } catch {
         if (!cancelled) {

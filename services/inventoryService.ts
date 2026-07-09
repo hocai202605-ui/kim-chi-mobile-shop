@@ -66,6 +66,18 @@ function applyAccessoryFilters(rows: Accessory[], filters: AccessoryFilters = {}
   });
 }
 
+export type InventoryBootstrap = {
+  phones: PhoneItem[];
+  accessories: Accessory[];
+  lookups: Record<string, string[]>;
+};
+
+/** One request: phones + accessories + all phone lookups (fewer DB connections). */
+export async function loadInventoryBootstrap(): Promise<InventoryBootstrap> {
+  const res = await fetch("/api/inventory/bootstrap", { cache: "no-store" });
+  return parseJson<InventoryBootstrap>(res);
+}
+
 /** Always from DB via Next API (no client mock). */
 export async function listPhones(filters: PhoneFilters = {}): Promise<PhoneItem[]> {
   const res = await fetch("/api/inventory/phones", { cache: "no-store" });
