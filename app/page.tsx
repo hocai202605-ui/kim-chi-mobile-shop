@@ -30,8 +30,6 @@ import {
 } from "lucide-react";
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  cancelAccessory as apiCancelAccessory,
-  cancelPhone as apiCancelPhone,
   listAccessories as apiListAccessories,
   listPhones as apiListPhones,
   upsertAccessory as apiUpsertAccessory,
@@ -43,6 +41,10 @@ import {
   toYearlyChartRows,
 } from "@/services/inventoryReportService";
 import { listLookupLabels, PHONE_LOOKUP_CATEGORIES } from "@/services/lookupService";
+import {
+  listSoftwareOrders as apiListSoftwareOrders,
+  upsertSoftwareOrder as apiUpsertSoftwareOrder,
+} from "@/services/softwareService";
 
 function toUiError(err: unknown): string {
   return err instanceof Error ? err.message : "Lỗi không xác định";
@@ -225,19 +227,6 @@ const softwareServiceSeed: SoftwareService[] = [
   { id: "sw3", createdAt: "2026-07-07 23:47", customerName: "Dũng Mobi", deviceName: "Unlock mạng", quantity: 1, revenue: 5000000, cost: 3500000, profit: 1500000, isPaid: true },
 ];
 
-const onlineRepairSeed: OnlineRepair[] = [
-  { id: "or1", createdAt: "2026-07-08 09:15", customerName: "Hoàng Táo", customerType: "Ưu tiên", deviceName: "13 Pro Max", issue: "Xanh màn", quote: 1500000, deposit: 500000, isPaid: false, receiveDate: "2026-07-08 09:15", completeDate: "", paymentDate: "", paymentStatus: "Nợ dai", rewardPoints: 0 },
-  { id: "or2", createdAt: "2026-07-08 10:30", customerName: "Khách Cần Thơ", customerType: "Vãng lai", deviceName: "Z Fold 4", issue: "Hư cáp gập", quote: 3000000, deposit: 3000000, isPaid: true, receiveDate: "2026-07-08 10:30", completeDate: "2026-07-08 14:00", paymentDate: "2026-07-08 14:05", paymentStatus: "Đã thanh toán", rewardPoints: 300 },
-  { id: "or3", createdAt: "2026-07-08 11:00", customerName: "Anh Tuấn", customerType: "Thân thiết", deviceName: "14 Pro", issue: "Lỗi cam", quote: 2000000, deposit: 1000000, isPaid: false, receiveDate: "2026-07-08 11:00", completeDate: "", paymentDate: "", paymentStatus: "Nợ dai", rewardPoints: 100 },
-  { id: "or4", createdAt: "2026-07-07 14:20", customerName: "Chị Linh", customerType: "Mới", deviceName: "S23 Ultra", issue: "Ép kính", quote: 800000, deposit: 800000, isPaid: true, receiveDate: "2026-07-07 14:20", completeDate: "2026-07-07 16:30", paymentDate: "2026-07-07 16:35", paymentStatus: "Đã thanh toán", rewardPoints: 50 },
-  { id: "or5", createdAt: "2026-07-07 16:45", customerName: "Thợ Hùng", customerType: "Ưu tiên", deviceName: "iPhone 11", issue: "Thay pin", quote: 450000, deposit: 0, isPaid: false, receiveDate: "2026-07-07 16:45", completeDate: "", paymentDate: "", paymentStatus: "Nợ dai", rewardPoints: 0 },
-  { id: "or6", createdAt: "2026-07-06 09:30", customerName: "Em Trang", customerType: "Vãng lai", deviceName: "Oppo Reno 6", issue: "Mất nguồn", quote: 1200000, deposit: 1200000, isPaid: true, receiveDate: "2026-07-06 09:30", completeDate: "2026-07-06 17:00", paymentDate: "2026-07-06 17:15", paymentStatus: "Đã thanh toán", rewardPoints: 120 },
-  { id: "or7", createdAt: "2026-07-06 11:15", customerName: "Bác Tâm", customerType: "Thân thiết", deviceName: "iPad Gen 9", issue: "Thay vỏ", quote: 900000, deposit: 500000, isPaid: false, receiveDate: "2026-07-06 11:15", completeDate: "", paymentDate: "", paymentStatus: "Nợ dai", rewardPoints: 80 },
-  { id: "or8", createdAt: "2026-07-05 13:40", customerName: "Cửa hàng Nam", customerType: "Ưu tiên", deviceName: "iPhone 12", issue: "Fix face ID", quote: 600000, deposit: 600000, isPaid: true, receiveDate: "2026-07-05 13:40", completeDate: "2026-07-05 15:20", paymentDate: "2026-07-05 15:25", paymentStatus: "Đã thanh toán", rewardPoints: 0 },
-  { id: "or9", createdAt: "2026-07-05 15:00", customerName: "Chị Phương", customerType: "Mới", deviceName: "Samsung A54", issue: "Thay màn", quote: 1100000, deposit: 0, isPaid: false, receiveDate: "2026-07-05 15:00", completeDate: "", paymentDate: "", paymentStatus: "Nợ dai", rewardPoints: 0 },
-  { id: "or10", createdAt: "2026-07-04 10:10", customerName: "Chú Bình", customerType: "Vãng lai", deviceName: "Redmi Note 11", issue: "Thay chân sạc", quote: 250000, deposit: 250000, isPaid: true, receiveDate: "2026-07-04 10:10", completeDate: "2026-07-04 11:30", paymentDate: "2026-07-04 11:35", paymentStatus: "Đã thanh toán", rewardPoints: 20 },
-];
-
 const repairsSeed: Repair[] = [
   { id: "r1", createdAt: "2026-07-06", customerId: "c2", storeId: "store-2", deviceName: "iPhone XS", screenPassword: "2580", issue: "Thay pin", intakeNote: "Màn trầy nhẹ, camera bình thường", quote: 650000, deposit: 200000, status: "Đang sửa" },
   { id: "r2", createdAt: "2026-07-05", customerId: "c1", storeId: "store-1", deviceName: "Samsung A52", screenPassword: "Không có", issue: "Lỗi sạc", intakeNote: "Máy móp góc dưới", quote: 450000, deposit: 0, status: "Đang chờ" },
@@ -401,7 +390,9 @@ export default function Home() {
   const [accessories, setAccessories] = useState<Accessory[]>([]);
   const [sales, setSales] = useState(salesSeed);
   const [softwareServices, setSoftwareServices] = useState(softwareServiceSeed);
-  const [onlineRepairs, setOnlineRepairs] = useState(onlineRepairSeed);
+  const [onlineRepairs, setOnlineRepairs] = useState<OnlineRepair[]>([]);
+  const [softwareLoading, setSoftwareLoading] = useState(false);
+  const [softwareBackendError, setSoftwareBackendError] = useState("");
   const [repairs, setRepairs] = useState(repairsSeed);
   const [ledger, setLedger] = useState(ledgerSeed);
   const [logs, setLogs] = useState(logSeed);
@@ -458,10 +449,26 @@ export default function Home() {
     }
   }, []);
 
+  /** Phần mềm: load từ Postgres qua API — không mock. */
+  const reloadSoftwareFromDb = useCallback(async () => {
+    setSoftwareLoading(true);
+    setSoftwareBackendError("");
+    try {
+      const rows = await apiListSoftwareOrders();
+      setOnlineRepairs(rows);
+    } catch (err) {
+      setOnlineRepairs([]);
+      setSoftwareBackendError(toUiError(err));
+    } finally {
+      setSoftwareLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!currentUser) return;
     void reloadInventoryFromDb();
-  }, [currentUser, reloadInventoryFromDb]);
+    void reloadSoftwareFromDb();
+  }, [currentUser, reloadInventoryFromDb, reloadSoftwareFromDb]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -677,7 +684,10 @@ export default function Home() {
   async function savePhone(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const storeId = (form.get("storeId") as Exclude<StoreId, "all">) || (storeFilter !== "all" ? storeFilter : currentUser?.storeId) || "store-1";
+    const storeId =
+      (form.get("storeId") as Exclude<StoreId, "all">) ||
+      (storeFilter !== "all" ? storeFilter : currentUser?.storeId) ||
+      "store-1";
     const payload: PhoneItem = {
       id: editingPhoneId ?? `p${Date.now()}`,
       brand: String(form.get("brand")),
@@ -702,7 +712,9 @@ export default function Home() {
     try {
       const saved = await apiUpsertPhone({ ...payload, id: editingPhoneId ?? undefined });
       setPhones((prev) =>
-        editingPhoneId ? prev.map((item) => (item.id === editingPhoneId ? saved : item)) : [saved, ...prev]
+        editingPhoneId
+          ? prev.map((item) => (item.id === editingPhoneId ? saved : item))
+          : [saved, ...prev]
       );
       pushLog(editingPhoneId ? "Sửa máy trong kho" : "Thêm máy vào kho", saved.imei, storeId);
       setInventoryBackendError("");
@@ -733,13 +745,20 @@ export default function Home() {
     };
 
     try {
-      const saved = await apiUpsertAccessory({ ...payload, id: editingAccessoryId ?? undefined });
+      const saved = await apiUpsertAccessory({
+        ...payload,
+        id: editingAccessoryId ?? undefined,
+      });
       setAccessories((prev) =>
         editingAccessoryId
           ? prev.map((item) => (item.id === editingAccessoryId ? saved : item))
           : [saved, ...prev]
       );
-      pushLog(editingAccessoryId ? "Sửa phụ kiện trong kho" : "Thêm phụ kiện vào kho", saved.code, storeId);
+      pushLog(
+        editingAccessoryId ? "Sửa phụ kiện trong kho" : "Thêm phụ kiện vào kho",
+        saved.code,
+        storeId
+      );
       setInventoryBackendError("");
     } catch (err) {
       setInventoryBackendError(toUiError(err));
@@ -749,34 +768,6 @@ export default function Home() {
     closeInventoryModal();
     setInventoryPage(1);
     event.currentTarget.reset();
-  }
-
-  async function cancelPhone(id: string) {
-    const phone = phones.find((item) => item.id === id);
-    if (!phone || !canCancel) return;
-
-    try {
-      const saved = await apiCancelPhone(id);
-      setPhones((prev) => prev.map((item) => (item.id === id ? saved : item)));
-      pushLog("Hủy mềm máy trong kho", phone.imei, phone.storeId);
-      setInventoryBackendError("");
-    } catch (err) {
-      setInventoryBackendError(toUiError(err));
-    }
-  }
-
-  async function cancelAccessory(id: string) {
-    const accessory = accessories.find((item) => item.id === id);
-    if (!accessory || !canCancel) return;
-
-    try {
-      const saved = await apiCancelAccessory(id);
-      setAccessories((prev) => prev.map((item) => (item.id === id ? saved : item)));
-      pushLog("Hủy mềm phụ kiện trong kho", accessory.code, accessory.storeId);
-      setInventoryBackendError("");
-    } catch (err) {
-      setInventoryBackendError(toUiError(err));
-    }
   }
 
   function createSale(event: FormEvent<HTMLFormElement>) {
@@ -1300,7 +1291,7 @@ export default function Home() {
               {inventoryTab === "phones" ? (
                 <DataTable
                   compact
-                  headers={["Tên máy", "Dung lượng", "IMEI", "Giá bán", "Màu sắc", "Pin", "Thao tác"]}
+                  headers={["Tên máy", "Dung lượng", "IMEI", "Giá bán", "Màu sắc", "Dung lượng pin", "Pin", "Thao tác"]}
                   rows={paginatedPhones.map((item) => [
                     <div key={`name-${item.id}`} className="flex flex-col items-center gap-1.5">
                       <div className="flex items-center justify-center gap-2 text-lg font-black text-brand">{item.name}</div>
@@ -1313,6 +1304,7 @@ export default function Home() {
                       <div className="h-3.5 w-3.5 shrink-0 rounded-full border border-slate-200 shadow-sm" style={{ backgroundColor: getColorCode(item.color) }} />
                       <span className="text-base font-medium text-slate-700">{item.color}</span>
                     </div>,
+                    <span className="text-base font-bold text-slate-700" key={`batcap-${item.id}`}>{item.batteryCapacity || "—"}</span>,
                     <div className="flex items-center justify-center gap-1.5 text-base font-bold text-amber-600" key={`bat-${item.id}`}>{item.batteryCondition}</div>,
                     <div key={item.id} className="flex flex-nowrap justify-center gap-1.5">
                       <button onClick={() => setViewingPhoneId(item.id)} title="Chi tiết" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-900">
@@ -1320,14 +1312,6 @@ export default function Home() {
                       </button>
                       <button onClick={() => openPhoneEditModal(item.id)} title="Sửa" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20">
                         <Edit3 size={18} />
-                      </button>
-                      <button
-                        title="Hủy"
-                        disabled={!canCancel || item.status === "Đã hủy"}
-                        onClick={() => cancelPhone(item.id)}
-                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        <Trash2 size={18} />
                       </button>
                     </div>,
                   ])}
@@ -1346,14 +1330,6 @@ export default function Home() {
                     <div key={item.id} className="flex flex-nowrap justify-center gap-1.5">
                       <button onClick={() => openAccessoryEditModal(item.id)} title="Sửa" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20">
                         <Edit3 size={18} />
-                      </button>
-                      <button
-                        title="Hủy"
-                        disabled={!canCancel || item.status === "Đã hủy"}
-                        onClick={() => cancelAccessory(item.id)}
-                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        <Trash2 size={18} />
                       </button>
                     </div>,
                   ])}
@@ -1780,23 +1756,51 @@ export default function Home() {
         {activePage === "online-repairs" && (() => {
           const todayString = new Date().toISOString().slice(0, 10);
           const displayDate = onlineRepairDate || todayString;
-          
+          const orderTimeKey = (r: OnlineRepair) =>
+            (r.receiveDate || r.createdAt || "").replace("T", " ");
+
           let filteredRepairs = onlineRepairs;
           if (onlineRepairDate) {
-            filteredRepairs = filteredRepairs.filter(r => r.createdAt.includes(onlineRepairDate));
+            filteredRepairs = filteredRepairs.filter((r) => orderTimeKey(r).includes(onlineRepairDate));
           } else {
-            filteredRepairs = filteredRepairs.filter(r => r.createdAt.startsWith(onlineRepairMonth));
-          }
-          
-          if (onlineRepairFilter !== "all") {
-            filteredRepairs = filteredRepairs.filter(r => (onlineRepairFilter === "paid" ? r.isPaid : !r.isPaid));
+            filteredRepairs = filteredRepairs.filter((r) => orderTimeKey(r).startsWith(onlineRepairMonth));
           }
 
-          const monthlyRepairs = onlineRepairs.filter(s => s.createdAt.startsWith(onlineRepairMonth));
-          const dailyRepairs = onlineRepairs.filter(s => s.createdAt.includes(displayDate));
-          
+          if (onlineRepairFilter !== "all") {
+            filteredRepairs = filteredRepairs.filter((r) =>
+              onlineRepairFilter === "paid" ? r.isPaid : !r.isPaid
+            );
+          }
+
+          const monthlyRepairs = onlineRepairs.filter((s) =>
+            orderTimeKey(s).startsWith(onlineRepairMonth)
+          );
+          const dailyRepairs = onlineRepairs.filter((s) =>
+            orderTimeKey(s).includes(displayDate)
+          );
+
           return (
           <section className="grid gap-4">
+            {(softwareBackendError || softwareLoading) && (
+              <div
+                className={`rounded-lg border p-3 text-sm font-semibold ${
+                  softwareBackendError
+                    ? "border-red-200 bg-red-50 text-danger"
+                    : "border-line bg-white text-muted"
+                }`}
+              >
+                {softwareBackendError || "Đang tải đơn phần mềm từ Supabase…"}
+                {!softwareLoading && softwareBackendError ? (
+                  <button
+                    type="button"
+                    onClick={() => void reloadSoftwareFromDb()}
+                    className="ml-3 font-black text-brand underline"
+                  >
+                    Thử lại
+                  </button>
+                ) : null}
+              </div>
+            )}
             {isOnlineRepairModalOpen && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 overflow-y-auto backdrop-blur-sm">
                 <div className="w-full max-w-2xl bg-white rounded-lg shadow-2xl relative my-auto">
@@ -1807,41 +1811,61 @@ export default function Home() {
                     </button>
                   </div>
                   <div className="p-4">
-                    <form key={editingOnlineRepairId ?? "new"} onSubmit={(e) => {
-                e.preventDefault();
-                const form = new FormData(e.currentTarget);
-                const quote = parseInputMoney(form.get("quote"));
-                const deposit = parseInputMoney(form.get("deposit"));
-                const pStatus = String(form.get("paymentStatus")) as OnlineRepair["paymentStatus"];
-                
-                const data = {
-                  customerName: String(form.get("customerName")),
-                  customerType: (form.get("customerType") ? String(form.get("customerType")) : "Vãng lai") as OnlineRepair["customerType"],
-                  deviceName: String(form.get("deviceName")),
-                  issue: "",
-                  quote,
-                  deposit,
-                  receiveDate: String(form.get("receiveDate")),
-                  completeDate: "",
-                  paymentDate: "",
-                  paymentStatus: pStatus,
-                  rewardPoints: 0,
-                  isPaid: pStatus === "Đã thanh toán",
-                };
-                
-                if (editingOnlineRepairId) {
-                  setOnlineRepairs(onlineRepairs.map(r => r.id === editingOnlineRepairId ? { ...r, ...data } : r));
-                  setEditingOnlineRepairId(null);
-                } else {
-                  const newRepair: OnlineRepair = {
-                    id: `or${Date.now()}`,
-                    createdAt: new Date().toISOString().slice(0, 16).replace("T", " "),
-                    ...data
-                  };
-                  setOnlineRepairs([newRepair, ...onlineRepairs]);
-                }
-                setIsOnlineRepairModalOpen(false);
-              }} className="grid gap-3">
+                    <form
+                      key={editingOnlineRepairId ?? "new"}
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        const form = new FormData(e.currentTarget);
+                        const quote = parseInputMoney(form.get("quote"));
+                        const deposit = parseInputMoney(form.get("deposit"));
+                        const pStatus = String(
+                          form.get("paymentStatus")
+                        ) as OnlineRepair["paymentStatus"];
+                        const existing = editingOnlineRepairId
+                          ? onlineRepairs.find((r) => r.id === editingOnlineRepairId)
+                          : null;
+
+                        const payload = {
+                          id: editingOnlineRepairId ?? undefined,
+                          customerName: String(form.get("customerName")),
+                          customerType: (form.get("customerType")
+                            ? String(form.get("customerType"))
+                            : existing?.customerType || "Vãng lai") as OnlineRepair["customerType"],
+                          deviceName: String(form.get("deviceName")),
+                          issue: existing?.issue ?? "",
+                          quote,
+                          deposit,
+                          receiveDate: String(form.get("receiveDate") || ""),
+                          completeDate: existing?.completeDate ?? "",
+                          paymentDate: existing?.paymentDate ?? "",
+                          paymentStatus: pStatus,
+                          rewardPoints: existing?.rewardPoints ?? 0,
+                          isPaid: pStatus === "Đã thanh toán",
+                        };
+
+                        try {
+                          const saved = await apiUpsertSoftwareOrder(payload);
+                          setOnlineRepairs((prev) =>
+                            editingOnlineRepairId
+                              ? prev.map((r) => (r.id === editingOnlineRepairId ? saved : r))
+                              : [saved, ...prev]
+                          );
+                          setSoftwareBackendError("");
+                          setEditingOnlineRepairId(null);
+                          setIsOnlineRepairModalOpen(false);
+                          pushLog(
+                            editingOnlineRepairId
+                              ? "Sửa đơn phần mềm"
+                              : "Tạo đơn phần mềm",
+                            `${saved.customerName} — ${saved.deviceName}`,
+                            currentUser?.storeId || "store-1"
+                          );
+                        } catch (err) {
+                          setSoftwareBackendError(toUiError(err));
+                        }
+                      }}
+                      className="grid gap-3"
+                    >
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="Khách hàng / Thợ" required><input name="customerName" required defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.customerName} className="h-10 rounded-lg border border-line px-3" placeholder="Ví dụ: Hoàng Táo" /></Field>
                   <Field label="Tên máy" required><input name="deviceName" required defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.deviceName} className="h-10 rounded-lg border border-line px-3" /></Field>
@@ -2106,7 +2130,7 @@ function DataTable({ headers, rows, compact = false }: { headers: string[]; rows
   return (
     <div className="overflow-auto rounded-xl border border-line bg-white shadow-sm">
       <table className={`min-w-max w-full border-collapse ${compact ? "text-base" : "text-base"}`}>
-        <thead className={`bg-slate-50/80 text-center font-bold uppercase tracking-wider text-slate-500 ${compact ? "text-xs" : "text-sm"}`}>
+        <thead className={`bg-slate-100 text-center font-black uppercase tracking-wider text-slate-800 ${compact ? "text-xs" : "text-sm"}`}>
           <tr>
             {headers.map((header) => (
               <th key={header} className={`border-b border-line ${compact ? "px-2 py-3" : "px-5 py-4"} ${header === "Thao tác" ? `${compact ? "w-[118px]" : "w-[180px]"} text-center` : ""}`}>

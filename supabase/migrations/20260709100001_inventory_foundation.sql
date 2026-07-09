@@ -178,7 +178,8 @@ create table if not exists public.phones (
 );
 alter table public.phones enable row level security;
 
-create unique index if not exists phones_imei_uidx on public.phones (imei);
+-- IMEI is NOT unique (only PK is unique). Non-unique index for search.
+create index if not exists phones_imei_idx on public.phones (imei);
 create index if not exists phones_store_status_idx on public.phones (store_id, status);
 create index if not exists phones_brand_idx on public.phones (brand);
 create index if not exists phones_expected_price_idx on public.phones (expected_price);
@@ -205,9 +206,9 @@ create table if not exists public.accessories (
 );
 alter table public.accessories enable row level security;
 
-create unique index if not exists accessories_store_code_active_uidx
-  on public.accessories (store_id, code)
-  where status <> 'cancelled';
+-- Accessory code is NOT unique (only PK). Non-unique index for search.
+create index if not exists accessories_store_code_idx
+  on public.accessories (store_id, code);
 
 create index if not exists accessories_store_status_idx
   on public.accessories (store_id, status);
@@ -269,9 +270,7 @@ create index if not exists sale_items_phone_id_idx
 create index if not exists sale_items_accessory_id_idx
   on public.sale_items (accessory_id) where accessory_id is not null;
 
-create unique index if not exists sale_items_phone_active_uidx
-  on public.sale_items (phone_id)
-  where phone_id is not null and sale_status = 'completed';
+-- No unique on sale_items.phone_id (only PK). App allows re-link / duplicate IMEI stock.
 
 -- ---------- AUDIT LOGS ----------
 create table if not exists public.audit_logs (
@@ -457,67 +456,28 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
 
--- Status guards for phones / accessories
+-- Status guards disabled: app may set phone/accessory status via plain SQL.
+-- (Historical RPC-only guards lived here; see migration 20260709130000.)
 create or replace function public.guard_phone_status()
 returns trigger
 language plpgsql
 as $$
 begin
-  if current_setting('app.skip_status_guard', true) = 'on' then
-    return new;
-  end if;
-
-  if tg_op = 'INSERT' then
-    if new.status not in ('in_stock', 'pending') then
-      raise exception 'phone_status_insert_via_rpc_only';
-    end if;
-    return new;
-  end if;
-
-  if new.status is distinct from old.status then
-    if new.status in ('sold', 'cancelled') or old.status in ('sold', 'cancelled') then
-      raise exception 'phone_status_change_via_rpc_only';
-    end if;
-  end if;
   return new;
 end;
 $$;
-
-drop trigger if exists phones_guard_status on public.phones;
-create trigger phones_guard_status
-  before insert or update on public.phones
-  for each row execute function public.guard_phone_status();
 
 create or replace function public.guard_accessory_status()
 returns trigger
 language plpgsql
 as $$
 begin
-  if current_setting('app.skip_status_guard', true) = 'on' then
-    return new;
-  end if;
-
-  if tg_op = 'INSERT' then
-    if new.status = 'cancelled' then
-      raise exception 'accessory_status_insert_via_rpc_only';
-    end if;
-    return new;
-  end if;
-
-  if new.status = 'cancelled' and old.status is distinct from 'cancelled' then
-    raise exception 'accessory_cancel_via_rpc_only';
-  end if;
-  if old.status = 'cancelled' and new.status is distinct from 'cancelled' then
-    raise exception 'accessory_restore_via_rpc_only';
-  end if;
   return new;
 end;
 $$;
 
+drop trigger if exists phones_guard_status on public.phones;
 drop trigger if exists accessories_guard_status on public.accessories;
-create trigger accessories_guard_status
-  before insert or update on public.accessories
-  for each row execute function public.guard_accessory_status();
 
 -- =============================================================================
 -- RLS POLICIES
@@ -1420,7 +1380,7 @@ insert into public.app_params (key, value, value_type, description, is_public)
 values
   ('inventory.phone_list_page_size', '10', 'number', 'Pagination size for inventory list', true),
   ('inventory.capital_include_pending', 'false', 'boolean', 'Include pending phones in capital', true),
-  ('inventory.imei_unique_global', 'true', 'boolean', 'IMEI unique policy document', true),
+  ('inventory.imei_unique_global', 'false', 'boolean', 'IMEI unique policy: false = allow duplicate IMEI', true),
   ('report.timezone', 'Asia/Ho_Chi_Minh', 'text', 'Business timezone for reports', true)
 on conflict (key) do update
   set value = excluded.value,

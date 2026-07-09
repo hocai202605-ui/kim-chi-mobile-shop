@@ -1,11 +1,12 @@
-import type { Accessory, PhoneItem, ProductStatus, StoreId } from "@/types";
+import type { Accessory, PhoneItem, StoreId } from "@/types";
 import {
   accessoryStatusToDb,
   accessoryStatusToUi,
   phoneStatusToDb,
   phoneStatusToUi,
 } from "@/lib/mappers/inventory";
-import { getPool } from "./pool";
+import { getPool, withTransaction } from "./pool";
+import type { PoolClient } from "pg";
 
 type StoreRow = { id: string; code: string };
 
@@ -16,6 +17,11 @@ async function loadStoreMaps() {
   const codeToId = new Map(rows.map((r) => [r.code, r.id]));
   const idToCode = new Map(rows.map((r) => [r.id, r.code as Exclude<StoreId, "all">]));
   return { codeToId, idToCode };
+}
+
+/** Skip status-guard triggers for this transaction only (same connection). */
+async function skipStatusGuard(client: PoolClient) {
+  await client.query(`select set_config('app.skip_status_guard', 'on', true)`);
 }
 
 function mapPhone(
@@ -83,26 +89,56 @@ export async function repoUpsertPhone(
   const storeId = codeToId.get(input.storeId);
   if (!storeId) throw new Error(`Không tìm thấy cửa hàng ${input.storeId}`);
 
-  const pool = getPool();
-  await pool.query(`select set_config('app.skip_status_guard', 'on', true)`);
+  const status = phoneStatusToDb(input.status);
 
-  let status = phoneStatusToDb(input.status);
-  // plain upsert: only allow in_stock | pending on insert/update without RPC
-  if (!input.id && (status === "sold" || status === "cancelled")) {
-    status = "in_stock";
-  }
+  return withTransaction(async (client) => {
+    // keep set_config for older DBs that still have guards; no-op after migration drop
+    await skipStatusGuard(client);
 
-  if (input.id) {
-    const { rows } = await pool.query(
-      `update public.phones set
-        store_id = $1, brand = $2, model_name = $3, imei = $4,
-        color = $5, storage = $6, made_in = $7, network_version = $8,
-        battery_condition = $9, battery_capacity = $10, condition = $11, note = $12,
-        import_date = $13, sale_date = $14, cost = $15, expected_price = $16,
-        status = case when $17 in ('in_stock','pending') then $17::public.phone_status else status end,
-        updated_at = now()
-      where id = $18
-      returning *`,
+    if (input.id) {
+      const { rows } = await client.query(
+        `update public.phones set
+          store_id = $1, brand = $2, model_name = $3, imei = $4,
+          color = $5, storage = $6, made_in = $7, network_version = $8,
+          battery_condition = $9, battery_capacity = $10, condition = $11, note = $12,
+          import_date = $13, sale_date = $14, cost = $15, expected_price = $16,
+          status = $17::public.phone_status,
+          updated_at = now()
+        where id = $18
+        returning *`,
+        [
+          storeId,
+          input.brand,
+          input.name,
+          input.imei.trim(),
+          input.color ?? "",
+          input.storage ?? "",
+          input.madeIn ?? "",
+          input.networkVersion ?? "",
+          input.batteryCondition ?? "",
+          input.batteryCapacity ?? "",
+          input.condition ?? "",
+          input.note ?? "",
+          input.importDate || null,
+          input.saleDate || null,
+          Math.round(input.cost),
+          Math.round(input.expectedPrice),
+          status,
+          input.id,
+        ]
+      );
+      if (!rows[0]) throw new Error("Không tìm thấy máy để cập nhật.");
+      return mapPhone(rows[0], idToCode);
+    }
+
+    const { rows } = await client.query(
+      `insert into public.phones (
+        store_id, brand, model_name, imei, color, storage, made_in, network_version,
+        battery_condition, battery_capacity, condition, note, import_date, sale_date,
+        cost, expected_price, status
+      ) values (
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::public.phone_status
+      ) returning *`,
       [
         storeId,
         input.brand,
@@ -121,43 +157,10 @@ export async function repoUpsertPhone(
         Math.round(input.cost),
         Math.round(input.expectedPrice),
         status,
-        input.id,
       ]
     );
-    if (!rows[0]) throw new Error("Không tìm thấy máy để cập nhật.");
     return mapPhone(rows[0], idToCode);
-  }
-
-  const insertStatus = status === "pending" ? "pending" : "in_stock";
-  const { rows } = await pool.query(
-    `insert into public.phones (
-      store_id, brand, model_name, imei, color, storage, made_in, network_version,
-      battery_condition, battery_capacity, condition, note, import_date, sale_date,
-      cost, expected_price, status
-    ) values (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::public.phone_status
-    ) returning *`,
-    [
-      storeId,
-      input.brand,
-      input.name,
-      input.imei.trim(),
-      input.color ?? "",
-      input.storage ?? "",
-      input.madeIn ?? "",
-      input.networkVersion ?? "",
-      input.batteryCondition ?? "",
-      input.batteryCapacity ?? "",
-      input.condition ?? "",
-      input.note ?? "",
-      input.importDate || null,
-      input.saleDate || null,
-      Math.round(input.cost),
-      Math.round(input.expectedPrice),
-      insertStatus,
-    ]
-  );
-  return mapPhone(rows[0], idToCode);
+  });
 }
 
 export async function repoUpsertAccessory(
@@ -167,76 +170,79 @@ export async function repoUpsertAccessory(
   const storeId = codeToId.get(input.storeId);
   if (!storeId) throw new Error(`Không tìm thấy cửa hàng ${input.storeId}`);
 
-  const pool = getPool();
-  await pool.query(`select set_config('app.skip_status_guard', 'on', true)`);
-
   const qty = Math.max(0, Math.round(input.quantity));
   let status = accessoryStatusToDb(input.status);
   if (status === "cancelled" && !input.id) {
     status = qty > 0 ? "in_stock" : "out_of_stock";
   }
 
-  if (input.id) {
-    const { rows } = await pool.query(
-      `update public.accessories set
-        store_id = $1, code = $2, name = $3, quantity = $4,
-        cost = $5, price = $6,
-        status = case when $7 = 'cancelled' then status else $7::public.accessory_status end,
-        updated_at = now()
-      where id = $8
-      returning *`,
-      [
-        storeId,
-        input.code.trim(),
-        input.name,
-        qty,
-        Math.round(input.cost),
-        Math.round(input.price),
-        status,
-        input.id,
-      ]
-    );
-    if (!rows[0]) throw new Error("Không tìm thấy phụ kiện để cập nhật.");
-    return mapAccessory(rows[0], idToCode);
-  }
+  return withTransaction(async (client) => {
+    await skipStatusGuard(client);
 
-  const { rows } = await pool.query(
-    `insert into public.accessories (store_id, code, name, quantity, cost, price, status)
-     values ($1,$2,$3,$4,$5,$6, case when $4 > 0 then 'in_stock'::public.accessory_status else 'out_of_stock'::public.accessory_status end)
-     returning *`,
-    [storeId, input.code.trim(), input.name, qty, Math.round(input.cost), Math.round(input.price)]
-  );
-  return mapAccessory(rows[0], idToCode);
+    if (input.id) {
+      const { rows } = await client.query(
+        `update public.accessories set
+          store_id = $1, code = $2, name = $3, quantity = $4,
+          cost = $5, price = $6,
+          status = case when $7 = 'cancelled' then status else $7::public.accessory_status end,
+          updated_at = now()
+        where id = $8
+        returning *`,
+        [
+          storeId,
+          input.code.trim(),
+          input.name,
+          qty,
+          Math.round(input.cost),
+          Math.round(input.price),
+          status,
+          input.id,
+        ]
+      );
+      if (!rows[0]) throw new Error("Không tìm thấy phụ kiện để cập nhật.");
+      return mapAccessory(rows[0], idToCode);
+    }
+
+    const { rows } = await client.query(
+      `insert into public.accessories (store_id, code, name, quantity, cost, price, status)
+       values ($1,$2,$3,$4,$5,$6, case when $4 > 0 then 'in_stock'::public.accessory_status else 'out_of_stock'::public.accessory_status end)
+       returning *`,
+      [storeId, input.code.trim(), input.name, qty, Math.round(input.cost), Math.round(input.price)]
+    );
+    return mapAccessory(rows[0], idToCode);
+  });
 }
 
 export async function repoCancelPhone(id: string): Promise<PhoneItem> {
   const { idToCode } = await loadStoreMaps();
-  const pool = getPool();
-  await pool.query(`select set_config('app.skip_status_guard', 'on', true)`);
-  const { rows } = await pool.query(
-    `update public.phones
-     set status = 'cancelled', cancelled_at = now(), updated_at = now()
-     where id = $1 and status <> 'cancelled'
-     returning *`,
-    [id]
-  );
-  if (!rows[0]) throw new Error("Không hủy được máy (không tìm thấy hoặc đã hủy).");
-  return mapPhone(rows[0], idToCode);
+  return withTransaction(async (client) => {
+    await skipStatusGuard(client);
+    const { rows } = await client.query(
+      `update public.phones
+       set status = 'cancelled', cancelled_at = now(), updated_at = now()
+       where id = $1 and status <> 'cancelled'
+       returning *`,
+      [id]
+    );
+    if (!rows[0]) throw new Error("Không hủy được máy (không tìm thấy hoặc đã hủy).");
+    return mapPhone(rows[0], idToCode);
+  });
 }
 
 export async function repoCancelAccessory(id: string): Promise<Accessory> {
   const { idToCode } = await loadStoreMaps();
-  const pool = getPool();
-  await pool.query(`select set_config('app.skip_status_guard', 'on', true)`);
-  const { rows } = await pool.query(
-    `update public.accessories
-     set status = 'cancelled', cancelled_at = now(), updated_at = now()
-     where id = $1 and status <> 'cancelled'
-     returning *`,
-    [id]
-  );
-  if (!rows[0]) throw new Error("Không hủy được phụ kiện (không tìm thấy hoặc đã hủy).");
-  return mapAccessory(rows[0], idToCode);
+  return withTransaction(async (client) => {
+    await skipStatusGuard(client);
+    const { rows } = await client.query(
+      `update public.accessories
+       set status = 'cancelled', cancelled_at = now(), updated_at = now()
+       where id = $1 and status <> 'cancelled'
+       returning *`,
+      [id]
+    );
+    if (!rows[0]) throw new Error("Không hủy được phụ kiện (không tìm thấy hoặc đã hủy).");
+    return mapAccessory(rows[0], idToCode);
+  });
 }
 
 export async function repoListLookupLabels(categoryCode: string): Promise<string[]> {
