@@ -16,6 +16,7 @@ import {
   EyeOff,
   FileText,
   LayoutDashboard,
+  Loader2,
   LogOut,
   PackagePlus,
   Plus,
@@ -418,6 +419,8 @@ export default function Home() {
   /** Toast sau lưu/sửa/clone (hiện cả khi popup đã đóng). */
   const [inventoryToast, setInventoryToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const inventoryToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Đang gọi API lưu — mờ popup + chặn thao tác. */
+  const [inventorySaving, setInventorySaving] = useState(false);
   const [inventoryLoading, setInventoryLoading] = useState(false);
   const [supabaseReportMonthly, setSupabaseReportMonthly] = useState<{ soldPhones: number; revenue: number; profit: number } | null>(null);
   const [supabaseYearlyChart, setSupabaseYearlyChart] = useState<{ month: string; revenue: number; profit: number; sold: number }[] | null>(null);
@@ -723,11 +726,13 @@ export default function Home() {
   }
 
   function closeInventoryModal() {
+    if (inventorySaving) return;
     setIsInventoryModalOpen(false);
     setEditingPhoneId(null);
     setClonePhoneDraft(null);
     setEditingAccessoryId(null);
     setInventoryBackendError("");
+    setInventorySaving(false);
   }
 
   function showInventoryToast(type: "success" | "error", message: string) {
@@ -744,9 +749,12 @@ export default function Home() {
 
   async function savePhone(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (inventorySaving) return;
     const form = new FormData(event.currentTarget);
+    // Cửa hàng / phiên bản mạng không hiện trên form — lấy từ máy đang sửa/clone hoặc filter/user.
     const storeId =
-      (form.get("storeId") as Exclude<StoreId, "all">) ||
+      (editingPhone?.storeId as Exclude<StoreId, "all"> | undefined) ||
+      (clonePhoneDraft?.storeId as Exclude<StoreId, "all"> | undefined) ||
       (storeFilter !== "all" ? storeFilter : currentUser?.storeId) ||
       "store-1";
     const isEdit = Boolean(editingPhoneId);
@@ -759,7 +767,7 @@ export default function Home() {
       color: String(form.get("color")),
       storage: String(form.get("storage")),
       madeIn: String(form.get("madeIn")),
-      networkVersion: String(form.get("networkVersion")),
+      networkVersion: editingPhone?.networkVersion || clonePhoneDraft?.networkVersion || "",
       batteryCondition: String(form.get("batteryCondition")),
       batteryCapacity: String(form.get("batteryCapacity") || ""),
       condition: String(form.get("condition")),
@@ -772,6 +780,8 @@ export default function Home() {
       status: String(form.get("status")) as ProductStatus,
     };
 
+    setInventorySaving(true);
+    setInventoryBackendError("");
     try {
       const saved = await apiUpsertPhone({ ...payload, id: editingPhoneId ?? undefined });
       setPhones((prev) =>
@@ -798,24 +808,29 @@ export default function Home() {
         saved.imei,
         storeId
       );
-      setInventoryBackendError("");
       const successMsg = isEdit
         ? `Đã sửa máy ${saved.brand} ${saved.name} (IMEI …${saved.imei.slice(-5)}) thành công.`
         : isClone
           ? `Đã nhân bản máy ${saved.brand} ${saved.name} thành công.`
           : `Đã thêm máy ${saved.brand} ${saved.name} thành công.`;
       showInventoryToast("success", successMsg);
-      closeInventoryModal();
+      setInventorySaving(false);
+      setIsInventoryModalOpen(false);
+      setEditingPhoneId(null);
+      setClonePhoneDraft(null);
+      setEditingAccessoryId(null);
       setInventoryPage(1);
     } catch (err) {
       const msg = toUiError(err);
+      setInventoryBackendError(msg);
       showInventoryToast("error", `Lưu máy thất bại: ${msg}`);
-      closeInventoryModal();
+      setInventorySaving(false);
     }
   }
 
   async function saveAccessory(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (inventorySaving) return;
     const form = new FormData(event.currentTarget);
     const storeId = String(form.get("storeId")) as Exclude<StoreId, "all">;
     const isEdit = Boolean(editingAccessoryId);
@@ -831,6 +846,8 @@ export default function Home() {
       status: String(form.get("status") || (quantity > 0 ? "Còn hàng" : "Hết hàng")) as AccessoryStatus,
     };
 
+    setInventorySaving(true);
+    setInventoryBackendError("");
     try {
       const saved = await apiUpsertAccessory({
         ...payload,
@@ -846,17 +863,21 @@ export default function Home() {
         saved.code,
         storeId
       );
-      setInventoryBackendError("");
       showInventoryToast(
         "success",
         isEdit ? `Đã sửa phụ kiện ${saved.name} thành công.` : `Đã thêm phụ kiện ${saved.name} thành công.`
       );
-      closeInventoryModal();
+      setInventorySaving(false);
+      setIsInventoryModalOpen(false);
+      setEditingPhoneId(null);
+      setClonePhoneDraft(null);
+      setEditingAccessoryId(null);
       setInventoryPage(1);
     } catch (err) {
       const msg = toUiError(err);
+      setInventoryBackendError(msg);
       showInventoryToast("error", `Lưu phụ kiện thất bại: ${msg}`);
-      closeInventoryModal();
+      setInventorySaving(false);
     }
   }
 
@@ -1069,25 +1090,31 @@ export default function Home() {
         {inventoryToast ? (
           <div
             role="status"
-            className={`fixed right-4 top-4 z-[80] flex max-w-md items-start gap-3 rounded-xl border px-4 py-3 shadow-panel ${
+            className={`fixed left-1/2 top-6 z-[80] flex w-[min(92vw,36rem)] -translate-x-1/2 items-start gap-4 rounded-2xl border px-6 py-5 shadow-[0_20px_48px_rgba(15,23,42,0.18)] ${
               inventoryToast.type === "success"
-                ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                ? "border-emerald-300 bg-emerald-50 text-emerald-950"
                 : "border-red-200 bg-red-50 text-danger"
             }`}
           >
             {inventoryToast.type === "success" ? (
-              <CheckCircle2 size={20} className="mt-0.5 shrink-0 text-emerald-600" />
+              <CheckCircle2 size={36} className="mt-0.5 shrink-0 text-emerald-600" />
             ) : (
-              <CircleAlert size={20} className="mt-0.5 shrink-0 text-danger" />
+              <CircleAlert size={22} className="mt-0.5 shrink-0 text-danger" />
             )}
-            <div className="min-w-0 flex-1 text-sm font-bold leading-snug">{inventoryToast.message}</div>
+            <div
+              className={`min-w-0 flex-1 font-black leading-snug ${
+                inventoryToast.type === "success" ? "text-lg sm:text-xl" : "text-sm font-bold"
+              }`}
+            >
+              {inventoryToast.message}
+            </div>
             <button
               type="button"
               onClick={() => setInventoryToast(null)}
-              className="shrink-0 rounded-md p-1 text-slate-500 hover:bg-white/70 hover:text-slate-800"
+              className="shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-white/70 hover:text-slate-800"
               title="Đóng"
             >
-              <X size={16} />
+              <X size={inventoryToast.type === "success" ? 22 : 16} />
             </button>
           </div>
         ) : null}
@@ -1488,7 +1515,13 @@ export default function Home() {
 
             {isInventoryModalOpen && (
               <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-md">
-                <section className="max-h-[92vh] w-full max-w-[860px] overflow-auto rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
+                <section className="relative max-h-[92vh] w-full max-w-[860px] overflow-auto rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
+                  {inventorySaving ? (
+                    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 rounded-2xl bg-white/55 backdrop-blur-sm">
+                      <Loader2 size={40} className="animate-spin text-brand" />
+                      <p className="text-base font-black text-ink">Đang lưu…</p>
+                    </div>
+                  ) : null}
                   <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-200/60 bg-white/80 p-5 backdrop-blur-md">
                     <div>
                       <h2 className="text-2xl font-black text-slate-800">
@@ -1508,11 +1541,16 @@ export default function Home() {
                         </p>
                       ) : null}
                     </div>
-                    <button onClick={closeInventoryModal} className="h-9 rounded-xl border border-slate-200/60 bg-white/50 px-4 text-sm font-black text-slate-600 backdrop-blur-md transition hover:bg-white hover:text-slate-900">
+                    <button
+                      type="button"
+                      onClick={closeInventoryModal}
+                      disabled={inventorySaving}
+                      className="h-9 rounded-xl border border-slate-200/60 bg-white/50 px-4 text-sm font-black text-slate-600 backdrop-blur-md transition hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
                       Đóng
                     </button>
                   </div>
-                  <div className="p-5">
+                  <div className={`p-5 ${inventorySaving ? "pointer-events-none select-none" : ""}`}>
                     {inventoryBackendError ? (
                       <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-danger">
                         {inventoryBackendError}
@@ -1535,26 +1573,6 @@ export default function Home() {
                             />
                           </Field>
                           <SelectField label="Trạng thái" name="status" options={["Còn hàng", "Đã bán", "Đã hủy", "Chưa xử lý"].map((status) => [status, status])} defaultValue={phoneFormDefaults?.status ?? "Còn hàng"} />
-                        </div>
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <SelectField
-                            label="Cửa hàng"
-                            name="storeId"
-                            options={stores.map((s) => [s.id, s.name])}
-                            defaultValue={
-                              phoneFormDefaults?.storeId ||
-                              (storeFilter !== "all" ? storeFilter : currentUser?.storeId) ||
-                              "store-1"
-                            }
-                          />
-                          <Field label="Phiên bản mạng">
-                            <input
-                              name="networkVersion"
-                              defaultValue={phoneFormDefaults?.networkVersion ?? ""}
-                              placeholder="4G / 5G…"
-                              className="h-10 rounded-lg border border-line px-3"
-                            />
-                          </Field>
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
                           <ManageableSelect label="Màu sắc" name="color" options={colorOptions} setOptions={setColorOptions} defaultValue={phoneFormDefaults?.color} categoryCode={PHONE_LOOKUP_CATEGORIES.color} onRenameCascade={reloadInventoryFromDb} />
@@ -1580,10 +1598,10 @@ export default function Home() {
                           <Field label="Giá bán"><MoneyInput name="expectedPrice" defaultValue={phoneFormDefaults?.expectedPrice} /></Field>
                         </div>
                         <div className="flex justify-end gap-2 border-t border-line pt-4">
-                          <button type="button" onClick={closeInventoryModal} className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted">Hủy</button>
-                          <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark">
-                            {editingPhone ? <Edit3 size={18} /> : clonePhoneDraft ? <CopyPlus size={18} /> : <Plus size={18} />}
-                            {editingPhone ? "Lưu sửa" : clonePhoneDraft ? "Lưu máy mới" : "Thêm máy"}
+                          <button type="button" onClick={closeInventoryModal} disabled={inventorySaving} className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted disabled:opacity-50">Hủy</button>
+                          <button type="submit" disabled={inventorySaving} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-70">
+                            {inventorySaving ? <Loader2 size={18} className="animate-spin" /> : editingPhone ? <Edit3 size={18} /> : clonePhoneDraft ? <CopyPlus size={18} /> : <Plus size={18} />}
+                            {inventorySaving ? "Đang lưu…" : editingPhone ? "Lưu sửa" : clonePhoneDraft ? "Lưu máy mới" : "Thêm máy"}
                           </button>
                         </div>
                       </form>
@@ -1599,10 +1617,10 @@ export default function Home() {
                         <Field label="Giá bán"><MoneyInput name="price" defaultValue={editingAccessory?.price} /></Field>
                         <SelectField label="Trạng thái" name="status" options={["Còn hàng", "Hết hàng", "Đã hủy"].map((status) => [status, status])} defaultValue={editingAccessory?.status ?? "Còn hàng"} />
                         <div className="flex justify-end gap-2 border-t border-line pt-4">
-                          <button type="button" onClick={closeInventoryModal} className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted">Hủy</button>
-                          <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark">
-                            <Plus size={18} />
-                            {editingAccessory ? "Lưu sửa" : "Thêm phụ kiện"}
+                          <button type="button" onClick={closeInventoryModal} disabled={inventorySaving} className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted disabled:opacity-50">Hủy</button>
+                          <button type="submit" disabled={inventorySaving} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-70">
+                            {inventorySaving ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
+                            {inventorySaving ? "Đang lưu…" : editingAccessory ? "Lưu sửa" : "Thêm phụ kiện"}
                           </button>
                         </div>
                       </form>
