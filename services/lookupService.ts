@@ -16,13 +16,22 @@ export const PHONE_LOOKUP_CATEGORIES = {
   batteryCapacity: "phone_battery_capacity",
 } as const;
 
+export type PhoneLookupCategoryCode =
+  (typeof PHONE_LOOKUP_CATEGORIES)[keyof typeof PHONE_LOOKUP_CATEGORIES];
+
+async function parseJson<T>(res: Response): Promise<T> {
+  const body = await res.json();
+  if (!res.ok) {
+    throw new Error(body?.error || `HTTP ${res.status}`);
+  }
+  return body.data as T;
+}
+
 export async function listLookupLabels(categoryCode: string): Promise<string[]> {
   const res = await fetch(`/api/inventory/lookups/${encodeURIComponent(categoryCode)}`, {
     cache: "no-store",
   });
-  const body = await res.json();
-  if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
-  return (body.data ?? []) as string[];
+  return parseJson<string[]>(res);
 }
 
 export async function listLookupItems(categoryCode: string): Promise<LookupItem[]> {
@@ -35,17 +44,44 @@ export async function listLookupItems(categoryCode: string): Promise<LookupItem[
   }));
 }
 
-export async function addLookupItem(_categoryCode: string, _label: string): Promise<LookupItem> {
-  throw new Error("Thêm option lookup qua UI ManageableSelect local; API add sẽ bổ sung sau.");
+export type LookupMutationResult = {
+  label?: string;
+  labels: string[];
+};
+
+export async function addLookupItem(
+  categoryCode: string,
+  label: string
+): Promise<LookupMutationResult> {
+  const res = await fetch(`/api/inventory/lookups/${encodeURIComponent(categoryCode)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ label }),
+  });
+  return parseJson<LookupMutationResult>(res);
 }
 
 export async function updateLookupItem(
-  _id: string,
-  _patch: { label?: string; sortOrder?: number }
-): Promise<LookupItem> {
-  throw new Error("updateLookupItem chưa hỗ trợ qua API.");
+  categoryCode: string,
+  oldLabel: string,
+  newLabel: string
+): Promise<LookupMutationResult> {
+  const res = await fetch(`/api/inventory/lookups/${encodeURIComponent(categoryCode)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ oldLabel, label: newLabel }),
+  });
+  return parseJson<LookupMutationResult>(res);
 }
 
-export async function deactivateLookupItem(_id: string): Promise<void> {
-  throw new Error("deactivateLookupItem chưa hỗ trợ qua API.");
+export async function deactivateLookupItem(
+  categoryCode: string,
+  label: string
+): Promise<LookupMutationResult> {
+  const res = await fetch(`/api/inventory/lookups/${encodeURIComponent(categoryCode)}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ label }),
+  });
+  return parseJson<LookupMutationResult>(res);
 }

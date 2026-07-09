@@ -95,6 +95,8 @@ export async function repoUpsertPhone(
     // keep set_config for older DBs that still have guards; no-op after migration drop
     await skipStatusGuard(client);
 
+    let saved: PhoneItem;
+
     if (input.id) {
       const { rows } = await client.query(
         `update public.phones set
@@ -128,38 +130,42 @@ export async function repoUpsertPhone(
         ]
       );
       if (!rows[0]) throw new Error("Không tìm thấy máy để cập nhật.");
-      return mapPhone(rows[0], idToCode);
+      saved = mapPhone(rows[0], idToCode);
+    } else {
+      const { rows } = await client.query(
+        `insert into public.phones (
+          store_id, brand, model_name, imei, color, storage, made_in, network_version,
+          battery_condition, battery_capacity, condition, note, import_date, sale_date,
+          cost, expected_price, status
+        ) values (
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::public.phone_status
+        ) returning *`,
+        [
+          storeId,
+          input.brand,
+          input.name,
+          input.imei.trim(),
+          input.color ?? "",
+          input.storage ?? "",
+          input.madeIn ?? "",
+          input.networkVersion ?? "",
+          input.batteryCondition ?? "",
+          input.batteryCapacity ?? "",
+          input.condition ?? "",
+          input.note ?? "",
+          input.importDate || null,
+          input.saleDate || null,
+          Math.round(input.cost),
+          Math.round(input.expectedPrice),
+          status,
+        ]
+      );
+      saved = mapPhone(rows[0], idToCode);
     }
 
-    const { rows } = await client.query(
-      `insert into public.phones (
-        store_id, brand, model_name, imei, color, storage, made_in, network_version,
-        battery_condition, battery_capacity, condition, note, import_date, sale_date,
-        cost, expected_price, status
-      ) values (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::public.phone_status
-      ) returning *`,
-      [
-        storeId,
-        input.brand,
-        input.name,
-        input.imei.trim(),
-        input.color ?? "",
-        input.storage ?? "",
-        input.madeIn ?? "",
-        input.networkVersion ?? "",
-        input.batteryCondition ?? "",
-        input.batteryCapacity ?? "",
-        input.condition ?? "",
-        input.note ?? "",
-        input.importDate || null,
-        input.saleDate || null,
-        Math.round(input.cost),
-        Math.round(input.expectedPrice),
-        status,
-      ]
-    );
-    return mapPhone(rows[0], idToCode);
+    // Persist dropdown values into lookup_items so options survive reload
+    await repoSyncPhoneLookupsFromValues(saved, client);
+    return saved;
   });
 }
 
@@ -278,6 +284,257 @@ export async function repoListLookupsByCategories(
     out[row.code].push(row.label);
   }
   return out;
+}
+
+/** Map lookup category → phones column (for rename cascade). */
+const LOOKUP_PHONE_COLUMN: Record<string, string> = {
+  phone_brand: "brand",
+  phone_model_name: "model_name",
+  phone_color: "color",
+  phone_storage: "storage",
+  phone_made_in: "made_in",
+  phone_condition: "condition",
+  phone_battery_condition: "battery_condition",
+  phone_battery_capacity: "battery_capacity",
+};
+
+async function slugifyLabel(client: PoolClient, label: string): Promise<string> {
+  const { rows } = await client.query<{ code: string }>(
+    `select coalesce(nullif(public.slugify_label($1), ''), 'item-' || substr(gen_random_uuid()::text, 1, 8)) as code`,
+    [label]
+  );
+  return rows[0]?.code ?? `item-${Date.now()}`;
+}
+
+async function getLookupCategory(
+  client: PoolClient,
+  categoryCode: string
+): Promise<{ id: string; allow_user_add: boolean }> {
+  const { rows } = await client.query<{ id: string; allow_user_add: boolean }>(
+    `select id, allow_user_add from public.lookup_categories
+     where code = $1 and is_active
+     for update`,
+    [categoryCode]
+  );
+  if (!rows[0]) throw new Error("lookup_category_not_found");
+  return rows[0];
+}
+
+/**
+ * Ensure label exists (active) in category. Reactivates inactive same code, or inserts.
+ * Idempotent by lower(label) match on active rows.
+ */
+export async function repoEnsureLookupLabel(
+  categoryCode: string,
+  label: string,
+  client?: PoolClient
+): Promise<string> {
+  const trimmed = label.trim();
+  if (!trimmed) return "";
+
+  const run = async (c: PoolClient) => {
+    const cat = await getLookupCategory(c, categoryCode);
+
+    const activeByLabel = await c.query<{ id: string; label: string }>(
+      `select id, label from public.lookup_items
+       where category_id = $1 and is_active and lower(label) = lower($2)
+       limit 1`,
+      [cat.id, trimmed]
+    );
+    if (activeByLabel.rows[0]) return activeByLabel.rows[0].label;
+
+    const code = await slugifyLabel(c, trimmed);
+
+    const inactive = await c.query<{ id: string }>(
+      `select id from public.lookup_items
+       where category_id = $1 and lower(code) = lower($2) and not is_active
+       limit 1`,
+      [cat.id, code]
+    );
+    if (inactive.rows[0]) {
+      const { rows } = await c.query<{ label: string }>(
+        `update public.lookup_items
+         set is_active = true, label = $2, updated_at = now()
+         where id = $1
+         returning label`,
+        [inactive.rows[0].id, trimmed]
+      );
+      return rows[0]?.label ?? trimmed;
+    }
+
+    const activeByCode = await c.query<{ id: string; label: string }>(
+      `select id, label from public.lookup_items
+       where category_id = $1 and lower(code) = lower($2) and is_active
+       limit 1`,
+      [cat.id, code]
+    );
+    if (activeByCode.rows[0]) {
+      // Same slug, different label — keep existing option; still OK for phone free-text.
+      return activeByCode.rows[0].label;
+    }
+
+    const maxSort = await c.query<{ m: number }>(
+      `select coalesce(max(sort_order), 0)::int as m from public.lookup_items where category_id = $1`,
+      [cat.id]
+    );
+    const sortOrder = (maxSort.rows[0]?.m ?? 0) + 10;
+
+    const { rows } = await c.query<{ label: string }>(
+      `insert into public.lookup_items (category_id, code, label, sort_order, is_system)
+       values ($1, $2, $3, $4, false)
+       returning label`,
+      [cat.id, code, trimmed, sortOrder]
+    );
+    return rows[0]?.label ?? trimmed;
+  };
+
+  if (client) return run(client);
+  return withTransaction(run);
+}
+
+/** Ensure many labels (skip empties). */
+export async function repoEnsureLookupLabels(
+  pairs: { categoryCode: string; label: string }[],
+  client?: PoolClient
+): Promise<void> {
+  const filtered = pairs.filter((p) => p.label?.trim());
+  if (!filtered.length) return;
+
+  const run = async (c: PoolClient) => {
+    for (const p of filtered) {
+      await repoEnsureLookupLabel(p.categoryCode, p.label, c);
+    }
+  };
+  if (client) return run(client);
+  return withTransaction(run);
+}
+
+/** Add option (or reactivate). Throws if duplicate active label. */
+export async function repoAddLookupLabel(categoryCode: string, label: string): Promise<string> {
+  const trimmed = label.trim();
+  if (!trimmed) throw new Error("Nhãn option không được để trống.");
+
+  return withTransaction(async (client) => {
+    const cat = await getLookupCategory(client, categoryCode);
+    if (!cat.allow_user_add) throw new Error("lookup_add_not_allowed");
+
+    const exists = await client.query(
+      `select 1 from public.lookup_items
+       where category_id = $1 and is_active and lower(label) = lower($2)
+       limit 1`,
+      [cat.id, trimmed]
+    );
+    if (exists.rowCount) throw new Error(`Option "${trimmed}" đã có trong danh sách.`);
+
+    return repoEnsureLookupLabel(categoryCode, trimmed, client);
+  });
+}
+
+/** Rename option by label; cascade to phones free-text column when mapped. */
+export async function repoRenameLookupLabel(
+  categoryCode: string,
+  oldLabel: string,
+  newLabel: string
+): Promise<string> {
+  const from = oldLabel.trim();
+  const to = newLabel.trim();
+  if (!from) throw new Error("lookup_item_not_found");
+  if (!to) throw new Error("Nhãn option không được để trống.");
+  if (from.toLowerCase() === to.toLowerCase() && from !== to) {
+    // only casing change — still update
+  } else if (from === to) {
+    return to;
+  }
+
+  return withTransaction(async (client) => {
+    const cat = await getLookupCategory(client, categoryCode);
+
+    const { rows: found } = await client.query<{ id: string }>(
+      `select id from public.lookup_items
+       where category_id = $1 and is_active and lower(label) = lower($2)
+       limit 1
+       for update`,
+      [cat.id, from]
+    );
+    if (!found[0]) throw new Error("lookup_item_not_found");
+
+    const clash = await client.query(
+      `select 1 from public.lookup_items
+       where category_id = $1 and is_active and lower(label) = lower($2) and id <> $3
+       limit 1`,
+      [cat.id, to, found[0].id]
+    );
+    if (clash.rowCount) throw new Error(`Option "${to}" đã có trong danh sách.`);
+
+    const { rows } = await client.query<{ label: string }>(
+      `update public.lookup_items
+       set label = $2, updated_at = now()
+       where id = $1
+       returning label`,
+      [found[0].id, to]
+    );
+
+    const col = LOOKUP_PHONE_COLUMN[categoryCode];
+    if (col && from !== to) {
+      // only allow known columns from map (not user input)
+      await client.query(
+        `update public.phones set ${col} = $1, updated_at = now() where ${col} = $2`,
+        [to, from]
+      );
+    }
+
+    return rows[0]?.label ?? to;
+  });
+}
+
+/** Soft-deactivate option by label (owner-style; app-level allows all staff for MVP). */
+export async function repoDeactivateLookupLabel(
+  categoryCode: string,
+  label: string
+): Promise<void> {
+  const trimmed = label.trim();
+  if (!trimmed) throw new Error("lookup_item_not_found");
+
+  await withTransaction(async (client) => {
+    const cat = await getLookupCategory(client, categoryCode);
+    const { rowCount } = await client.query(
+      `update public.lookup_items
+       set is_active = false, updated_at = now()
+       where category_id = $1 and is_active and lower(label) = lower($2)`,
+      [cat.id, trimmed]
+    );
+    if (!rowCount) throw new Error("lookup_item_not_found");
+  });
+}
+
+/** Phone field values → ensure present in lookup tables. */
+export async function repoSyncPhoneLookupsFromValues(
+  phone: Pick<
+    PhoneItem,
+    | "brand"
+    | "name"
+    | "color"
+    | "storage"
+    | "madeIn"
+    | "condition"
+    | "batteryCondition"
+    | "batteryCapacity"
+  >,
+  client?: PoolClient
+): Promise<void> {
+  await repoEnsureLookupLabels(
+    [
+      { categoryCode: "phone_brand", label: phone.brand },
+      { categoryCode: "phone_model_name", label: phone.name },
+      { categoryCode: "phone_color", label: phone.color },
+      { categoryCode: "phone_storage", label: phone.storage },
+      { categoryCode: "phone_made_in", label: phone.madeIn },
+      { categoryCode: "phone_condition", label: phone.condition },
+      { categoryCode: "phone_battery_condition", label: phone.batteryCondition },
+      { categoryCode: "phone_battery_capacity", label: phone.batteryCapacity ?? "" },
+    ],
+    client
+  );
 }
 
 /** Single round-trip bundle for inventory page bootstrap. */

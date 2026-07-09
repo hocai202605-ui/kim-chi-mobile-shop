@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardList,
+  CopyPlus,
   CreditCard,
   Edit3,
   Eye,
@@ -39,7 +40,12 @@ import {
   reportInventoryYearly,
   toYearlyChartRows,
 } from "@/services/inventoryReportService";
-import { PHONE_LOOKUP_CATEGORIES } from "@/services/lookupService";
+import {
+  PHONE_LOOKUP_CATEGORIES,
+  addLookupItem as apiAddLookupItem,
+  deactivateLookupItem as apiDeactivateLookupItem,
+  updateLookupItem as apiUpdateLookupItem,
+} from "@/services/lookupService";
 import {
   listSoftwareOrders as apiListSoftwareOrders,
   upsertSoftwareOrder as apiUpsertSoftwareOrder,
@@ -375,6 +381,9 @@ export default function Home() {
   const [inventoryStatusFilter, setInventoryStatusFilter] = useState("Còn hàng");
   const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false);
   const [editingPhoneId, setEditingPhoneId] = useState<string | null>(null);
+  /** Prefill form khi clone máy (mode thêm mới, không phải sửa). */
+  const [clonePhoneDraft, setClonePhoneDraft] = useState<PhoneItem | null>(null);
+  const [cloneFormKey, setCloneFormKey] = useState(0);
   const [viewingPhoneId, setViewingPhoneId] = useState<string | null>(null);
   const [editingAccessoryId, setEditingAccessoryId] = useState<string | null>(null);
   const [editingSoftwareId, setEditingSoftwareId] = useState<string | null>(null);
@@ -549,6 +558,8 @@ export default function Home() {
   const paginatedPhones = filteredPhones.slice(inventoryStart, inventoryStart + inventoryPageSize);
   const paginatedAccessories = filteredAccessories.slice(inventoryStart, inventoryStart + inventoryPageSize);
   const editingPhone = editingPhoneId ? phones.find((item) => item.id === editingPhoneId) : null;
+  /** Defaults form máy: sửa theo id, hoặc draft clone khi thêm mới. */
+  const phoneFormDefaults = editingPhone ?? clonePhoneDraft;
   const editingAccessory = editingAccessoryId ? accessories.find((item) => item.id === editingAccessoryId) : null;
   const viewingPhone = viewingPhoneId ? phones.find((item) => item.id === viewingPhoneId) : null;
   const inventoryMonthlyReport = useMemo(() => {
@@ -655,6 +666,7 @@ export default function Home() {
   function openInventoryCreateModal(tab: "phones" | "accessories" = inventoryTab) {
     setInventoryTab(tab);
     setEditingPhoneId(null);
+    setClonePhoneDraft(null);
     setEditingAccessoryId(null);
     setIsInventoryModalOpen(true);
   }
@@ -662,7 +674,35 @@ export default function Home() {
   function openPhoneEditModal(id: string) {
     setInventoryTab("phones");
     setEditingPhoneId(id);
+    setClonePhoneDraft(null);
     setEditingAccessoryId(null);
+    setIsInventoryModalOpen(true);
+  }
+
+  /** Clone máy → popup xác nhận → mở form thêm mới (prefill, xóa IMEI / ngày bán). */
+  function openPhoneCloneModal(id: string) {
+    const source = phones.find((item) => item.id === id);
+    if (!source) return;
+
+    const label = `${source.brand} ${source.name}`.trim();
+    const imeiHint = source.imei ? ` (…${source.imei.slice(-5)})` : "";
+    const ok = window.confirm(
+      `Nhân bản máy "${label}"${imeiHint}?\n\nForm thêm mới sẽ được điền sẵn thông tin. IMEI để trống — bạn cần nhập IMEI mới trước khi lưu.`
+    );
+    if (!ok) return;
+
+    setInventoryTab("phones");
+    setEditingPhoneId(null);
+    setEditingAccessoryId(null);
+    setClonePhoneDraft({
+      ...source,
+      id: "",
+      imei: "",
+      saleDate: "",
+      status: "Còn hàng",
+      importDate: new Date().toISOString().slice(0, 10),
+    });
+    setCloneFormKey((k) => k + 1);
     setIsInventoryModalOpen(true);
   }
 
@@ -670,12 +710,14 @@ export default function Home() {
     setInventoryTab("accessories");
     setEditingAccessoryId(id);
     setEditingPhoneId(null);
+    setClonePhoneDraft(null);
     setIsInventoryModalOpen(true);
   }
 
   function closeInventoryModal() {
     setIsInventoryModalOpen(false);
     setEditingPhoneId(null);
+    setClonePhoneDraft(null);
     setEditingAccessoryId(null);
   }
 
@@ -714,6 +756,20 @@ export default function Home() {
           ? prev.map((item) => (item.id === editingPhoneId ? saved : item))
           : [saved, ...prev]
       );
+      // Server ensure-lookup đã ghi DB; đồng bộ option local (không cần full bootstrap).
+      const pushOpt = (setter: (fn: (prev: string[]) => string[]) => void, value: string) => {
+        const v = value?.trim();
+        if (!v) return;
+        setter((prev) => (prev.some((o) => o.toLowerCase() === v.toLowerCase()) ? prev : [...prev, v]));
+      };
+      pushOpt(setBrandOptions, saved.brand);
+      pushOpt(setNameOptions, saved.name);
+      pushOpt(setColorOptions, saved.color);
+      pushOpt(setStorageOptions, saved.storage);
+      pushOpt(setMadeInOptions, saved.madeIn);
+      pushOpt(setConditionOptions, saved.condition);
+      pushOpt(setBatteryOptions, saved.batteryCondition);
+      pushOpt(setBatteryCapacityOptions, saved.batteryCapacity || "");
       pushLog(editingPhoneId ? "Sửa máy trong kho" : "Thêm máy vào kho", saved.imei, storeId);
       setInventoryBackendError("");
     } catch (err) {
@@ -1311,6 +1367,13 @@ export default function Home() {
                       <button onClick={() => openPhoneEditModal(item.id)} title="Sửa" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20">
                         <Edit3 size={18} />
                       </button>
+                      <button
+                        onClick={() => openPhoneCloneModal(item.id)}
+                        title="Nhân bản thêm mới"
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100"
+                      >
+                        <CopyPlus size={18} />
+                      </button>
                     </div>,
                   ])}
                 />
@@ -1368,8 +1431,19 @@ export default function Home() {
                   <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-200/60 bg-white/80 p-5 backdrop-blur-md">
                     <div>
                       <h2 className="text-2xl font-black text-slate-800">
-                        {inventoryTab === "phones" ? (editingPhone ? "Sửa máy trong kho" : "Thêm máy vào kho") : editingAccessory ? "Sửa phụ kiện" : "Thêm phụ kiện"}
+                        {inventoryTab === "phones"
+                          ? editingPhone
+                            ? "Sửa máy trong kho"
+                            : clonePhoneDraft
+                              ? "Thêm máy (nhân bản)"
+                              : "Thêm máy vào kho"
+                          : editingAccessory
+                            ? "Sửa phụ kiện"
+                            : "Thêm phụ kiện"}
                       </h2>
+                      {inventoryTab === "phones" && !editingPhone && clonePhoneDraft ? (
+                        <p className="mt-1 text-sm font-semibold text-sky-700">Đã copy thông tin máy mẫu — chỉnh IMEI / vài field rồi lưu máy mới.</p>
+                      ) : null}
                     </div>
                     <button onClick={closeInventoryModal} className="h-9 rounded-xl border border-slate-200/60 bg-white/50 px-4 text-sm font-black text-slate-600 backdrop-blur-md transition hover:bg-white hover:text-slate-900">
                       Đóng
@@ -1377,37 +1451,37 @@ export default function Home() {
                   </div>
                   <div className="p-5">
                     {inventoryTab === "phones" ? (
-                      <form key={editingPhone?.id ?? "new-phone"} onSubmit={savePhone} className="grid gap-3" autoComplete="off" spellCheck={false}>
+                      <form key={editingPhone?.id ?? (clonePhoneDraft ? `clone-${cloneFormKey}` : "new-phone")} onSubmit={savePhone} className="grid gap-3" autoComplete="off" spellCheck={false}>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <ManageableSelect label="Hãng" name="brand" options={brandOptions} setOptions={setBrandOptions} defaultValue={editingPhone?.brand} />
-                          <ManageableSelect label="Tên máy" name="name" options={nameOptions} setOptions={setNameOptions} defaultValue={editingPhone?.name} />
+                          <ManageableSelect label="Hãng" name="brand" options={brandOptions} setOptions={setBrandOptions} defaultValue={phoneFormDefaults?.brand} categoryCode={PHONE_LOOKUP_CATEGORIES.brand} onRenameCascade={reloadInventoryFromDb} />
+                          <ManageableSelect label="Tên máy" name="name" options={nameOptions} setOptions={setNameOptions} defaultValue={phoneFormDefaults?.name} categoryCode={PHONE_LOOKUP_CATEGORIES.modelName} onRenameCascade={reloadInventoryFromDb} />
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <Field label="IMEI"><input name="imei" defaultValue={editingPhone?.imei} className="h-10 rounded-lg border border-line px-3" /></Field>
-                          <SelectField label="Trạng thái" name="status" options={["Còn hàng", "Đã bán", "Đã hủy", "Chưa xử lý"].map((status) => [status, status])} defaultValue={editingPhone?.status ?? "Còn hàng"} />
+                          <Field label="IMEI"><input name="imei" defaultValue={phoneFormDefaults?.imei} placeholder={clonePhoneDraft && !editingPhone ? "Nhập IMEI máy mới" : undefined} className="h-10 rounded-lg border border-line px-3" /></Field>
+                          <SelectField label="Trạng thái" name="status" options={["Còn hàng", "Đã bán", "Đã hủy", "Chưa xử lý"].map((status) => [status, status])} defaultValue={phoneFormDefaults?.status ?? "Còn hàng"} />
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <ManageableSelect label="Màu sắc" name="color" options={colorOptions} setOptions={setColorOptions} defaultValue={editingPhone?.color} />
-                          <ManageableSelect label="Dung lượng máy" name="storage" options={storageOptions} setOptions={setStorageOptions} defaultValue={editingPhone?.storage} />
+                          <ManageableSelect label="Màu sắc" name="color" options={colorOptions} setOptions={setColorOptions} defaultValue={phoneFormDefaults?.color} categoryCode={PHONE_LOOKUP_CATEGORIES.color} onRenameCascade={reloadInventoryFromDb} />
+                          <ManageableSelect label="Dung lượng máy" name="storage" options={storageOptions} setOptions={setStorageOptions} defaultValue={phoneFormDefaults?.storage} categoryCode={PHONE_LOOKUP_CATEGORIES.storage} onRenameCascade={reloadInventoryFromDb} />
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <ManageableSelect label="Quốc gia" name="madeIn" options={madeInOptions} setOptions={setMadeInOptions} defaultValue={editingPhone?.madeIn} required={false} />
-                          <ManageableSelect label="Tình trạng máy" name="condition" options={conditionOptions} setOptions={setConditionOptions} defaultValue={editingPhone?.condition} />
+                          <ManageableSelect label="Quốc gia" name="madeIn" options={madeInOptions} setOptions={setMadeInOptions} defaultValue={phoneFormDefaults?.madeIn} required={false} categoryCode={PHONE_LOOKUP_CATEGORIES.madeIn} onRenameCascade={reloadInventoryFromDb} />
+                          <ManageableSelect label="Tình trạng máy" name="condition" options={conditionOptions} setOptions={setConditionOptions} defaultValue={phoneFormDefaults?.condition} categoryCode={PHONE_LOOKUP_CATEGORIES.condition} onRenameCascade={reloadInventoryFromDb} />
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <ManageableSelect label="Tình trạng pin" name="batteryCondition" options={batteryOptions} setOptions={setBatteryOptions} defaultValue={editingPhone?.batteryCondition} />
-                          <ManageableSelect label="Dung lượng pin" name="batteryCapacity" options={batteryCapacityOptions} setOptions={setBatteryCapacityOptions} defaultValue={editingPhone?.batteryCapacity} required={false} />
+                          <ManageableSelect label="Tình trạng pin" name="batteryCondition" options={batteryOptions} setOptions={setBatteryOptions} defaultValue={phoneFormDefaults?.batteryCondition} categoryCode={PHONE_LOOKUP_CATEGORIES.batteryCondition} onRenameCascade={reloadInventoryFromDb} />
+                          <ManageableSelect label="Dung lượng pin" name="batteryCapacity" options={batteryCapacityOptions} setOptions={setBatteryCapacityOptions} defaultValue={phoneFormDefaults?.batteryCapacity} required={false} categoryCode={PHONE_LOOKUP_CATEGORIES.batteryCapacity} onRenameCascade={reloadInventoryFromDb} />
                         </div>
                         <div className="grid gap-3 sm:grid-cols-1">
-                          <Field label="Ghi chú"><input name="note" defaultValue={editingPhone?.note} className="h-10 rounded-lg border border-line px-3" /></Field>
+                          <Field label="Ghi chú"><input name="note" defaultValue={phoneFormDefaults?.note} className="h-10 rounded-lg border border-line px-3" /></Field>
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <Field label="Ngày nhập"><input name="importDate" type="date" defaultValue={editingPhone?.importDate || new Date().toISOString().slice(0, 10)} className="h-10 rounded-lg border border-line px-3" /></Field>
-                          <Field label="Ngày bán"><input name="saleDate" type="date" defaultValue={editingPhone?.saleDate} className="h-10 rounded-lg border border-line px-3" /></Field>
+                          <Field label="Ngày nhập"><input name="importDate" type="date" defaultValue={phoneFormDefaults?.importDate || new Date().toISOString().slice(0, 10)} className="h-10 rounded-lg border border-line px-3" /></Field>
+                          <Field label="Ngày bán"><input name="saleDate" type="date" defaultValue={phoneFormDefaults?.saleDate} className="h-10 rounded-lg border border-line px-3" /></Field>
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <Field label="Giá nhập"><MoneyInput name="cost" defaultValue={editingPhone?.cost} /></Field>
-                          <Field label="Giá bán"><MoneyInput name="expectedPrice" defaultValue={editingPhone?.expectedPrice} /></Field>
+                          <Field label="Giá nhập"><MoneyInput name="cost" defaultValue={phoneFormDefaults?.cost} /></Field>
+                          <Field label="Giá bán"><MoneyInput name="expectedPrice" defaultValue={phoneFormDefaults?.expectedPrice} /></Field>
                         </div>
                         <div className="flex justify-end gap-2 border-t border-line pt-4">
                           <button type="button" onClick={closeInventoryModal} className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted">Hủy</button>
@@ -2052,33 +2126,111 @@ function MoneyInput({ name, defaultValue }: { name: string; defaultValue?: numbe
   );
 }
 
-function ManageableSelect({ label, name, options, setOptions, defaultValue, required = true }: { label: string; name: string; options: string[]; setOptions: (o: string[]) => void; defaultValue?: string; required?: boolean }) {
+function ManageableSelect({
+  label,
+  name,
+  options,
+  setOptions,
+  defaultValue,
+  required = true,
+  categoryCode,
+  onRenameCascade,
+}: {
+  label: string;
+  name: string;
+  options: string[];
+  setOptions: (o: string[]) => void;
+  defaultValue?: string;
+  required?: boolean;
+  /** When set, +/sửa/xóa persist to lookup_items via API. */
+  categoryCode?: string;
+  /** After rename (phones may cascade), refresh inventory from DB. */
+  onRenameCascade?: () => Promise<void>;
+}) {
   const selectRef = useRef<HTMLSelectElement>(null);
+  const [busy, setBusy] = useState(false);
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     const val = window.prompt(`Thêm giá trị mới cho ${label}:`);
-    if (val && val.trim() && !options.includes(val.trim())) {
-      setOptions([...options, val.trim()]);
-      setTimeout(() => { if (selectRef.current) selectRef.current.value = val.trim(); }, 0);
+    const next = val?.trim();
+    if (!next) return;
+    if (options.some((o) => o.toLowerCase() === next.toLowerCase())) {
+      window.alert(`"${next}" đã có trong danh sách.`);
+      return;
+    }
+
+    if (!categoryCode) {
+      setOptions([...options, next]);
+      setTimeout(() => {
+        if (selectRef.current) selectRef.current.value = next;
+      }, 0);
+      return;
+    }
+
+    try {
+      setBusy(true);
+      const result = await apiAddLookupItem(categoryCode, next);
+      setOptions(result.labels);
+      setTimeout(() => {
+        if (selectRef.current) selectRef.current.value = result.label ?? next;
+      }, 0);
+    } catch (err) {
+      window.alert(toUiError(err));
+    } finally {
+      setBusy(false);
     }
   };
 
-  const handleEdit = () => {
+  const handleEdit = async () => {
     const select = selectRef.current;
     if (!select || !select.value) return;
     const oldVal = select.value;
     const val = window.prompt(`Sửa giá trị "${oldVal}" thành:`, oldVal);
-    if (val && val.trim() && val.trim() !== oldVal) {
-      setOptions(options.map(o => o === oldVal ? val.trim() : o));
-      setTimeout(() => { if (selectRef.current) selectRef.current.value = val.trim(); }, 0);
+    const next = val?.trim();
+    if (!next || next === oldVal) return;
+
+    if (!categoryCode) {
+      setOptions(options.map((o) => (o === oldVal ? next : o)));
+      setTimeout(() => {
+        if (selectRef.current) selectRef.current.value = next;
+      }, 0);
+      return;
+    }
+
+    try {
+      setBusy(true);
+      const result = await apiUpdateLookupItem(categoryCode, oldVal, next);
+      setOptions(result.labels);
+      setTimeout(() => {
+        if (selectRef.current) selectRef.current.value = result.label ?? next;
+      }, 0);
+      if (onRenameCascade) await onRenameCascade();
+    } catch (err) {
+      window.alert(toUiError(err));
+    } finally {
+      setBusy(false);
     }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     const select = selectRef.current;
     if (!select || !select.value) return;
-    if (window.confirm(`Xóa giá trị "${select.value}" khỏi danh sách ${label}?`)) {
-      setOptions(options.filter(o => o !== select.value));
+    if (!window.confirm(`Xóa giá trị "${select.value}" khỏi danh sách ${label}?`)) return;
+
+    const removed = select.value;
+    if (!categoryCode) {
+      setOptions(options.filter((o) => o !== removed));
+      return;
+    }
+
+    try {
+      setBusy(true);
+      const result = await apiDeactivateLookupItem(categoryCode, removed);
+      setOptions(result.labels);
+    } catch (err) {
+      window.alert(toUiError(err));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -2092,13 +2244,50 @@ function ManageableSelect({ label, name, options, setOptions, defaultValue, requ
   return (
     <Field label={label} required={required}>
       <div className="flex gap-1">
-        <select ref={selectRef} name={name} required={required} defaultValue={defaultValue ?? ""} className="h-10 min-w-0 flex-1 rounded-lg border border-line px-3 outline-none focus:border-brand">
-          <option value="" disabled hidden>Chọn</option>
-          {displayOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+        <select
+          ref={selectRef}
+          name={name}
+          required={required}
+          defaultValue={defaultValue ?? ""}
+          disabled={busy}
+          className="h-10 min-w-0 flex-1 rounded-lg border border-line px-3 outline-none focus:border-brand disabled:opacity-60"
+        >
+          <option value="" disabled hidden>
+            Chọn
+          </option>
+          {displayOptions.map((o) => (
+            <option key={o} value={o}>
+              {o}
+            </option>
+          ))}
         </select>
-        <button type="button" onClick={handleAdd} title="Thêm" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100"><Plus size={18} /></button>
-        <button type="button" onClick={handleEdit} title="Sửa" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100"><Edit3 size={18} /></button>
-        <button type="button" onClick={handleDelete} title="Xóa" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger hover:bg-red-100"><Trash2 size={18} /></button>
+        <button
+          type="button"
+          onClick={handleAdd}
+          disabled={busy}
+          title="Thêm"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 disabled:opacity-50"
+        >
+          <Plus size={18} />
+        </button>
+        <button
+          type="button"
+          onClick={handleEdit}
+          disabled={busy}
+          title="Sửa"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 disabled:opacity-50"
+        >
+          <Edit3 size={18} />
+        </button>
+        <button
+          type="button"
+          onClick={handleDelete}
+          disabled={busy}
+          title="Xóa"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger hover:bg-red-100 disabled:opacity-50"
+        >
+          <Trash2 size={18} />
+        </button>
       </div>
     </Field>
   );
