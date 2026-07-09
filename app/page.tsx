@@ -679,7 +679,7 @@ export default function Home() {
     setIsInventoryModalOpen(true);
   }
 
-  /** Clone máy → popup xác nhận → mở form thêm mới (prefill, xóa IMEI / ngày bán). */
+  /** Clone máy → popup xác nhận → mở form thêm mới (prefill full, mọi ô vẫn sửa được). */
   function openPhoneCloneModal(id: string) {
     const source = phones.find((item) => item.id === id);
     if (!source) return;
@@ -687,20 +687,17 @@ export default function Home() {
     const label = `${source.brand} ${source.name}`.trim();
     const imeiHint = source.imei ? ` (…${source.imei.slice(-5)})` : "";
     const ok = window.confirm(
-      `Nhân bản máy "${label}"${imeiHint}?\n\nForm thêm mới sẽ được điền sẵn thông tin. IMEI để trống — bạn cần nhập IMEI mới trước khi lưu.`
+      `Nhân bản máy "${label}"${imeiHint}?\n\nForm sẽ điền sẵn toàn bộ thông tin. Bạn có thể sửa bất kỳ ô nào rồi lưu thành máy mới.\nLưu ý: IMEI phải khác máy gốc (IMEI không được trùng).`
     );
     if (!ok) return;
 
     setInventoryTab("phones");
     setEditingPhoneId(null);
     setEditingAccessoryId(null);
+    // Copy full; id rỗng = mode thêm mới. Mọi field form đều editable.
     setClonePhoneDraft({
       ...source,
       id: "",
-      imei: "",
-      saleDate: "",
-      status: "Còn hàng",
-      importDate: new Date().toISOString().slice(0, 10),
     });
     setCloneFormKey((k) => k + 1);
     setIsInventoryModalOpen(true);
@@ -719,6 +716,7 @@ export default function Home() {
     setEditingPhoneId(null);
     setClonePhoneDraft(null);
     setEditingAccessoryId(null);
+    setInventoryBackendError("");
   }
 
   async function savePhone(event: FormEvent<HTMLFormElement>) {
@@ -772,14 +770,12 @@ export default function Home() {
       pushOpt(setBatteryCapacityOptions, saved.batteryCapacity || "");
       pushLog(editingPhoneId ? "Sửa máy trong kho" : "Thêm máy vào kho", saved.imei, storeId);
       setInventoryBackendError("");
+      // Thêm/sửa/clone thành công → đóng popup ngay (không reset form sau unmount).
+      closeInventoryModal();
+      setInventoryPage(1);
     } catch (err) {
       setInventoryBackendError(toUiError(err));
-      return;
     }
-
-    closeInventoryModal();
-    setInventoryPage(1);
-    event.currentTarget.reset();
   }
 
   async function saveAccessory(event: FormEvent<HTMLFormElement>) {
@@ -814,14 +810,11 @@ export default function Home() {
         storeId
       );
       setInventoryBackendError("");
+      closeInventoryModal();
+      setInventoryPage(1);
     } catch (err) {
       setInventoryBackendError(toUiError(err));
-      return;
     }
-
-    closeInventoryModal();
-    setInventoryPage(1);
-    event.currentTarget.reset();
   }
 
   function createSale(event: FormEvent<HTMLFormElement>) {
@@ -1442,7 +1435,9 @@ export default function Home() {
                             : "Thêm phụ kiện"}
                       </h2>
                       {inventoryTab === "phones" && !editingPhone && clonePhoneDraft ? (
-                        <p className="mt-1 text-sm font-semibold text-sky-700">Đã copy thông tin máy mẫu — chỉnh IMEI / vài field rồi lưu máy mới.</p>
+                        <p className="mt-1 text-sm font-semibold text-sky-700">
+                          Đã copy đầy đủ thông tin máy mẫu — sửa bất kỳ ô nào nếu cần, rồi lưu máy mới (IMEI không được trùng).
+                        </p>
                       ) : null}
                     </div>
                     <button onClick={closeInventoryModal} className="h-9 rounded-xl border border-slate-200/60 bg-white/50 px-4 text-sm font-black text-slate-600 backdrop-blur-md transition hover:bg-white hover:text-slate-900">
@@ -1450,6 +1445,11 @@ export default function Home() {
                     </button>
                   </div>
                   <div className="p-5">
+                    {inventoryBackendError ? (
+                      <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-danger">
+                        {inventoryBackendError}
+                      </div>
+                    ) : null}
                     {inventoryTab === "phones" ? (
                       <form key={editingPhone?.id ?? (clonePhoneDraft ? `clone-${cloneFormKey}` : "new-phone")} onSubmit={savePhone} className="grid gap-3" autoComplete="off" spellCheck={false}>
                         <div className="grid gap-3 sm:grid-cols-2">
@@ -1457,8 +1457,36 @@ export default function Home() {
                           <ManageableSelect label="Tên máy" name="name" options={nameOptions} setOptions={setNameOptions} defaultValue={phoneFormDefaults?.name} categoryCode={PHONE_LOOKUP_CATEGORIES.modelName} onRenameCascade={reloadInventoryFromDb} />
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <Field label="IMEI"><input name="imei" defaultValue={phoneFormDefaults?.imei} placeholder={clonePhoneDraft && !editingPhone ? "Nhập IMEI máy mới" : undefined} className="h-10 rounded-lg border border-line px-3" /></Field>
+                          <Field label="IMEI">
+                            <input
+                              name="imei"
+                              required
+                              defaultValue={phoneFormDefaults?.imei}
+                              placeholder={clonePhoneDraft && !editingPhone ? "Sửa IMEI nếu trùng máy gốc" : undefined}
+                              className="h-10 rounded-lg border border-line px-3"
+                            />
+                          </Field>
                           <SelectField label="Trạng thái" name="status" options={["Còn hàng", "Đã bán", "Đã hủy", "Chưa xử lý"].map((status) => [status, status])} defaultValue={phoneFormDefaults?.status ?? "Còn hàng"} />
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <SelectField
+                            label="Cửa hàng"
+                            name="storeId"
+                            options={stores.map((s) => [s.id, s.name])}
+                            defaultValue={
+                              phoneFormDefaults?.storeId ||
+                              (storeFilter !== "all" ? storeFilter : currentUser?.storeId) ||
+                              "store-1"
+                            }
+                          />
+                          <Field label="Phiên bản mạng">
+                            <input
+                              name="networkVersion"
+                              defaultValue={phoneFormDefaults?.networkVersion ?? ""}
+                              placeholder="4G / 5G…"
+                              className="h-10 rounded-lg border border-line px-3"
+                            />
+                          </Field>
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
                           <ManageableSelect label="Màu sắc" name="color" options={colorOptions} setOptions={setColorOptions} defaultValue={phoneFormDefaults?.color} categoryCode={PHONE_LOOKUP_CATEGORIES.color} onRenameCascade={reloadInventoryFromDb} />
@@ -1486,8 +1514,8 @@ export default function Home() {
                         <div className="flex justify-end gap-2 border-t border-line pt-4">
                           <button type="button" onClick={closeInventoryModal} className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted">Hủy</button>
                           <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark">
-                            <Plus size={18} />
-                            {editingPhone ? "Lưu sửa" : "Thêm máy"}
+                            {editingPhone ? <Edit3 size={18} /> : clonePhoneDraft ? <CopyPlus size={18} /> : <Plus size={18} />}
+                            {editingPhone ? "Lưu sửa" : clonePhoneDraft ? "Lưu máy mới" : "Thêm máy"}
                           </button>
                         </div>
                       </form>
