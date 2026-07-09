@@ -4,8 +4,10 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import {
   Activity,
   Boxes,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  CircleAlert,
   ClipboardList,
   CopyPlus,
   CreditCard,
@@ -413,6 +415,9 @@ export default function Home() {
   const [batteryCapacityOptions, setBatteryCapacityOptions] = useState(["100%", "99%", "98%", "95%", "90%", "85%", "80%", "Dưới 80%"]);
   const [conditionOptions, setConditionOptions] = useState(["Zin", "Cũ", "Like New", "Mới 100%"]);
   const [inventoryBackendError, setInventoryBackendError] = useState("");
+  /** Toast sau lưu/sửa/clone (hiện cả khi popup đã đóng). */
+  const [inventoryToast, setInventoryToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const inventoryToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [inventoryLoading, setInventoryLoading] = useState(false);
   const [supabaseReportMonthly, setSupabaseReportMonthly] = useState<{ soldPhones: number; revenue: number; profit: number } | null>(null);
   const [supabaseYearlyChart, setSupabaseYearlyChart] = useState<{ month: string; revenue: number; profit: number; sold: number }[] | null>(null);
@@ -476,6 +481,12 @@ export default function Home() {
       await reloadSoftwareFromDb();
     })();
   }, [currentUser, reloadInventoryFromDb, reloadSoftwareFromDb]);
+
+  useEffect(() => {
+    return () => {
+      if (inventoryToastTimerRef.current) clearTimeout(inventoryToastTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (!currentUser) {
@@ -719,6 +730,18 @@ export default function Home() {
     setInventoryBackendError("");
   }
 
+  function showInventoryToast(type: "success" | "error", message: string) {
+    if (inventoryToastTimerRef.current) {
+      clearTimeout(inventoryToastTimerRef.current);
+      inventoryToastTimerRef.current = null;
+    }
+    setInventoryToast({ type, message });
+    inventoryToastTimerRef.current = setTimeout(() => {
+      setInventoryToast(null);
+      inventoryToastTimerRef.current = null;
+    }, 3500);
+  }
+
   async function savePhone(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -726,6 +749,8 @@ export default function Home() {
       (form.get("storeId") as Exclude<StoreId, "all">) ||
       (storeFilter !== "all" ? storeFilter : currentUser?.storeId) ||
       "store-1";
+    const isEdit = Boolean(editingPhoneId);
+    const isClone = !isEdit && Boolean(clonePhoneDraft);
     const payload: PhoneItem = {
       id: editingPhoneId ?? `p${Date.now()}`,
       brand: String(form.get("brand")),
@@ -768,13 +793,24 @@ export default function Home() {
       pushOpt(setConditionOptions, saved.condition);
       pushOpt(setBatteryOptions, saved.batteryCondition);
       pushOpt(setBatteryCapacityOptions, saved.batteryCapacity || "");
-      pushLog(editingPhoneId ? "Sửa máy trong kho" : "Thêm máy vào kho", saved.imei, storeId);
+      pushLog(
+        isEdit ? "Sửa máy trong kho" : isClone ? "Nhân bản máy vào kho" : "Thêm máy vào kho",
+        saved.imei,
+        storeId
+      );
       setInventoryBackendError("");
-      // Thêm/sửa/clone thành công → đóng popup ngay (không reset form sau unmount).
+      const successMsg = isEdit
+        ? `Đã sửa máy ${saved.brand} ${saved.name} (IMEI …${saved.imei.slice(-5)}) thành công.`
+        : isClone
+          ? `Đã nhân bản máy ${saved.brand} ${saved.name} thành công.`
+          : `Đã thêm máy ${saved.brand} ${saved.name} thành công.`;
+      showInventoryToast("success", successMsg);
       closeInventoryModal();
       setInventoryPage(1);
     } catch (err) {
-      setInventoryBackendError(toUiError(err));
+      const msg = toUiError(err);
+      showInventoryToast("error", `Lưu máy thất bại: ${msg}`);
+      closeInventoryModal();
     }
   }
 
@@ -782,6 +818,7 @@ export default function Home() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const storeId = String(form.get("storeId")) as Exclude<StoreId, "all">;
+    const isEdit = Boolean(editingAccessoryId);
     const quantity = Number(form.get("quantity") || 0);
     const payload: Accessory = {
       id: editingAccessoryId ?? `a${Date.now()}`,
@@ -810,10 +847,16 @@ export default function Home() {
         storeId
       );
       setInventoryBackendError("");
+      showInventoryToast(
+        "success",
+        isEdit ? `Đã sửa phụ kiện ${saved.name} thành công.` : `Đã thêm phụ kiện ${saved.name} thành công.`
+      );
       closeInventoryModal();
       setInventoryPage(1);
     } catch (err) {
-      setInventoryBackendError(toUiError(err));
+      const msg = toUiError(err);
+      showInventoryToast("error", `Lưu phụ kiện thất bại: ${msg}`);
+      closeInventoryModal();
     }
   }
 
@@ -1023,6 +1066,31 @@ export default function Home() {
       </aside>
 
       <section className="min-w-0 p-4 sm:p-6">
+        {inventoryToast ? (
+          <div
+            role="status"
+            className={`fixed right-4 top-4 z-[80] flex max-w-md items-start gap-3 rounded-xl border px-4 py-3 shadow-panel ${
+              inventoryToast.type === "success"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                : "border-red-200 bg-red-50 text-danger"
+            }`}
+          >
+            {inventoryToast.type === "success" ? (
+              <CheckCircle2 size={20} className="mt-0.5 shrink-0 text-emerald-600" />
+            ) : (
+              <CircleAlert size={20} className="mt-0.5 shrink-0 text-danger" />
+            )}
+            <div className="min-w-0 flex-1 text-sm font-bold leading-snug">{inventoryToast.message}</div>
+            <button
+              type="button"
+              onClick={() => setInventoryToast(null)}
+              className="shrink-0 rounded-md p-1 text-slate-500 hover:bg-white/70 hover:text-slate-800"
+              title="Đóng"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        ) : null}
         <header className={`mb-5 flex flex-col gap-4 lg:flex-row lg:items-center ${activePage === "online-repairs" ? "justify-end" : "lg:justify-between"}`}>
           <div className={activePage === "online-repairs" ? "hidden" : "block"}>
             <h1 className="text-2xl font-black sm:text-3xl">{navItems.find((item) => item.id === activePage)?.label}</h1>
