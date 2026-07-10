@@ -3,8 +3,10 @@
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
   Activity,
+  ArrowUpDown,
   Boxes,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleAlert,
@@ -32,7 +34,8 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import {
   loadInventoryBootstrap as apiLoadInventoryBootstrap,
   upsertAccessory as apiUpsertAccessory,
@@ -47,6 +50,7 @@ import {
   PHONE_LOOKUP_CATEGORIES,
   addLookupItem as apiAddLookupItem,
   deactivateLookupItem as apiDeactivateLookupItem,
+  sortLookupItems as apiSortLookupItems,
   updateLookupItem as apiUpdateLookupItem,
 } from "@/services/lookupService";
 import {
@@ -312,6 +316,59 @@ function parseInputMoney(value: FormDataEntryValue | null) {
   return Number(String(value ?? "").replace(/\D/g, "") || 0);
 }
 
+/**
+ * Giá kho đơn vị short (bớt 3 số 0): 16.900 lưu = 16.900.000 ₫ thật.
+ * Nếu lỡ nhập full (≥ 1tr) thì chia 1000 về short.
+ */
+function parseShopMoney(value: FormDataEntryValue | null) {
+  const n = parseInputMoney(value);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  const r = Math.round(n);
+  if (r >= 1_000_000) return Math.round(r / 1000);
+  return r;
+}
+
+/** Short shop → VND thật để lọc khoảng giá. */
+function shopMoneyToVnd(short: number): number {
+  if (!Number.isFinite(short) || short <= 0) return 0;
+  return Math.round(short) * 1000;
+}
+
+/**
+ * Inventory grid price buckets on **real VND** (after ×1000 from short).
+ * Boundaries non-overlapping.
+ */
+function priceMatchesInventoryRange(realVnd: number, range: string): boolean {
+  if (range === "all") return true;
+  if (!Number.isFinite(realVnd)) return false;
+  switch (range) {
+    case "u1m":
+      return realVnd < 1_000_000;
+    case "1m-2m":
+      return realVnd >= 1_000_000 && realVnd < 2_000_000;
+    case "2m-4m":
+      return realVnd >= 2_000_000 && realVnd < 4_000_000;
+    case "4m-6m":
+      return realVnd >= 4_000_000 && realVnd < 6_000_000;
+    case "6m-10m":
+      return realVnd >= 6_000_000 && realVnd <= 10_000_000;
+    case "o10m":
+      return realVnd > 10_000_000;
+    default:
+      return true;
+  }
+}
+
+/** Khi đang tìm kiếm: tên A→Z, rồi giá cao → thấp. */
+function compareSearchInventory(
+  a: { name: string; price: number },
+  b: { name: string; price: number }
+): number {
+  const byName = a.name.localeCompare(b.name, "vi", { sensitivity: "base" });
+  if (byName !== 0) return byName;
+  return b.price - a.price;
+}
+
 function StatusBadge({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "ok" | "warn" | "danger" }) {
   const toneClass = {
     neutral: "bg-slate-100 text-slate-700",
@@ -378,7 +435,7 @@ export default function Home() {
   const [inventoryPage, setInventoryPage] = useState(1);
   const [inventoryReportMonth, setInventoryReportMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [inventoryTypeFilter, setInventoryTypeFilter] = useState("all");
-  const [inventoryBrandFilter, setInventoryBrandFilter] = useState("iPhone");
+  const [inventoryBrandFilter, setInventoryBrandFilter] = useState("all");
   const [inventoryNameFilter, setInventoryNameFilter] = useState("");
   const [inventoryPriceRange, setInventoryPriceRange] = useState("all");
   const [inventoryStatusFilter, setInventoryStatusFilter] = useState("Còn hàng");
@@ -413,7 +470,8 @@ export default function Home() {
   const [storageOptions, setStorageOptions] = useState(["64GB", "128GB", "256GB", "512GB", "1TB"]);
   const [madeInOptions, setMadeInOptions] = useState(["VN/A", "LL/A", "Trung Quốc", "Việt Nam"]);
   const [batteryOptions, setBatteryOptions] = useState(["Zin", "Đã thay", "Đã thay pin", "80-90%", "Zin 88%", "Zin 90%", "Zin 92%", "Zin 98%", "Zin 100%"]);
-  const [batteryCapacityOptions, setBatteryCapacityOptions] = useState(["100%", "99%", "98%", "95%", "90%", "85%", "80%", "Dưới 80%"]);
+  /** Chỉ load từ DB (lookup phone_battery_capacity) — không seed mock. */
+  const [batteryCapacityOptions, setBatteryCapacityOptions] = useState<string[]>([]);
   const [conditionOptions, setConditionOptions] = useState(["Zin", "Cũ", "Like New", "Mới 100%"]);
   const [inventoryBackendError, setInventoryBackendError] = useState("");
   /** Toast sau lưu/sửa/clone (hiện cả khi popup đã đóng). */
@@ -451,7 +509,8 @@ export default function Home() {
       if (madeIns.length) setMadeInOptions(madeIns);
       if (conditions.length) setConditionOptions(conditions);
       if (batteries.length) setBatteryOptions(batteries);
-      if (batCaps.length) setBatteryCapacityOptions(batCaps);
+      // Luôn lấy đúng danh sách DB (kể cả rỗng) — không giữ mock local
+      setBatteryCapacityOptions(batCaps);
     } catch (err) {
       setPhones([]);
       setAccessories([]);
@@ -519,18 +578,11 @@ export default function Home() {
     };
   }, [currentUser, inventoryReportMonth, reportYear, storeFilter]);
 
-  let minInventoryPrice = 0;
-  let maxInventoryPrice = Number.MAX_SAFE_INTEGER;
-  if (inventoryPriceRange === "u1m") maxInventoryPrice = 1000000;
-  else if (inventoryPriceRange === "1m-2m") { minInventoryPrice = 1000000; maxInventoryPrice = 2000000; }
-  else if (inventoryPriceRange === "2m-4m") { minInventoryPrice = 2000000; maxInventoryPrice = 4000000; }
-  else if (inventoryPriceRange === "4m-6m") { minInventoryPrice = 4000000; maxInventoryPrice = 6000000; }
-  else if (inventoryPriceRange === "6m-10m") { minInventoryPrice = 6000000; maxInventoryPrice = 10000000; }
-  else if (inventoryPriceRange === "o10m") minInventoryPrice = 10000000;
-
   const phoneTypeOptions = Array.from(new Set(phones.map((item) => item.name.split(" ")[0]).filter(Boolean)));
   const accessoryTypeOptions = Array.from(new Set(accessories.map((item) => item.code.split("-")[0]).filter(Boolean)));
   const inventoryTypeOptions = inventoryTab === "phones" ? phoneTypeOptions : accessoryTypeOptions;
+
+  const hasInventorySearch = query.trim().length > 0;
 
   const filteredPhones = phones
     .filter((item) => {
@@ -541,11 +593,17 @@ export default function Home() {
       const matchesName = item.name.toLowerCase().includes(name);
       const matchesBrand = inventoryBrandFilter === "all" || item.brand === inventoryBrandFilter;
       const matchesType = inventoryTypeFilter === "all" || item.name.toLowerCase().startsWith(inventoryTypeFilter.toLowerCase());
-      const matchesPrice = item.expectedPrice >= minInventoryPrice && item.expectedPrice <= maxInventoryPrice;
+      const matchesPrice = priceMatchesInventoryRange(shopMoneyToVnd(item.expectedPrice), inventoryPriceRange);
       const matchesStatus = inventoryStatusFilter === "all" || item.status === inventoryStatusFilter;
       return matchesStore && matchesQuickSearch && matchesName && matchesBrand && matchesType && matchesPrice && matchesStatus;
     })
-    .sort((a, b) => b.expectedPrice - a.expectedPrice);
+    .sort((a, b) => {
+      if (!hasInventorySearch) return 0;
+      return compareSearchInventory(
+        { name: a.name, price: a.expectedPrice },
+        { name: b.name, price: b.expectedPrice }
+      );
+    });
 
   const filteredAccessories = accessories
     .filter((item) => {
@@ -555,11 +613,14 @@ export default function Home() {
       const matchesQuickSearch = [item.name, item.code].join(" ").toLowerCase().includes(q);
       const matchesName = item.name.toLowerCase().includes(name);
       const matchesType = inventoryTypeFilter === "all" || item.code.toLowerCase().startsWith(inventoryTypeFilter.toLowerCase());
-      const matchesPrice = item.price >= minInventoryPrice && item.price <= maxInventoryPrice;
+      const matchesPrice = priceMatchesInventoryRange(shopMoneyToVnd(item.price), inventoryPriceRange);
       const matchesStatus = inventoryStatusFilter === "all" || item.status === inventoryStatusFilter || (inventoryStatusFilter === "Đã bán" && item.status === "Hết hàng");
       return matchesStore && matchesQuickSearch && matchesName && matchesType && matchesPrice && matchesStatus;
     })
-    .sort((a, b) => b.price - a.price);
+    .sort((a, b) => {
+      if (!hasInventorySearch) return 0;
+      return compareSearchInventory({ name: a.name, price: a.price }, { name: b.name, price: b.price });
+    });
 
   const filteredRepairs = repairs.filter((item) => storeFilter === "all" || item.storeId === storeFilter);
   const filteredLedger = ledger.filter((item) => storeFilter === "all" || item.storeId === storeFilter);
@@ -775,8 +836,8 @@ export default function Home() {
       importDate: String(form.get("importDate") || new Date().toISOString().slice(0, 10)),
       saleDate: String(form.get("saleDate") || ""),
       storeId,
-      cost: parseInputMoney(form.get("cost")),
-      expectedPrice: parseInputMoney(form.get("expectedPrice")),
+      cost: parseShopMoney(form.get("cost")),
+      expectedPrice: parseShopMoney(form.get("expectedPrice")),
       status: String(form.get("status")) as ProductStatus,
     };
 
@@ -841,8 +902,8 @@ export default function Home() {
       name: String(form.get("name")),
       storeId,
       quantity,
-      cost: parseInputMoney(form.get("cost")),
-      price: parseInputMoney(form.get("price")),
+      cost: parseShopMoney(form.get("cost")),
+      price: parseShopMoney(form.get("price")),
       status: String(form.get("status") || (quantity > 0 ? "Còn hàng" : "Hết hàng")) as AccessoryStatus,
     };
 
@@ -1289,7 +1350,7 @@ export default function Home() {
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <h2 className="text-xl font-black">Danh sách kho hàng</h2>
-                    <p className="text-sm font-semibold text-muted">Tìm kiếm nâng cao theo loại, tên máy, khoảng giá và thứ tự giá.</p>
+                    <p className="text-sm font-semibold text-muted">Tìm kiếm nâng cao theo loại, tên máy, khoảng giá. Gõ tìm nhanh sẽ sắp xếp theo tên rồi giá.</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="inline-flex w-fit rounded-lg border border-line bg-slate-100 p-1">
@@ -1576,7 +1637,7 @@ export default function Home() {
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
                           <ManageableSelect label="Màu sắc" name="color" options={colorOptions} setOptions={setColorOptions} defaultValue={phoneFormDefaults?.color} categoryCode={PHONE_LOOKUP_CATEGORIES.color} onRenameCascade={reloadInventoryFromDb} />
-                          <ManageableSelect label="Dung lượng máy" name="storage" options={storageOptions} setOptions={setStorageOptions} defaultValue={phoneFormDefaults?.storage} categoryCode={PHONE_LOOKUP_CATEGORIES.storage} onRenameCascade={reloadInventoryFromDb} />
+                          <ManageableSelect label="Dung lượng máy" name="storage" options={storageOptions} setOptions={setStorageOptions} defaultValue={phoneFormDefaults?.storage} categoryCode={PHONE_LOOKUP_CATEGORIES.storage} onRenameCascade={reloadInventoryFromDb} sortable />
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
                           <ManageableSelect label="Quốc gia" name="madeIn" options={madeInOptions} setOptions={setMadeInOptions} defaultValue={phoneFormDefaults?.madeIn} required={false} categoryCode={PHONE_LOOKUP_CATEGORIES.madeIn} onRenameCascade={reloadInventoryFromDb} />
@@ -2208,17 +2269,186 @@ function Panel({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function SelectField({ label, name, options, defaultValue }: { label: string; name: string; options: string[][]; defaultValue?: string }) {
+/** Max visible option rows before dropdown scrolls (row = h-10). */
+const DROPDOWN_MAX_VISIBLE = 10;
+const DROPDOWN_PANEL_MAX_H = `${DROPDOWN_MAX_VISIBLE * 2.5}rem`; // 10 × h-10
+
+type ScrollableSelectOption = { value: string; label: string };
+
+/** Custom droplist: max 10 rows + scroll; fixed panel so modal overflow doesn't clip. */
+function ScrollableSelect({
+  name,
+  options,
+  value,
+  onChange,
+  required = true,
+  disabled = false,
+  className = "",
+  placeholder = "Chọn",
+}: {
+  name: string;
+  options: ScrollableSelectOption[];
+  value: string;
+  onChange: (next: string) => void;
+  required?: boolean;
+  disabled?: boolean;
+  className?: string;
+  placeholder?: string;
+}) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLUListElement>(null);
+  const [open, setOpen] = useState(false);
+  const [panelStyle, setPanelStyle] = useState<CSSProperties>({});
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const selectedLabel = useMemo(() => {
+    const hit = options.find((o) => o.value === value);
+    return hit?.label ?? (value || "");
+  }, [options, value]);
+
+  const updatePanelPosition = useCallback(() => {
+    const el = triggerRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - r.bottom - 8;
+    const maxH = DROPDOWN_MAX_VISIBLE * 40; // px ≈ h-10
+    const openUp = spaceBelow < Math.min(maxH, options.length * 40) && r.top > spaceBelow;
+    setPanelStyle({
+      position: "fixed",
+      left: r.left,
+      width: Math.max(r.width, 120),
+      zIndex: 200,
+      maxHeight: DROPDOWN_PANEL_MAX_H,
+      ...(openUp
+        ? { bottom: window.innerHeight - r.top + 4, top: "auto" }
+        : { top: r.bottom + 4, bottom: "auto" }),
+    });
+  }, [options.length]);
+
+  useEffect(() => {
+    if (!open) return;
+    updatePanelPosition();
+    const onScrollOrResize = () => updatePanelPosition();
+    window.addEventListener("resize", onScrollOrResize);
+    // capture scroll from modal overflow containers
+    window.addEventListener("scroll", onScrollOrResize, true);
+    return () => {
+      window.removeEventListener("resize", onScrollOrResize);
+      window.removeEventListener("scroll", onScrollOrResize, true);
+    };
+  }, [open, updatePanelPosition]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: MouseEvent) => {
+      const t = event.target as Node;
+      if (rootRef.current?.contains(t) || panelRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const panel =
+    open && mounted
+      ? createPortal(
+          <ul
+            ref={panelRef}
+            role="listbox"
+            style={panelStyle}
+            className="overflow-y-auto rounded-lg border border-line bg-white py-1 shadow-panel"
+          >
+            {options.length === 0 ? (
+              <li className="px-3 py-2 text-sm font-semibold text-muted">Chưa có option</li>
+            ) : (
+              options.map((o) => {
+                const active = o.value === value;
+                return (
+                  <li key={`${name}-opt-${o.value}`}>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={active}
+                      onClick={() => {
+                        onChange(o.value);
+                        setOpen(false);
+                      }}
+                      className={`flex h-10 w-full items-center px-3 text-left text-sm font-semibold transition hover:bg-brand-soft ${
+                        active ? "bg-brand-soft text-brand" : "text-ink"
+                      }`}
+                    >
+                      <span className="truncate">{o.label}</span>
+                    </button>
+                  </li>
+                );
+              })
+            )}
+          </ul>,
+          document.body
+        )
+      : null;
+
   return (
-    <Field label={label} required>
-      <select name={name} required defaultValue={defaultValue ?? ""} className="h-10 rounded-lg border border-line px-3">
-        <option value="" disabled hidden>Chọn</option>
-        {options.map(([value, text]) => (
-          <option key={`${name}-${value}`} value={value}>
-            {text}
+    <div ref={rootRef} className={`relative min-w-0 ${className}`}>
+      {/* Native select for FormData + HTML required validation (visually hidden) */}
+      <select
+        name={name}
+        required={required}
+        value={value}
+        disabled={disabled}
+        tabIndex={-1}
+        aria-hidden
+        onChange={(e) => onChange(e.target.value)}
+        className="pointer-events-none absolute h-px w-px opacity-0"
+      >
+        <option value="">{placeholder}</option>
+        {options.map((o) => (
+          <option key={`${name}-${o.value}`} value={o.value}>
+            {o.label}
           </option>
         ))}
       </select>
+
+      <button
+        ref={triggerRef}
+        type="button"
+        disabled={disabled}
+        onClick={() => !disabled && setOpen((v) => !v)}
+        className="flex h-10 w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-line bg-white px-3 text-left outline-none focus:border-brand disabled:opacity-60"
+      >
+        <span className={`min-w-0 flex-1 truncate font-semibold ${value ? "text-ink" : "text-muted"}`}>
+          {value ? selectedLabel : placeholder}
+        </span>
+        <ChevronDown size={16} className={`shrink-0 text-muted transition ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {panel}
+    </div>
+  );
+}
+
+function SelectField({ label, name, options, defaultValue }: { label: string; name: string; options: string[][]; defaultValue?: string }) {
+  const [value, setValue] = useState(defaultValue ?? "");
+  const items = useMemo(
+    () => options.map(([v, text]) => ({ value: v, label: text })),
+    [options]
+  );
+
+  return (
+    <Field label={label} required>
+      <ScrollableSelect name={name} options={items} value={value} onChange={setValue} required />
     </Field>
   );
 }
@@ -2249,6 +2479,7 @@ function ManageableSelect({
   required = true,
   categoryCode,
   onRenameCascade,
+  sortable = false,
 }: {
   label: string;
   name: string;
@@ -2260,9 +2491,36 @@ function ManageableSelect({
   categoryCode?: string;
   /** After rename (phones may cascade), refresh inventory from DB. */
   onRenameCascade?: () => Promise<void>;
+  /** Hiện nút sắp xếp (ghi sort_order DB khi có categoryCode). */
+  sortable?: boolean;
 }) {
-  const selectRef = useRef<HTMLSelectElement>(null);
+  const [value, setValue] = useState(defaultValue ?? "");
   const [busy, setBusy] = useState(false);
+
+  const handleSort = async () => {
+    if (!options.length) return;
+    const selected = value;
+
+    if (!categoryCode) {
+      const sorted = [...options].sort((a, b) =>
+        a.localeCompare(b, "vi", { numeric: true, sensitivity: "base" })
+      );
+      setOptions(sorted);
+      if (selected) setValue(selected);
+      return;
+    }
+
+    try {
+      setBusy(true);
+      const result = await apiSortLookupItems(categoryCode);
+      setOptions(result.labels);
+      if (selected) setValue(selected);
+    } catch (err) {
+      window.alert(toUiError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const handleAdd = async () => {
     const val = window.prompt(`Thêm giá trị mới cho ${label}:`);
@@ -2275,9 +2533,7 @@ function ManageableSelect({
 
     if (!categoryCode) {
       setOptions([...options, next]);
-      setTimeout(() => {
-        if (selectRef.current) selectRef.current.value = next;
-      }, 0);
+      setValue(next);
       return;
     }
 
@@ -2285,9 +2541,7 @@ function ManageableSelect({
       setBusy(true);
       const result = await apiAddLookupItem(categoryCode, next);
       setOptions(result.labels);
-      setTimeout(() => {
-        if (selectRef.current) selectRef.current.value = result.label ?? next;
-      }, 0);
+      setValue(result.label ?? next);
     } catch (err) {
       window.alert(toUiError(err));
     } finally {
@@ -2296,18 +2550,15 @@ function ManageableSelect({
   };
 
   const handleEdit = async () => {
-    const select = selectRef.current;
-    if (!select || !select.value) return;
-    const oldVal = select.value;
+    if (!value) return;
+    const oldVal = value;
     const val = window.prompt(`Sửa giá trị "${oldVal}" thành:`, oldVal);
     const next = val?.trim();
     if (!next || next === oldVal) return;
 
     if (!categoryCode) {
       setOptions(options.map((o) => (o === oldVal ? next : o)));
-      setTimeout(() => {
-        if (selectRef.current) selectRef.current.value = next;
-      }, 0);
+      setValue(next);
       return;
     }
 
@@ -2315,9 +2566,7 @@ function ManageableSelect({
       setBusy(true);
       const result = await apiUpdateLookupItem(categoryCode, oldVal, next);
       setOptions(result.labels);
-      setTimeout(() => {
-        if (selectRef.current) selectRef.current.value = result.label ?? next;
-      }, 0);
+      setValue(result.label ?? next);
       if (onRenameCascade) await onRenameCascade();
     } catch (err) {
       window.alert(toUiError(err));
@@ -2327,13 +2576,13 @@ function ManageableSelect({
   };
 
   const handleDelete = async () => {
-    const select = selectRef.current;
-    if (!select || !select.value) return;
-    if (!window.confirm(`Xóa giá trị "${select.value}" khỏi danh sách ${label}?`)) return;
+    if (!value) return;
+    if (!window.confirm(`Xóa giá trị "${value}" khỏi danh sách ${label}?`)) return;
 
-    const removed = select.value;
+    const removed = value;
     if (!categoryCode) {
       setOptions(options.filter((o) => o !== removed));
+      setValue("");
       return;
     }
 
@@ -2341,6 +2590,7 @@ function ManageableSelect({
       setBusy(true);
       const result = await apiDeactivateLookupItem(categoryCode, removed);
       setOptions(result.labels);
+      setValue("");
     } catch (err) {
       window.alert(toUiError(err));
     } finally {
@@ -2349,32 +2599,35 @@ function ManageableSelect({
   };
 
   const displayOptions = useMemo(() => {
-    if (defaultValue && !options.includes(defaultValue)) {
-      return [defaultValue, ...options];
-    }
-    return options;
-  }, [options, defaultValue]);
+    let list = options;
+    if (defaultValue && !list.includes(defaultValue)) list = [defaultValue, ...list];
+    if (value && !list.includes(value)) list = [value, ...list];
+    return list.map((o) => ({ value: o, label: o }));
+  }, [options, defaultValue, value]);
 
   return (
     <Field label={label} required={required}>
       <div className="flex gap-1">
-        <select
-          ref={selectRef}
+        <ScrollableSelect
           name={name}
+          options={displayOptions}
+          value={value}
+          onChange={setValue}
           required={required}
-          defaultValue={defaultValue ?? ""}
           disabled={busy}
-          className="h-10 min-w-0 flex-1 rounded-lg border border-line px-3 outline-none focus:border-brand disabled:opacity-60"
-        >
-          <option value="" disabled hidden>
-            Chọn
-          </option>
-          {displayOptions.map((o) => (
-            <option key={o} value={o}>
-              {o}
-            </option>
-          ))}
-        </select>
+          className="min-w-0 flex-1"
+        />
+        {sortable ? (
+          <button
+            type="button"
+            onClick={() => void handleSort()}
+            disabled={busy || options.length < 2}
+            title="Sắp xếp (nhỏ → lớn)"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 disabled:opacity-50"
+          >
+            <ArrowUpDown size={18} />
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={handleAdd}

@@ -1,4 +1,5 @@
 import type { Accessory, PhoneItem, StoreId } from "@/types";
+import { toShopMoney } from "@/lib/format";
 import {
   accessoryStatusToDb,
   accessoryStatusToUi,
@@ -44,8 +45,8 @@ function mapPhone(
     importDate: row.import_date ? String(row.import_date).slice(0, 10) : undefined,
     saleDate: row.sale_date ? String(row.sale_date).slice(0, 10) : undefined,
     storeId: idToCode.get(String(row.store_id)) ?? "store-1",
-    cost: Number(row.cost),
-    expectedPrice: Number(row.expected_price),
+    cost: toShopMoney(Number(row.cost)),
+    expectedPrice: toShopMoney(Number(row.expected_price)),
     status: phoneStatusToUi(row.status as "in_stock" | "sold" | "pending" | "cancelled"),
   };
 }
@@ -60,8 +61,8 @@ function mapAccessory(
     name: String(row.name),
     storeId: idToCode.get(String(row.store_id)) ?? "store-1",
     quantity: Number(row.quantity),
-    cost: Number(row.cost),
-    price: Number(row.price),
+    cost: toShopMoney(Number(row.cost)),
+    price: toShopMoney(Number(row.price)),
     status: accessoryStatusToUi(row.status as "in_stock" | "out_of_stock" | "cancelled"),
   };
 }
@@ -123,8 +124,8 @@ export async function repoUpsertPhone(
           input.note ?? "",
           input.importDate || null,
           input.saleDate || null,
-          Math.round(input.cost),
-          Math.round(input.expectedPrice),
+          toShopMoney(Number(input.cost)),
+          toShopMoney(Number(input.expectedPrice)),
           status,
           input.id,
         ]
@@ -155,8 +156,8 @@ export async function repoUpsertPhone(
           input.note ?? "",
           input.importDate || null,
           input.saleDate || null,
-          Math.round(input.cost),
-          Math.round(input.expectedPrice),
+          toShopMoney(Number(input.cost)),
+          toShopMoney(Number(input.expectedPrice)),
           status,
         ]
       );
@@ -199,8 +200,8 @@ export async function repoUpsertAccessory(
           input.code.trim(),
           input.name,
           qty,
-          Math.round(input.cost),
-          Math.round(input.price),
+          toShopMoney(Number(input.cost)),
+          toShopMoney(Number(input.price)),
           status,
           input.id,
         ]
@@ -213,7 +214,14 @@ export async function repoUpsertAccessory(
       `insert into public.accessories (store_id, code, name, quantity, cost, price, status)
        values ($1,$2,$3,$4,$5,$6, case when $4 > 0 then 'in_stock'::public.accessory_status else 'out_of_stock'::public.accessory_status end)
        returning *`,
-      [storeId, input.code.trim(), input.name, qty, Math.round(input.cost), Math.round(input.price)]
+      [
+        storeId,
+        input.code.trim(),
+        input.name,
+        qty,
+        toShopMoney(Number(input.cost)),
+        toShopMoney(Number(input.price)),
+      ]
     );
     return mapAccessory(rows[0], idToCode);
   });
@@ -504,6 +512,62 @@ export async function repoDeactivateLookupLabel(
       [cat.id, trimmed]
     );
     if (!rowCount) throw new Error("lookup_item_not_found");
+  });
+}
+
+/** Parse storage label → MB for numeric sort (64GB, 1TB, 512…). */
+function storageLabelToMb(label: string): number | null {
+  const m = label.trim().match(/(\d+(?:[.,]\d+)?)\s*(tb|gb|mb|t|g)?/i);
+  if (!m) return null;
+  let n = Number(m[1].replace(",", "."));
+  if (!Number.isFinite(n)) return null;
+  const unit = (m[2] || "gb").toLowerCase();
+  if (unit === "tb" || unit === "t") n *= 1024 * 1024;
+  else if (unit === "gb" || unit === "g") n *= 1024;
+  // mb or bare → treat as MB after gb default above; bare number defaults to GB
+  return n;
+}
+
+function compareLookupLabelsForSort(categoryCode: string, a: string, b: string): number {
+  if (categoryCode === "phone_storage") {
+    const ka = storageLabelToMb(a);
+    const kb = storageLabelToMb(b);
+    if (ka != null && kb != null && ka !== kb) return ka - kb;
+    if (ka != null && kb == null) return -1;
+    if (ka == null && kb != null) return 1;
+  }
+  return a.localeCompare(b, "vi", { numeric: true, sensitivity: "base" });
+}
+
+/**
+ * Re-rank active lookup_items for a category (updates sort_order permanently).
+ * phone_storage: 64GB → 128GB → … → 1TB. Other categories: vi numeric alpha.
+ */
+export async function repoSortLookupLabels(categoryCode: string): Promise<string[]> {
+  return withTransaction(async (client) => {
+    const cat = await getLookupCategory(client, categoryCode);
+    const { rows } = await client.query<{ id: string; label: string }>(
+      `select id, label from public.lookup_items
+       where category_id = $1 and is_active`,
+      [cat.id]
+    );
+
+    const sorted = [...rows].sort((x, y) =>
+      compareLookupLabelsForSort(categoryCode, x.label, y.label)
+    );
+
+    let order = 10;
+    for (const row of sorted) {
+      await client.query(
+        `update public.lookup_items
+         set sort_order = $1, updated_at = now()
+         where id = $2`,
+        [order, row.id]
+      );
+      order += 10;
+    }
+
+    return sorted.map((r) => r.label);
   });
 }
 

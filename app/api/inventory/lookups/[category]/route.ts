@@ -4,6 +4,7 @@ import {
   repoDeactivateLookupLabel,
   repoListLookupLabels,
   repoRenameLookupLabel,
+  repoSortLookupLabels,
 } from "@/lib/db/inventoryRepo";
 import { toInventoryError } from "@/lib/supabase/errors";
 
@@ -36,6 +37,25 @@ export async function POST(
     const saved = await repoAddLookupLabel(params.category, label);
     const labels = await repoListLookupLabels(params.category);
     return NextResponse.json({ data: { label: saved, labels } });
+  } catch (err) {
+    const mapped = toInventoryError(err);
+    return NextResponse.json({ error: mapped.message }, { status: 400 });
+  }
+}
+
+/** Body: { action: "sort" } — sắp xếp option + ghi sort_order DB */
+export async function PUT(
+  req: NextRequest,
+  { params }: { params: { category: string } }
+) {
+  try {
+    const body = await req.json().catch(() => ({}));
+    const action = String(body?.action ?? "").trim();
+    if (action !== "sort") {
+      return NextResponse.json({ error: "action không hợp lệ (cần sort)." }, { status: 400 });
+    }
+    const labels = await repoSortLookupLabels(params.category);
+    return NextResponse.json({ data: { labels } });
   } catch (err) {
     const mapped = toInventoryError(err);
     return NextResponse.json({ error: mapped.message }, { status: 400 });

@@ -85,3 +85,13 @@ export async function deactivateLookupItem(
   });
   return parseJson<LookupMutationResult>(res);
 }
+
+/** Sort options + persist sort_order (storage: 64GB → 1TB). */
+export async function sortLookupItems(categoryCode: string): Promise<LookupMutationResult> {
+  const res = await fetch(`/api/inventory/lookups/${encodeURIComponent(categoryCode)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "sort" }),
+  });
+  return parseJson<LookupMutationResult>(res);
+}

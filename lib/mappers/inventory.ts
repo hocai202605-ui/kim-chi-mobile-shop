@@ -1,4 +1,5 @@
 import type { Accessory, AccessoryStatus, PhoneItem, ProductStatus, StoreId } from "@/types";
+import { toShopMoney } from "@/lib/format";
 import type { DbAccessory, DbAccessoryStatus, DbPhone, DbPhoneStatus } from "@/lib/supabase/types";
 
 const PHONE_STATUS_TO_UI: Record<DbPhoneStatus, ProductStatus> = {
@@ -65,8 +66,8 @@ export function mapPhoneFromDb(
     importDate: row.import_date ?? undefined,
     saleDate: row.sale_date ?? undefined,
     storeId,
-    cost: Number(row.cost),
-    expectedPrice: Number(row.expected_price),
+    cost: toShopMoney(Number(row.cost)),
+    expectedPrice: toShopMoney(Number(row.expected_price)),
     status: phoneStatusToUi(row.status),
   };
 }
@@ -82,8 +83,8 @@ export function mapAccessoryFromDb(
     name: row.name,
     storeId,
     quantity: Number(row.quantity),
-    cost: Number(row.cost),
-    price: Number(row.price),
+    cost: toShopMoney(Number(row.cost)),
+    price: toShopMoney(Number(row.price)),
     status: accessoryStatusToUi(row.status),
   };
 }
