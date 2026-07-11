@@ -51,12 +51,13 @@ export type LookupMutationResult = {
 
 export async function addLookupItem(
   categoryCode: string,
-  label: string
+  label: string,
+  actorUsername: string
 ): Promise<LookupMutationResult> {
   const res = await fetch(`/api/inventory/lookups/${encodeURIComponent(categoryCode)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ label }),
+    body: JSON.stringify({ label, actorUsername }),
   });
   return parseJson<LookupMutationResult>(res);
 }
@@ -64,34 +65,39 @@ export async function addLookupItem(
 export async function updateLookupItem(
   categoryCode: string,
   oldLabel: string,
-  newLabel: string
+  newLabel: string,
+  actorUsername: string
 ): Promise<LookupMutationResult> {
   const res = await fetch(`/api/inventory/lookups/${encodeURIComponent(categoryCode)}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ oldLabel, label: newLabel }),
+    body: JSON.stringify({ oldLabel, label: newLabel, actorUsername }),
   });
   return parseJson<LookupMutationResult>(res);
 }
 
 export async function deactivateLookupItem(
   categoryCode: string,
-  label: string
+  label: string,
+  actorUsername: string
 ): Promise<LookupMutationResult> {
   const res = await fetch(`/api/inventory/lookups/${encodeURIComponent(categoryCode)}`, {
     method: "DELETE",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ label }),
+    body: JSON.stringify({ label, actorUsername }),
   });
   return parseJson<LookupMutationResult>(res);
 }
 
 /** Sort options + persist sort_order (storage: 64GB → 1TB). */
-export async function sortLookupItems(categoryCode: string): Promise<LookupMutationResult> {
+export async function sortLookupItems(
+  categoryCode: string,
+  actorUsername: string
+): Promise<LookupMutationResult> {
   const res = await fetch(`/api/inventory/lookups/${encodeURIComponent(categoryCode)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "sort" }),
+    body: JSON.stringify({ action: "sort", actorUsername }),
   });
   return parseJson<LookupMutationResult>(res);
 }

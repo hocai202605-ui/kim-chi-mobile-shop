@@ -2218,8 +2218,8 @@ export default function Home() {
                     {inventoryTab === "phones" ? (
                       <form key={editingPhone?.id ?? (clonePhoneDraft ? `clone-${cloneFormKey}` : "new-phone")} onSubmit={savePhone} className="grid gap-3" autoComplete="off" spellCheck={false}>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <ManageableSelect label="Hãng" name="brand" options={brandOptions} setOptions={setBrandOptions} defaultValue={phoneFormDefaults?.brand} categoryCode={PHONE_LOOKUP_CATEGORIES.brand} onRenameCascade={reloadInventoryFromDb} />
-                          <ManageableSelect label="Tên máy" name="name" options={nameOptions} setOptions={setNameOptions} defaultValue={phoneFormDefaults?.name} categoryCode={PHONE_LOOKUP_CATEGORIES.modelName} onRenameCascade={reloadInventoryFromDb} />
+                          <ManageableSelect label="Hãng" name="brand" options={brandOptions} setOptions={setBrandOptions} defaultValue={phoneFormDefaults?.brand} categoryCode={PHONE_LOOKUP_CATEGORIES.brand} onRenameCascade={reloadInventoryFromDb} allowManage={currentUser.role === "owner"} actorUsername={currentUser.username} />
+                          <ManageableSelect label="Tên máy" name="name" options={nameOptions} setOptions={setNameOptions} defaultValue={phoneFormDefaults?.name} categoryCode={PHONE_LOOKUP_CATEGORIES.modelName} onRenameCascade={reloadInventoryFromDb} allowManage={currentUser.role === "owner"} actorUsername={currentUser.username} />
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
                           <Field label="IMEI">
@@ -2255,16 +2255,16 @@ export default function Home() {
                           <div className="hidden sm:block" aria-hidden />
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <ManageableSelect label="Màu sắc" name="color" options={colorOptions} setOptions={setColorOptions} defaultValue={phoneFormDefaults?.color} categoryCode={PHONE_LOOKUP_CATEGORIES.color} onRenameCascade={reloadInventoryFromDb} />
-                          <ManageableSelect label="Dung lượng máy" name="storage" options={storageOptions} setOptions={setStorageOptions} defaultValue={phoneFormDefaults?.storage} categoryCode={PHONE_LOOKUP_CATEGORIES.storage} onRenameCascade={reloadInventoryFromDb} sortable />
+                          <ManageableSelect label="Màu sắc" name="color" options={colorOptions} setOptions={setColorOptions} defaultValue={phoneFormDefaults?.color} categoryCode={PHONE_LOOKUP_CATEGORIES.color} onRenameCascade={reloadInventoryFromDb} allowManage={currentUser.role === "owner"} actorUsername={currentUser.username} />
+                          <ManageableSelect label="Dung lượng máy" name="storage" options={storageOptions} setOptions={setStorageOptions} defaultValue={phoneFormDefaults?.storage} categoryCode={PHONE_LOOKUP_CATEGORIES.storage} onRenameCascade={reloadInventoryFromDb} allowManage={currentUser.role === "owner"} actorUsername={currentUser.username} sortable />
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <ManageableSelect label="Quốc gia" name="madeIn" options={madeInOptions} setOptions={setMadeInOptions} defaultValue={phoneFormDefaults?.madeIn} required={false} categoryCode={PHONE_LOOKUP_CATEGORIES.madeIn} onRenameCascade={reloadInventoryFromDb} />
-                          <ManageableSelect label="Tình trạng máy" name="condition" options={conditionOptions} setOptions={setConditionOptions} defaultValue={phoneFormDefaults?.condition} categoryCode={PHONE_LOOKUP_CATEGORIES.condition} onRenameCascade={reloadInventoryFromDb} />
+                          <ManageableSelect label="Quốc gia" name="madeIn" options={madeInOptions} setOptions={setMadeInOptions} defaultValue={phoneFormDefaults?.madeIn} required={false} categoryCode={PHONE_LOOKUP_CATEGORIES.madeIn} onRenameCascade={reloadInventoryFromDb} allowManage={currentUser.role === "owner"} actorUsername={currentUser.username} />
+                          <ManageableSelect label="Tình trạng máy" name="condition" options={conditionOptions} setOptions={setConditionOptions} defaultValue={phoneFormDefaults?.condition} categoryCode={PHONE_LOOKUP_CATEGORIES.condition} onRenameCascade={reloadInventoryFromDb} allowManage={currentUser.role === "owner"} actorUsername={currentUser.username} />
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <ManageableSelect label="Tình trạng pin" name="batteryCondition" options={batteryOptions} setOptions={setBatteryOptions} defaultValue={phoneFormDefaults?.batteryCondition} categoryCode={PHONE_LOOKUP_CATEGORIES.batteryCondition} onRenameCascade={reloadInventoryFromDb} />
-                          <ManageableSelect label="Dung lượng pin" name="batteryCapacity" options={batteryCapacityOptions} setOptions={setBatteryCapacityOptions} defaultValue={phoneFormDefaults?.batteryCapacity} required={false} categoryCode={PHONE_LOOKUP_CATEGORIES.batteryCapacity} onRenameCascade={reloadInventoryFromDb} />
+                          <ManageableSelect label="Tình trạng pin" name="batteryCondition" options={batteryOptions} setOptions={setBatteryOptions} defaultValue={phoneFormDefaults?.batteryCondition} categoryCode={PHONE_LOOKUP_CATEGORIES.batteryCondition} onRenameCascade={reloadInventoryFromDb} allowManage={currentUser.role === "owner"} actorUsername={currentUser.username} />
+                          <ManageableSelect label="Dung lượng pin" name="batteryCapacity" options={batteryCapacityOptions} setOptions={setBatteryCapacityOptions} defaultValue={phoneFormDefaults?.batteryCapacity} required={false} categoryCode={PHONE_LOOKUP_CATEGORIES.batteryCapacity} onRenameCascade={reloadInventoryFromDb} allowManage={currentUser.role === "owner"} actorUsername={currentUser.username} />
                         </div>
                         <div className="grid gap-3 sm:grid-cols-1">
                           <Field label="Ghi chú"><input name="note" defaultValue={phoneFormDefaults?.note} className="h-10 rounded-lg border border-line px-3" /></Field>
@@ -3228,6 +3228,8 @@ function ManageableSelect({
   categoryCode,
   onRenameCascade,
   sortable = false,
+  allowManage = true,
+  actorUsername = "",
 }: {
   label: string;
   name: string;
@@ -3241,11 +3243,16 @@ function ManageableSelect({
   onRenameCascade?: () => Promise<void>;
   /** Hiện nút sắp xếp (ghi sort_order DB khi có categoryCode). */
   sortable?: boolean;
+  /** false = staff chỉ chọn option, không +/sửa/xóa/sort */
+  allowManage?: boolean;
+  /** Username owner khi gọi API mutate lookup */
+  actorUsername?: string;
 }) {
   const [value, setValue] = useState(defaultValue ?? "");
   const [busy, setBusy] = useState(false);
 
   const handleSort = async () => {
+    if (!allowManage) return;
     if (!options.length) return;
     const selected = value;
 
@@ -3260,7 +3267,7 @@ function ManageableSelect({
 
     try {
       setBusy(true);
-      const result = await apiSortLookupItems(categoryCode);
+      const result = await apiSortLookupItems(categoryCode, actorUsername);
       setOptions(result.labels);
       if (selected) setValue(selected);
     } catch (err) {
@@ -3271,6 +3278,7 @@ function ManageableSelect({
   };
 
   const handleAdd = async () => {
+    if (!allowManage) return;
     const val = window.prompt(`Thêm giá trị mới cho ${label}:`);
     const next = val?.trim();
     if (!next) return;
@@ -3287,7 +3295,7 @@ function ManageableSelect({
 
     try {
       setBusy(true);
-      const result = await apiAddLookupItem(categoryCode, next);
+      const result = await apiAddLookupItem(categoryCode, next, actorUsername);
       setOptions(result.labels);
       setValue(result.label ?? next);
     } catch (err) {
@@ -3298,6 +3306,7 @@ function ManageableSelect({
   };
 
   const handleEdit = async () => {
+    if (!allowManage) return;
     if (!value) return;
     const oldVal = value;
     const val = window.prompt(`Sửa giá trị "${oldVal}" thành:`, oldVal);
@@ -3312,7 +3321,7 @@ function ManageableSelect({
 
     try {
       setBusy(true);
-      const result = await apiUpdateLookupItem(categoryCode, oldVal, next);
+      const result = await apiUpdateLookupItem(categoryCode, oldVal, next, actorUsername);
       setOptions(result.labels);
       setValue(result.label ?? next);
       if (onRenameCascade) await onRenameCascade();
@@ -3324,6 +3333,7 @@ function ManageableSelect({
   };
 
   const handleDelete = async () => {
+    if (!allowManage) return;
     if (!value) return;
     if (!window.confirm(`Xóa giá trị "${value}" khỏi danh sách ${label}?`)) return;
 
@@ -3336,7 +3346,7 @@ function ManageableSelect({
 
     try {
       setBusy(true);
-      const result = await apiDeactivateLookupItem(categoryCode, removed);
+      const result = await apiDeactivateLookupItem(categoryCode, removed, actorUsername);
       setOptions(result.labels);
       setValue("");
     } catch (err) {
@@ -3366,7 +3376,7 @@ function ManageableSelect({
           className="min-w-0 flex-1"
           colorPreview={name === "color"}
         />
-        {sortable ? (
+        {allowManage && sortable ? (
           <button
             type="button"
             onClick={() => void handleSort()}
@@ -3377,33 +3387,37 @@ function ManageableSelect({
             <ArrowUpDown size={18} />
           </button>
         ) : null}
-        <button
-          type="button"
-          onClick={handleAdd}
-          disabled={busy}
-          title="Thêm"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 disabled:opacity-50"
-        >
-          <Plus size={18} />
-        </button>
-        <button
-          type="button"
-          onClick={handleEdit}
-          disabled={busy}
-          title="Sửa"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 disabled:opacity-50"
-        >
-          <Edit3 size={18} />
-        </button>
-        <button
-          type="button"
-          onClick={handleDelete}
-          disabled={busy}
-          title="Xóa"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger hover:bg-red-100 disabled:opacity-50"
-        >
-          <Trash2 size={18} />
-        </button>
+        {allowManage ? (
+          <>
+            <button
+              type="button"
+              onClick={handleAdd}
+              disabled={busy}
+              title="Thêm"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 disabled:opacity-50"
+            >
+              <Plus size={18} />
+            </button>
+            <button
+              type="button"
+              onClick={handleEdit}
+              disabled={busy}
+              title="Sửa"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 disabled:opacity-50"
+            >
+              <Edit3 size={18} />
+            </button>
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={busy}
+              title="Xóa"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger hover:bg-red-100 disabled:opacity-50"
+            >
+              <Trash2 size={18} />
+            </button>
+          </>
+        ) : null}
       </div>
     </Field>
   );
