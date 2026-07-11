@@ -685,6 +685,8 @@ export default function Home() {
   const [onlineRepairs, setOnlineRepairs] = useState<OnlineRepair[]>([]);
   const [softwareLoading, setSoftwareLoading] = useState(false);
   const [softwareBackendError, setSoftwareBackendError] = useState("");
+  /** Đang gọi API lưu đơn phần mềm — mờ popup + chặn thao tác. */
+  const [softwareSaving, setSoftwareSaving] = useState(false);
   const [repairs, setRepairs] = useState(repairsSeed);
   const [ledger, setLedger] = useState(ledgerSeed);
   const [logs, setLogs] = useState(logSeed);
@@ -693,10 +695,10 @@ export default function Home() {
   /** Cửa hàng đang gắn form máy (quyết định droplist +/sửa/xóa). */
   const [phoneFormStoreId, setPhoneFormStoreId] = useState<Exclude<StoreId, "all">>("store-1");
   const [inventoryBackendError, setInventoryBackendError] = useState("");
-  /** Toast sau lưu/sửa/clone (hiện cả khi popup đã đóng). */
-  const [inventoryToast, setInventoryToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
-  const inventoryToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** Đang gọi API lưu — mờ popup + chặn thao tác. */
+  /** Toast sau lưu/sửa (hiện cả khi popup đã đóng) — dùng chung kho hàng + phần mềm. */
+  const [uiToast, setUiToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const uiToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Đang gọi API lưu kho — mờ popup + chặn thao tác. */
   const [inventorySaving, setInventorySaving] = useState(false);
   const [inventoryLoading, setInventoryLoading] = useState(false);
   const [supabaseReportMonthly, setSupabaseReportMonthly] = useState<{ soldPhones: number; revenue: number; profit: number } | null>(null);
@@ -782,7 +784,7 @@ export default function Home() {
 
   useEffect(() => {
     return () => {
-      if (inventoryToastTimerRef.current) clearTimeout(inventoryToastTimerRef.current);
+      if (uiToastTimerRef.current) clearTimeout(uiToastTimerRef.current);
     };
   }, []);
 
@@ -1400,16 +1402,24 @@ export default function Home() {
     setInventorySaving(false);
   }
 
-  function showInventoryToast(type: "success" | "error", message: string) {
-    if (inventoryToastTimerRef.current) {
-      clearTimeout(inventoryToastTimerRef.current);
-      inventoryToastTimerRef.current = null;
+  function showUiToast(type: "success" | "error", message: string) {
+    if (uiToastTimerRef.current) {
+      clearTimeout(uiToastTimerRef.current);
+      uiToastTimerRef.current = null;
     }
-    setInventoryToast({ type, message });
-    inventoryToastTimerRef.current = setTimeout(() => {
-      setInventoryToast(null);
-      inventoryToastTimerRef.current = null;
+    setUiToast({ type, message });
+    uiToastTimerRef.current = setTimeout(() => {
+      setUiToast(null);
+      uiToastTimerRef.current = null;
     }, 3500);
+  }
+
+  function closeOnlineRepairModal() {
+    if (softwareSaving) return;
+    setIsOnlineRepairModalOpen(false);
+    setEditingOnlineRepairId(null);
+    setSoftwareBackendError("");
+    setSoftwareSaving(false);
   }
 
   async function savePhone(event: FormEvent<HTMLFormElement>) {
@@ -1499,7 +1509,7 @@ export default function Home() {
         : isClone
           ? `Đã nhân bản máy ${saved.brand} ${saved.name} thành công.`
           : `Đã thêm máy ${saved.brand} ${saved.name} thành công.`;
-      showInventoryToast("success", successMsg);
+      showUiToast("success", successMsg);
       setInventorySaving(false);
       setIsInventoryModalOpen(false);
       setEditingPhoneId(null);
@@ -1509,7 +1519,7 @@ export default function Home() {
     } catch (err) {
       const msg = toUiError(err);
       setInventoryBackendError(msg);
-      showInventoryToast("error", `Lưu máy thất bại: ${msg}`);
+      showUiToast("error", `Lưu máy thất bại: ${msg}`);
       setInventorySaving(false);
     }
   }
@@ -1550,7 +1560,7 @@ export default function Home() {
         saved.code,
         storeId
       );
-      showInventoryToast(
+      showUiToast(
         "success",
         isEdit ? `Đã sửa phụ kiện ${saved.name} thành công.` : `Đã thêm phụ kiện ${saved.name} thành công.`
       );
@@ -1563,7 +1573,7 @@ export default function Home() {
     } catch (err) {
       const msg = toUiError(err);
       setInventoryBackendError(msg);
-      showInventoryToast("error", `Lưu phụ kiện thất bại: ${msg}`);
+      showUiToast("error", `Lưu phụ kiện thất bại: ${msg}`);
       setInventorySaving(false);
     }
   }
@@ -1817,34 +1827,34 @@ export default function Home() {
       </aside>
 
       <section className="min-w-0 p-4 sm:p-6">
-        {inventoryToast ? (
+        {uiToast ? (
           <div
             role="status"
             className={`fixed left-1/2 top-6 z-[80] flex w-[min(92vw,36rem)] -translate-x-1/2 items-start gap-4 rounded-2xl border px-6 py-5 shadow-[0_20px_48px_rgba(15,23,42,0.18)] ${
-              inventoryToast.type === "success"
+              uiToast.type === "success"
                 ? "border-emerald-300 bg-emerald-50 text-emerald-950"
                 : "border-red-200 bg-red-50 text-danger"
             }`}
           >
-            {inventoryToast.type === "success" ? (
+            {uiToast.type === "success" ? (
               <CheckCircle2 size={36} className="mt-0.5 shrink-0 text-emerald-600" />
             ) : (
               <CircleAlert size={22} className="mt-0.5 shrink-0 text-danger" />
             )}
             <div
               className={`min-w-0 flex-1 font-black leading-snug ${
-                inventoryToast.type === "success" ? "text-lg sm:text-xl" : "text-sm font-bold"
+                uiToast.type === "success" ? "text-lg sm:text-xl" : "text-sm font-bold"
               }`}
             >
-              {inventoryToast.message}
+              {uiToast.message}
             </div>
             <button
               type="button"
-              onClick={() => setInventoryToast(null)}
+              onClick={() => setUiToast(null)}
               className="shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-white/70 hover:text-slate-800"
               title="Đóng"
             >
-              <X size={inventoryToast.type === "success" ? 22 : 16} />
+              <X size={uiToast.type === "success" ? 22 : 16} />
             </button>
           </div>
         ) : null}
@@ -2885,25 +2895,43 @@ export default function Home() {
               </div>
             )}
             {isOnlineRepairModalOpen && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 overflow-y-auto backdrop-blur-sm">
-                <div className="w-full max-w-2xl bg-white rounded-lg shadow-2xl relative my-auto">
-                  <div className="p-4 border-b border-line flex justify-between items-center bg-slate-50 rounded-t-lg">
+              <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/60 p-4 backdrop-blur-md">
+                <div className="relative my-auto w-full max-w-2xl rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
+                  {softwareSaving ? (
+                    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 rounded-2xl bg-white/55 backdrop-blur-sm">
+                      <Loader2 size={40} className="animate-spin text-brand" />
+                      <p className="text-base font-black text-ink">Đang lưu…</p>
+                    </div>
+                  ) : null}
+                  <div className="flex items-center justify-between border-b border-slate-200/60 bg-white/80 p-4 backdrop-blur-md">
                     <h2 className="text-xl font-black text-brand">{editingOnlineRepairId ? "Sửa đơn Phần mềm" : "Tạo đơn Phần mềm"}</h2>
-                    <button onClick={() => { setIsOnlineRepairModalOpen(false); setEditingOnlineRepairId(null); }} className="grid h-8 w-8 place-items-center rounded-full bg-slate-200 text-slate-500 hover:bg-slate-300 hover:text-slate-700">
+                    <button
+                      type="button"
+                      onClick={closeOnlineRepairModal}
+                      disabled={softwareSaving}
+                      className="grid h-8 w-8 place-items-center rounded-full bg-slate-200 text-slate-500 hover:bg-slate-300 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
                       <X size={18} />
                     </button>
                   </div>
-                  <div className="p-4">
+                  <div className={`p-4 ${softwareSaving ? "pointer-events-none select-none" : ""}`}>
+                    {softwareBackendError ? (
+                      <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-danger">
+                        {softwareBackendError}
+                      </div>
+                    ) : null}
                     <form
                       key={editingOnlineRepairId ?? "new"}
                       onSubmit={async (e) => {
                         e.preventDefault();
+                        if (softwareSaving) return;
                         const form = new FormData(e.currentTarget);
                         const quote = parseInputMoney(form.get("quote"));
                         const deposit = parseInputMoney(form.get("deposit"));
                         const pStatus = String(
                           form.get("paymentStatus")
                         ) as OnlineRepair["paymentStatus"];
+                        const isEdit = Boolean(editingOnlineRepairId);
                         const existing = editingOnlineRepairId
                           ? onlineRepairs.find((r) => r.id === editingOnlineRepairId)
                           : null;
@@ -2928,6 +2956,8 @@ export default function Home() {
                           lookupStoreId: lookupStore,
                         };
 
+                        setSoftwareSaving(true);
+                        setSoftwareBackendError("");
                         try {
                           const saved = await apiUpsertSoftwareOrder(payload);
                           setOnlineRepairs((prev) =>
@@ -2955,21 +2985,30 @@ export default function Home() {
                           pushSw(SOFTWARE_LOOKUP_CATEGORIES.device, saved.deviceName);
                           pushSw(SOFTWARE_LOOKUP_CATEGORIES.quote, String(Math.round(saved.quote || 0)));
                           pushSw(SOFTWARE_LOOKUP_CATEGORIES.fee, String(Math.round(saved.deposit || 0)));
-                          setSoftwareBackendError("");
-                          setEditingOnlineRepairId(null);
-                          setIsOnlineRepairModalOpen(false);
                           pushLog(
-                            editingOnlineRepairId
-                              ? "Sửa đơn phần mềm"
-                              : "Tạo đơn phần mềm",
+                            isEdit ? "Sửa đơn phần mềm" : "Tạo đơn phần mềm",
                             `${saved.customerName} — ${saved.deviceName}`,
                             lookupStore
                           );
+                          showUiToast(
+                            "success",
+                            isEdit
+                              ? `Đã sửa đơn ${saved.customerName} — ${saved.deviceName} thành công.`
+                              : `Đã tạo đơn ${saved.customerName} — ${saved.deviceName} thành công.`
+                          );
+                          setSoftwareSaving(false);
+                          setEditingOnlineRepairId(null);
+                          setIsOnlineRepairModalOpen(false);
                         } catch (err) {
-                          setSoftwareBackendError(toUiError(err));
+                          const msg = toUiError(err);
+                          setSoftwareBackendError(msg);
+                          showUiToast("error", `Lưu đơn phần mềm thất bại: ${msg}`);
+                          setSoftwareSaving(false);
                         }
                       }}
                       className="grid gap-3"
+                      autoComplete="off"
+                      spellCheck={false}
                     >
                 <div className="grid gap-3 sm:grid-cols-2">
                   <ManageableSelect
@@ -3043,9 +3082,23 @@ export default function Home() {
                     </select>
                   </Field>
                 </div>
-                <div className="flex gap-2 justify-end pt-4">
-                  <button type="button" onClick={() => { setIsOnlineRepairModalOpen(false); setEditingOnlineRepairId(null); }} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-100 px-4 font-bold text-slate-700 hover:bg-slate-200">Hủy</button>
-                  <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white"><Plus size={18} />{editingOnlineRepairId ? "Lưu thay đổi" : "Tạo đơn"}</button>
+                <div className="flex justify-end gap-2 border-t border-line pt-4">
+                  <button
+                    type="button"
+                    onClick={closeOnlineRepairModal}
+                    disabled={softwareSaving}
+                    className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted disabled:opacity-50"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={softwareSaving}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {softwareSaving ? <Loader2 size={18} className="animate-spin" /> : editingOnlineRepairId ? <Edit3 size={18} /> : <Plus size={18} />}
+                    {softwareSaving ? "Đang lưu…" : editingOnlineRepairId ? "Lưu thay đổi" : "Tạo đơn"}
+                  </button>
                 </div>
               </form>
                   </div>
