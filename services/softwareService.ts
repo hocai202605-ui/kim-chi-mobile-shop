@@ -18,6 +18,8 @@ export type SoftwareOrderUpsertInput = Omit<OnlineRepair, "id" | "createdAt" | "
   id?: string;
   createdAt?: string;
   isPaid?: boolean;
+  /** Store cho droplist ensure (store-1|2|3). */
+  lookupStoreId?: string;
 };
 
 export async function upsertSoftwareOrder(

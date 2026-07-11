@@ -50,6 +50,7 @@ import {
 } from "@/services/inventoryReportService";
 import {
   PHONE_LOOKUP_CATEGORIES,
+  SOFTWARE_LOOKUP_CATEGORIES,
   addLookupItem as apiAddLookupItem,
   deactivateLookupItem as apiDeactivateLookupItem,
   sortLookupItems as apiSortLookupItems,
@@ -366,16 +367,16 @@ const logSeed: AuditLog[] = [
 ];
 
 const navItems = [
-  { id: "dashboard", label: "Quản lý Dashboard", icon: LayoutDashboard },
+  { id: "online-repairs", label: "Quản lý phần mềm", icon: Terminal },
   { id: "inventory", label: "Quản lý kho hàng", icon: Boxes },
   { id: "inventoryReports", label: "Quản lý báo cáo kho hàng", icon: FileText },
   { id: "sales", label: "Quản lý bán hàng", icon: ReceiptText },
   { id: "software", label: "Quản lý sửa chữa", icon: Wrench },
-  { id: "online-repairs", label: "Quản lý phần mềm", icon: Terminal },
   { id: "customers", label: "Quản lý khách hàng", icon: Users },
   { id: "ledger", label: "Quản lý thu chi", icon: CreditCard },
   { id: "logs", label: "Quản lý nhật ký", icon: ClipboardList },
   { id: "accounts", label: "Quản lý tài khoản", icon: UserCog },
+  { id: "dashboard", label: "Quản lý Dashboard", icon: LayoutDashboard },
 ] as const;
 
 type PageId = (typeof navItems)[number]["id"];
@@ -861,13 +862,39 @@ export default function Home() {
   const batteryOptions = formLookups[PHONE_LOOKUP_CATEGORIES.batteryCondition] ?? [];
   const batteryCapacityOptions = formLookups[PHONE_LOOKUP_CATEGORIES.batteryCapacity] ?? [];
 
+  /** Droplist phần mềm theo cửa hàng (staff = store gán; owner = filter / store-1). */
+  const softwareLookupStoreId: Exclude<StoreId, "all"> =
+    currentUser?.role === "staff"
+      ? currentUser.storeId
+      : storeFilter !== "all"
+        ? storeFilter
+        : currentUser?.storeId ?? "store-1";
+  const softwareLookups = lookupsByStore[softwareLookupStoreId] ?? {};
+  const softwareCustomerOptions = softwareLookups[SOFTWARE_LOOKUP_CATEGORIES.customer] ?? [];
+  const softwareDeviceOptions = softwareLookups[SOFTWARE_LOOKUP_CATEGORIES.device] ?? [];
+  /** Label tiền = digits (khớp DB); form defaultValue dùng formatInputMoney để hiển thị. */
+  const softwareQuoteOptions = softwareLookups[SOFTWARE_LOOKUP_CATEGORIES.quote] ?? [];
+  const softwareFeeOptions = softwareLookups[SOFTWARE_LOOKUP_CATEGORIES.fee] ?? [];
+
   const setFormLookupOptions = useCallback(
-    (categoryCode: string) => (next: string[]) => {
+    (categoryCode: string, storeKey?: string) => (next: string[]) => {
+      const sid = storeKey ?? phoneFormStoreId;
+      // Chuẩn hóa option tiền phần mềm → digits (ổn định parse + DB)
+      const normalized =
+        categoryCode === SOFTWARE_LOOKUP_CATEGORIES.quote ||
+        categoryCode === SOFTWARE_LOOKUP_CATEGORIES.fee
+          ? next
+              .map((x) => {
+                const digits = String(x).replace(/\D/g, "");
+                return digits;
+              })
+              .filter(Boolean)
+          : next;
       setLookupsByStore((prev) => ({
         ...prev,
-        [phoneFormStoreId]: {
-          ...(prev[phoneFormStoreId] ?? {}),
-          [categoryCode]: next,
+        [sid]: {
+          ...(prev[sid] ?? {}),
+          [categoryCode]: normalized,
         },
       }));
     },
@@ -2792,6 +2819,7 @@ export default function Home() {
                           ? onlineRepairs.find((r) => r.id === editingOnlineRepairId)
                           : null;
 
+                        const lookupStore = softwareLookupStoreId;
                         const payload = {
                           id: editingOnlineRepairId ?? undefined,
                           customerName: String(form.get("customerName")),
@@ -2808,6 +2836,7 @@ export default function Home() {
                           paymentStatus: pStatus,
                           rewardPoints: existing?.rewardPoints ?? 0,
                           isPaid: pStatus === "Đã thanh toán",
+                          lookupStoreId: lookupStore,
                         };
 
                         try {
@@ -2817,6 +2846,26 @@ export default function Home() {
                               ? prev.map((r) => (r.id === editingOnlineRepairId ? saved : r))
                               : [saved, ...prev]
                           );
+                          // Đồng bộ option local store (server đã ensure DB)
+                          const pushSw = (cat: string, val: string) => {
+                            const v = val?.trim();
+                            if (!v) return;
+                            setLookupsByStore((prev) => {
+                              const cur = prev[lookupStore]?.[cat] ?? [];
+                              if (cur.some((o) => o.toLowerCase() === v.toLowerCase())) return prev;
+                              return {
+                                ...prev,
+                                [lookupStore]: {
+                                  ...(prev[lookupStore] ?? {}),
+                                  [cat]: [...cur, v],
+                                },
+                              };
+                            });
+                          };
+                          pushSw(SOFTWARE_LOOKUP_CATEGORIES.customer, saved.customerName);
+                          pushSw(SOFTWARE_LOOKUP_CATEGORIES.device, saved.deviceName);
+                          pushSw(SOFTWARE_LOOKUP_CATEGORIES.quote, String(Math.round(saved.quote || 0)));
+                          pushSw(SOFTWARE_LOOKUP_CATEGORIES.fee, String(Math.round(saved.deposit || 0)));
                           setSoftwareBackendError("");
                           setEditingOnlineRepairId(null);
                           setIsOnlineRepairModalOpen(false);
@@ -2825,7 +2874,7 @@ export default function Home() {
                               ? "Sửa đơn phần mềm"
                               : "Tạo đơn phần mềm",
                             `${saved.customerName} — ${saved.deviceName}`,
-                            currentUser?.storeId || "store-1"
+                            lookupStore
                           );
                         } catch (err) {
                           setSoftwareBackendError(toUiError(err));
@@ -2834,12 +2883,56 @@ export default function Home() {
                       className="grid gap-3"
                     >
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Khách hàng / Thợ" required><input name="customerName" required defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.customerName} className="h-10 rounded-lg border border-line px-3" placeholder="Ví dụ: Hoàng Táo" /></Field>
-                  <Field label="Tên máy" required><input name="deviceName" required defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.deviceName} className="h-10 rounded-lg border border-line px-3" /></Field>
+                  <ManageableSelect
+                    label="Khách hàng / Thợ"
+                    name="customerName"
+                    options={softwareCustomerOptions}
+                    setOptions={setFormLookupOptions(SOFTWARE_LOOKUP_CATEGORIES.customer, softwareLookupStoreId)}
+                    defaultValue={onlineRepairs.find((r) => r.id === editingOnlineRepairId)?.customerName}
+                    categoryCode={SOFTWARE_LOOKUP_CATEGORIES.customer}
+                    storeId={softwareLookupStoreId}
+                    onRenameCascade={reloadSoftwareFromDb}
+                    allowManage
+                    actorUsername={currentUser.username}
+                  />
+                  <ManageableSelect
+                    label="Tên máy"
+                    name="deviceName"
+                    options={softwareDeviceOptions}
+                    setOptions={setFormLookupOptions(SOFTWARE_LOOKUP_CATEGORIES.device, softwareLookupStoreId)}
+                    defaultValue={onlineRepairs.find((r) => r.id === editingOnlineRepairId)?.deviceName}
+                    categoryCode={SOFTWARE_LOOKUP_CATEGORIES.device}
+                    storeId={softwareLookupStoreId}
+                    onRenameCascade={reloadSoftwareFromDb}
+                    allowManage
+                    actorUsername={currentUser.username}
+                  />
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Báo giá"><input name="quote" type="text" required defaultValue={formatInputMoney(onlineRepairs.find(r => r.id === editingOnlineRepairId)?.quote ?? "")} onChange={e => e.target.value = formatInputMoney(e.target.value)} className="h-10 rounded-lg border border-line px-3" /></Field>
-                  <Field label="Phí dịch vụ"><input name="deposit" type="text" required defaultValue={formatInputMoney(onlineRepairs.find(r => r.id === editingOnlineRepairId)?.deposit ?? "")} onChange={e => e.target.value = formatInputMoney(e.target.value)} className="h-10 rounded-lg border border-line px-3" /></Field>
+                  <ManageableSelect
+                    label="Báo giá"
+                    name="quote"
+                    options={softwareQuoteOptions}
+                    setOptions={setFormLookupOptions(SOFTWARE_LOOKUP_CATEGORIES.quote, softwareLookupStoreId)}
+                    defaultValue={formatInputMoney(onlineRepairs.find((r) => r.id === editingOnlineRepairId)?.quote ?? "")}
+                    categoryCode={SOFTWARE_LOOKUP_CATEGORIES.quote}
+                    storeId={softwareLookupStoreId}
+                    onRenameCascade={reloadSoftwareFromDb}
+                    allowManage
+                    actorUsername={currentUser.username}
+                  />
+                  <ManageableSelect
+                    label="Phí dịch vụ"
+                    name="deposit"
+                    options={softwareFeeOptions}
+                    setOptions={setFormLookupOptions(SOFTWARE_LOOKUP_CATEGORIES.fee, softwareLookupStoreId)}
+                    defaultValue={formatInputMoney(onlineRepairs.find((r) => r.id === editingOnlineRepairId)?.deposit ?? "")}
+                    categoryCode={SOFTWARE_LOOKUP_CATEGORIES.fee}
+                    storeId={softwareLookupStoreId}
+                    onRenameCascade={reloadSoftwareFromDb}
+                    allowManage
+                    actorUsername={currentUser.username}
+                  />
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="Giờ"><input name="receiveDate" type="datetime-local" defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.receiveDate || new Date().toISOString().slice(0, 16)} className="h-10 rounded-lg border border-line px-3 text-xs" /></Field>

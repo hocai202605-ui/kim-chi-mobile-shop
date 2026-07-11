@@ -19,6 +19,17 @@ export const PHONE_LOOKUP_CATEGORIES = {
 export type PhoneLookupCategoryCode =
   (typeof PHONE_LOOKUP_CATEGORIES)[keyof typeof PHONE_LOOKUP_CATEGORIES];
 
+/** Droplist form Quản lý phần mềm (per-store lookup_items). */
+export const SOFTWARE_LOOKUP_CATEGORIES = {
+  customer: "software_customer",
+  device: "software_device",
+  quote: "software_quote",
+  fee: "software_fee",
+} as const;
+
+export type SoftwareLookupCategoryCode =
+  (typeof SOFTWARE_LOOKUP_CATEGORIES)[keyof typeof SOFTWARE_LOOKUP_CATEGORIES];
+
 async function parseJson<T>(res: Response): Promise<T> {
   const body = await res.json();
   if (!res.ok) {

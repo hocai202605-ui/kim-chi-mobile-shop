@@ -4,7 +4,8 @@ import { isMaxConnSessionError } from "@/lib/db/pool";
 
 export const dynamic = "force-dynamic";
 
-const PHONE_LOOKUP_CODES = [
+/** Phone + software droplist categories (per store). */
+const BOOTSTRAP_LOOKUP_CODES = [
   "phone_brand",
   "phone_model_name",
   "phone_color",
@@ -13,11 +14,15 @@ const PHONE_LOOKUP_CODES = [
   "phone_condition",
   "phone_battery_condition",
   "phone_battery_capacity",
+  "software_customer",
+  "software_device",
+  "software_quote",
+  "software_fee",
 ];
 
 export async function GET() {
   try {
-    const data = await repoInventoryBootstrap(PHONE_LOOKUP_CODES);
+    const data = await repoInventoryBootstrap(BOOTSTRAP_LOOKUP_CODES);
     return NextResponse.json({ data });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Lỗi tải kho";

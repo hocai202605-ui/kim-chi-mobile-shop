@@ -1,11 +1,38 @@
 import type { OnlineRepair } from "@/types";
 import { getPool } from "./pool";
+import { repoEnsureLookupLabels } from "./inventoryRepo";
 
 export type SoftwareOrderUpsertInput = Omit<OnlineRepair, "id" | "createdAt" | "isPaid"> & {
   id?: string;
   createdAt?: string;
   isPaid?: boolean;
+  /** Cửa hàng sở hữu droplist (ensure option khi lưu đơn). */
+  lookupStoreId?: string;
 };
+
+function moneyLabel(n: number): string {
+  const r = Math.round(Number(n) || 0);
+  return String(r);
+}
+
+async function ensureSoftwareLookups(
+  saved: OnlineRepair,
+  lookupStoreId?: string
+): Promise<void> {
+  const storeCode =
+    lookupStoreId === "store-1" || lookupStoreId === "store-2" || lookupStoreId === "store-3"
+      ? lookupStoreId
+      : "store-1";
+  await repoEnsureLookupLabels(
+    [
+      { categoryCode: "software_customer", label: saved.customerName },
+      { categoryCode: "software_device", label: saved.deviceName },
+      { categoryCode: "software_quote", label: moneyLabel(saved.quote) },
+      { categoryCode: "software_fee", label: moneyLabel(saved.deposit) },
+    ],
+    storeCode
+  );
+}
 
 type DbRow = {
   id: string;
@@ -133,7 +160,9 @@ export async function repoUpsertSoftwareOrder(
       ]
     );
     if (!rows[0]) throw new Error("Không tìm thấy đơn phần mềm để cập nhật.");
-    return mapRow(rows[0]);
+    const updated = mapRow(rows[0]);
+    await ensureSoftwareLookups(updated, input.lookupStoreId);
+    return updated;
   }
 
   const { rows } = await getPool().query<DbRow>(
@@ -158,5 +187,7 @@ export async function repoUpsertSoftwareOrder(
       Math.round(Number(input.rewardPoints) || 0),
     ]
   );
-  return mapRow(rows[0]);
+  const created = mapRow(rows[0]);
+  await ensureSoftwareLookups(created, input.lookupStoreId);
+  return created;
 }

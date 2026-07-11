@@ -371,6 +371,24 @@ const LOOKUP_PHONE_COLUMN: Record<string, string> = {
   phone_battery_capacity: "battery_capacity",
 };
 
+/** Software order text columns (global table — no store filter). */
+const LOOKUP_SOFTWARE_TEXT_COLUMN: Record<string, string> = {
+  software_customer: "customer_name",
+  software_device: "device_name",
+};
+
+/** Software order money columns — cascade by numeric value parsed from label. */
+const LOOKUP_SOFTWARE_MONEY_COLUMN: Record<string, string> = {
+  software_quote: "quote",
+  software_fee: "deposit",
+};
+
+function parseLookupMoneyLabel(label: string): number | null {
+  const n = Number(String(label ?? "").replace(/\D/g, "") || "");
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n);
+}
+
 async function slugifyLabel(client: PoolClient, label: string): Promise<string> {
   const { rows } = await client.query<{ code: string }>(
     `select coalesce(nullif(public.slugify_label($1), ''), 'item-' || substr(gen_random_uuid()::text, 1, 8)) as code`,
@@ -558,14 +576,38 @@ export async function repoRenameLookupLabel(
       [found[0].id, to]
     );
 
-    const col = LOOKUP_PHONE_COLUMN[categoryCode];
-    if (col && from !== to) {
-      // only allow known columns from map (not user input); scope to store
-      await client.query(
-        `update public.phones set ${col} = $1, updated_at = now()
-         where ${col} = $2 and store_id = $3`,
-        [to, from, storeUuid]
-      );
+    if (from !== to) {
+      const phoneCol = LOOKUP_PHONE_COLUMN[categoryCode];
+      if (phoneCol) {
+        // only allow known columns from map (not user input); scope to store
+        await client.query(
+          `update public.phones set ${phoneCol} = $1, updated_at = now()
+           where ${phoneCol} = $2 and store_id = $3`,
+          [to, from, storeUuid]
+        );
+      }
+
+      const swTextCol = LOOKUP_SOFTWARE_TEXT_COLUMN[categoryCode];
+      if (swTextCol) {
+        await client.query(
+          `update public.software_orders set ${swTextCol} = $1, updated_at = now()
+           where ${swTextCol} = $2`,
+          [to, from]
+        );
+      }
+
+      const swMoneyCol = LOOKUP_SOFTWARE_MONEY_COLUMN[categoryCode];
+      if (swMoneyCol) {
+        const fromN = parseLookupMoneyLabel(from);
+        const toN = parseLookupMoneyLabel(to);
+        if (fromN != null && toN != null && fromN !== toN) {
+          await client.query(
+            `update public.software_orders set ${swMoneyCol} = $1, updated_at = now()
+             where ${swMoneyCol} = $2`,
+            [toN, fromN]
+          );
+        }
+      }
     }
 
     return rows[0]?.label ?? to;
