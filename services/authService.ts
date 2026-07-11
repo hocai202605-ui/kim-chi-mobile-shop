@@ -1,3 +1,4 @@
+import { ALL_MENU_IDS } from "@/lib/constants";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { toInventoryError } from "@/lib/supabase/errors";
 import type { DbProfile } from "@/lib/supabase/types";
@@ -47,9 +48,12 @@ export async function loadCurrentUser(): Promise<AuthSessionUser> {
     id: row.id,
     authId: row.id,
     name: row.full_name,
+    username: row.email?.split("@")[0] || row.full_name,
     email: row.email,
     role: row.role as Role,
     storeId: storeCode as Exclude<StoreId, "all">,
+    allowedMenus:
+      row.role === "owner" ? [...ALL_MENU_IDS] : ["inventory"],
   };
 }
 

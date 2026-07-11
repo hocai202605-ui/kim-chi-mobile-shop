@@ -1,9 +1,9 @@
 import type { StoreId } from "@/types";
 
 export const stores = [
-  { id: "store-1" as const, name: "Cửa hàng 1" },
-  { id: "store-2" as const, name: "Cửa hàng 2" },
-  { id: "store-3" as const, name: "Cửa hàng 3" },
+  { id: "store-1" as const, name: "Kim Chi Mobile" },
+  { id: "store-2" as const, name: "Kiều Vy Mobile" },
+  { id: "store-3" as const, name: "Cao Bắc Mobile" },
 ];
 
 export function storeName(id: StoreId) {
@@ -12,3 +12,20 @@ export function storeName(id: StoreId) {
 }
 
 export const PAYMENT_METHODS = ["Tiền mặt", "Chuyển khoản", "Thẻ", "Khác"] as const;
+
+/** Sidebar page ids — sync with navItems + app_accounts.allowed_menus */
+export const ALL_MENU_IDS = [
+  "dashboard",
+  "inventory",
+  "inventoryReports",
+  "sales",
+  "software",
+  "online-repairs",
+  "customers",
+  "repairs",
+  "ledger",
+  "logs",
+  "accounts",
+] as const;
+
+export type MenuPageId = (typeof ALL_MENU_IDS)[number];

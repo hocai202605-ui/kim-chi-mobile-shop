@@ -10,12 +10,30 @@ export type ProductStatus = "Còn hàng" | "Đã bán" | "Đã hủy" | "Chưa x
 export type AccessoryStatus = "Còn hàng" | "Hết hàng" | "Đã hủy";
 export type RepairStatus = "Đang chờ" | "Đang sửa" | "Đã xong" | "Đã trả khách" | "Đã hủy";
 
+/** Sidebar page ids — keep in sync with navItems / app_accounts.allowed_menus */
+export type MenuId =
+  | "dashboard"
+  | "inventory"
+  | "inventoryReports"
+  | "sales"
+  | "software"
+  | "online-repairs"
+  | "customers"
+  | "repairs"
+  | "ledger"
+  | "logs"
+  | "accounts";
+
 export type User = {
   id: string;
   name: string;
+  /** Login username (admin, huyen, …) */
+  username: string;
   email: string;
   role: Role;
   storeId: Exclude<StoreId, "all">;
+  /** Menus được phép; owner được coi full quyền phía UI */
+  allowedMenus: string[];
 };
 
 export type Customer = {

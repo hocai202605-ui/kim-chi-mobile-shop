@@ -20,11 +20,27 @@ npm run dev
 
 Mở `http://localhost:3000`.
 
-## Tài khoản demo
+## Cửa hàng (cơ sở)
 
-- Chủ cửa hàng: `owner@kimchi.vn`
-- Nhân viên: `staff@kimchi.vn`
-- Mật khẩu demo: `123456`
+| Code | Tên |
+|------|-----|
+| `store-1` | Kim Chi Mobile |
+| `store-2` | Kiều Vy Mobile |
+| `store-3` | Cao Bắc Mobile |
+
+Dữ liệu máy hiện tại gắn **Kim Chi Mobile** (`store-1`). Owner lọc “Toàn hệ thống” / từng cơ sở; staff chỉ xem cửa hàng được gán.
+
+## Tài khoản demo (Postgres `app_accounts`)
+
+| User | Role | Cửa hàng | Menu |
+|------|------|----------|------|
+| `admin` | owner · full | Kim Chi Mobile | Tất cả + quản lý menu, đổi pass, active/inactive |
+| `quynhbupbe` | owner · full | Kim Chi Mobile | Tất cả + quản lý menu, đổi pass, active/inactive |
+| `kimchi` | staff | Kim Chi Mobile (`store-1`) | Kho hàng |
+| `kieuvy` | staff | Kiều Vy Mobile (`store-2`) | Kho hàng |
+| `caobac` | staff | Cao Bắc Mobile (`store-3`) | Kho hàng |
+
+Mật khẩu mặc định seed: `123456`. Owner đổi pass / bật-tắt user trong màn **Tài khoản**.
 
 ## Cấu trúc thư mục (AI Agent)
 

@@ -63,10 +63,22 @@ import {
   listSoftwareOrders as apiListSoftwareOrders,
   upsertSoftwareOrder as apiUpsertSoftwareOrder,
 } from "@/services/softwareService";
+import {
+  apiListAccounts,
+  apiLogin,
+  apiUpdateAccount,
+  apiUpdateAccountMenus,
+  type AccountUser,
+} from "@/services/accountsService";
+import { ALL_MENU_IDS } from "@/lib/constants";
 
 function toUiError(err: unknown): string {
   return err instanceof Error ? err.message : "Lỗi không xác định";
 }
+
+const SESSION_KEY = "kimchi.session";
+/** Tự đăng xuất sau 2 giờ (không lưu mật khẩu trong session). */
+const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 
 type Role = "owner" | "staff";
 type StoreId = "all" | "store-1" | "store-2" | "store-3";
@@ -78,9 +90,18 @@ type RepairStatus = "Đang chờ" | "Đang sửa" | "Đã xong" | "Đã trả kh
 type User = {
   id: string;
   name: string;
+  username: string;
   email: string;
   role: Role;
   storeId: Exclude<StoreId, "all">;
+  allowedMenus: string[];
+};
+
+/** Chỉ lưu user + mốc hết hạn — không bao giờ lưu password. */
+type SessionPayload = {
+  user: User;
+  loggedInAt: number;
+  expiresAt: number;
 };
 
 type Customer = {
@@ -200,17 +221,10 @@ type AuditLog = {
 };
 
 const stores = [
-  { id: "store-1", name: "Cửa hàng 1" },
-  { id: "store-2", name: "Cửa hàng 2" },
-  { id: "store-3", name: "Cửa hàng 3" },
+  { id: "store-1", name: "Kim Chi Mobile" },
+  { id: "store-2", name: "Kiều Vy Mobile" },
+  { id: "store-3", name: "Cao Bắc Mobile" },
 ] as const;
-
-const users: User[] = [
-  { id: "u1", name: "Chủ cửa hàng", email: "owner@kimchi.vn", role: "owner", storeId: "store-1" },
-  { id: "u2", name: "Nhân viên CH1", email: "staff@kimchi.vn", role: "staff", storeId: "store-1" },
-  { id: "u3", name: "Nhân viên CH2", email: "chi2@kimchi.vn", role: "staff", storeId: "store-2" },
-  { id: "u4", name: "Nhân viên CH3", email: "chi3@kimchi.vn", role: "staff", storeId: "store-3" },
-];
 
 const customersSeed: Customer[] = [
   { id: "c1", name: "Anh Minh", phone: "0901 234 567", note: "Hay mua iPhone cũ" },
@@ -367,6 +381,99 @@ const navItems = [
 
 type PageId = (typeof navItems)[number]["id"];
 
+const MENU_LABELS: Record<string, string> = Object.fromEntries(
+  navItems.map((item) => [item.id, item.label])
+);
+
+function canAccessMenu(user: User, pageId: string): boolean {
+  if (user.role === "owner") return true;
+  return user.allowedMenus.includes(pageId);
+}
+
+function accountToUser(a: AccountUser): User {
+  return {
+    id: a.id,
+    name: a.name,
+    username: a.username,
+    email: a.email,
+    role: a.role,
+    storeId: a.storeId,
+    allowedMenus: a.role === "owner" ? [...ALL_MENU_IDS] : a.allowedMenus,
+  };
+}
+
+function saveSession(user: User) {
+  try {
+    const now = Date.now();
+    const payload: SessionPayload = {
+      user,
+      loggedInAt: now,
+      expiresAt: now + SESSION_TTL_MS,
+    };
+    // Chỉ user + thời hạn — tuyệt đối không ghi password
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(payload));
+    try {
+      localStorage.removeItem(SESSION_KEY);
+    } catch {
+      /* ignore */
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearSession() {
+  try {
+    sessionStorage.removeItem(SESSION_KEY);
+  } catch {
+    /* ignore */
+  }
+  try {
+    localStorage.removeItem(SESSION_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+function loadSession(): { user: User; expiresAt: number } | null {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as SessionPayload | User;
+    // Hỗ trợ session cũ (chỉ User) — coi là hết hạn, bắt login lại
+    if (!parsed || typeof parsed !== "object") return null;
+    if (!("expiresAt" in parsed) || !("user" in parsed)) {
+      clearSession();
+      return null;
+    }
+    const payload = parsed as SessionPayload;
+    if (!payload.user?.id || !payload.user?.username) {
+      clearSession();
+      return null;
+    }
+    if (Date.now() >= payload.expiresAt) {
+      clearSession();
+      return null;
+    }
+    // Đảm bảo không dính field password nếu từng bị ghi nhầm
+    const { user } = payload;
+    return {
+      user: {
+        id: user.id,
+        name: user.name,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        storeId: user.storeId,
+        allowedMenus: Array.isArray(user.allowedMenus) ? user.allowedMenus : [],
+      },
+      expiresAt: payload.expiresAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function storeName(id: StoreId) {
   if (id === "all") return "Toàn hệ thống";
   return stores.find((store) => store.id === id)?.name ?? id;
@@ -490,8 +597,15 @@ function StatCard({ label, value, hint, icon }: { label: string; value: string; 
 
 export default function Home() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [sessionReady, setSessionReady] = useState(false);
+  const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [isLoginPasswordVisible, setIsLoginPasswordVisible] = useState(false);
+  const [accountsList, setAccountsList] = useState<AccountUser[]>([]);
+  const [accountsDraft, setAccountsDraft] = useState<Record<string, string[]>>({});
+  const [accountsLoading, setAccountsLoading] = useState(false);
+  const [accountsError, setAccountsError] = useState("");
+  const [accountsSavingId, setAccountsSavingId] = useState<string | null>(null);
   const [isStatsHidden, setIsStatsHidden] = useState(false);
   const [reportYear, setReportYear] = useState(() => new Date().getFullYear().toString());
   const [hideReportSold, setHideReportSold] = useState(false);
@@ -843,26 +957,253 @@ export default function Home() {
     ]);
   }
 
+  useEffect(() => {
+    const saved = loadSession();
+    if (saved) {
+      setCurrentUser(saved.user);
+      setStoreFilter(saved.user.role === "owner" ? "all" : saved.user.storeId);
+      const first = navItems.find((item) => canAccessMenu(saved.user, item.id));
+      if (first) setActivePage(first.id);
+    }
+    setSessionReady(true);
+  }, []);
+
+  // Tự logout khi hết 2h; kiểm tra định kỳ + khi focus lại tab
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const forceLogoutIfExpired = () => {
+      const s = loadSession();
+      if (!s) {
+        setLoginError("Phiên đăng nhập đã hết (2 giờ). Vui lòng đăng nhập lại.");
+        handleLogout();
+        return true;
+      }
+      return false;
+    };
+
+    if (forceLogoutIfExpired()) return;
+
+    const remaining = (() => {
+      try {
+        const raw = sessionStorage.getItem(SESSION_KEY);
+        if (!raw) return 0;
+        const p = JSON.parse(raw) as SessionPayload;
+        return Math.max(0, (p.expiresAt ?? 0) - Date.now());
+      } catch {
+        return 0;
+      }
+    })();
+
+    const timer = window.setTimeout(() => {
+      setLoginError("Phiên đăng nhập đã hết (2 giờ). Vui lòng đăng nhập lại.");
+      handleLogout();
+    }, remaining || SESSION_TTL_MS);
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") forceLogoutIfExpired();
+    };
+    const onFocus = () => forceLogoutIfExpired();
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", onFocus);
+
+    const poll = window.setInterval(() => {
+      forceLogoutIfExpired();
+    }, 60_000);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.clearInterval(poll);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", onFocus);
+    };
+    // handleLogout ổn định trong component; chỉ re-bind khi user đổi
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id]);
+
+  // Staff luôn bị khóa filter = cửa hàng gán; owner giữ lựa chọn.
+  useEffect(() => {
+    if (!currentUser) return;
+    if (currentUser.role === "staff" && storeFilter !== currentUser.storeId) {
+      setStoreFilter(currentUser.storeId);
+    }
+  }, [currentUser, storeFilter]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    if (!canAccessMenu(currentUser, activePage)) {
+      const first = navItems.find((item) => canAccessMenu(currentUser, item.id));
+      setActivePage(first?.id ?? "inventory");
+    }
+  }, [currentUser, activePage]);
+
+  const loadAccounts = useCallback(async () => {
+    if (!currentUser || currentUser.role !== "owner") return;
+    setAccountsLoading(true);
+    setAccountsError("");
+    try {
+      const rows = await apiListAccounts(currentUser.username);
+      setAccountsList(rows);
+      const draft: Record<string, string[]> = {};
+      for (const row of rows) {
+        draft[row.id] =
+          row.role === "owner" ? [...ALL_MENU_IDS] : [...row.allowedMenus];
+      }
+      setAccountsDraft(draft);
+    } catch (err) {
+      setAccountsError(toUiError(err));
+      setAccountsList([]);
+    } finally {
+      setAccountsLoading(false);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (activePage === "accounts" && currentUser?.role === "owner") {
+      void loadAccounts();
+    }
+  }, [activePage, currentUser, loadAccounts]);
+
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const email = String(form.get("email") || "");
-    const password = String(form.get("password") || "").trim();
+    const formEl = event.currentTarget;
+    const form = new FormData(formEl);
+    const username = String(form.get("username") || "").trim();
+    const password = String(form.get("password") || "");
+    if (!username) {
+      setLoginError("Vui lòng nhập tài khoản.");
+      return;
+    }
     if (!password) {
       setLoginError("Vui lòng nhập mật khẩu.");
       return;
     }
 
-    // Login demo UI (role); dữ liệu kho luôn từ DB, không phụ thuộc mock seed.
-    if (password !== "123456") {
-      setLoginError("Mật khẩu không đúng (demo: 123456).");
-      return;
-    }
-    const selected = users.find((user) => user.email === email) ?? users[0];
+    setLoginBusy(true);
     setLoginError("");
     setInventoryBackendError("");
-    setCurrentUser(selected);
-    setStoreFilter(selected.role === "owner" ? "all" : selected.storeId);
+    try {
+      const account = await apiLogin(username, password);
+      const user = accountToUser(account);
+      // Xóa password khỏi form ngay sau khi gửi (không giữ trên DOM / autocomplete)
+      try {
+        const passInput = formEl.querySelector<HTMLInputElement>('input[name="password"]');
+        if (passInput) passInput.value = "";
+        formEl.reset();
+      } catch {
+        /* ignore */
+      }
+      setCurrentUser(user);
+      saveSession(user);
+      setStoreFilter(user.role === "owner" ? "all" : user.storeId);
+      const first = navItems.find((item) => canAccessMenu(user, item.id));
+      if (first) setActivePage(first.id);
+    } catch (err) {
+      setLoginError(toUiError(err));
+      try {
+        const passInput = formEl.querySelector<HTMLInputElement>('input[name="password"]');
+        if (passInput) passInput.value = "";
+      } catch {
+        /* ignore */
+      }
+    } finally {
+      setLoginBusy(false);
+    }
+  }
+
+  function handleLogout() {
+    setInventoryBackendError("");
+    setPhones([]);
+    setAccessories([]);
+    setAccountsList([]);
+    setAccountsDraft({});
+    clearSession();
+    setCurrentUser(null);
+  }
+
+  function applyAccountRow(updated: AccountUser) {
+    setAccountsList((prev) =>
+      prev.map((row) => (row.id === updated.id ? updated : row))
+    );
+    setAccountsDraft((prev) => ({
+      ...prev,
+      [updated.id]:
+        updated.role === "owner" ? [...ALL_MENU_IDS] : [...updated.allowedMenus],
+    }));
+  }
+
+  async function saveAccountMenus(accountId: string) {
+    if (!currentUser || currentUser.role !== "owner") return;
+    const menus = accountsDraft[accountId] ?? [];
+    setAccountsSavingId(accountId);
+    setAccountsError("");
+    try {
+      const updated = await apiUpdateAccountMenus(
+        accountId,
+        menus,
+        currentUser.username
+      );
+      applyAccountRow(updated);
+    } catch (err) {
+      setAccountsError(toUiError(err));
+    } finally {
+      setAccountsSavingId(null);
+    }
+  }
+
+  async function toggleAccountActive(accountId: string, nextActive: boolean) {
+    if (!currentUser || currentUser.role !== "owner") return;
+    if (accountId === currentUser.id && !nextActive) {
+      setAccountsError("Không thể tự vô hiệu hóa tài khoản đang đăng nhập.");
+      return;
+    }
+    setAccountsSavingId(accountId);
+    setAccountsError("");
+    try {
+      const updated = await apiUpdateAccount(accountId, currentUser.username, {
+        isActive: nextActive,
+      });
+      applyAccountRow(updated);
+    } catch (err) {
+      setAccountsError(toUiError(err));
+    } finally {
+      setAccountsSavingId(null);
+    }
+  }
+
+  async function changeAccountPassword(accountId: string, username: string) {
+    if (!currentUser || currentUser.role !== "owner") return;
+    const next = window.prompt(
+      `Đặt mật khẩu mới cho "${username}" (tối thiểu 6 ký tự):`
+    );
+    if (next == null) return;
+    const password = next.trim();
+    if (password.length < 6) {
+      setAccountsError("Mật khẩu tối thiểu 6 ký tự.");
+      return;
+    }
+    setAccountsSavingId(accountId);
+    setAccountsError("");
+    try {
+      const updated = await apiUpdateAccount(accountId, currentUser.username, {
+        password,
+      });
+      applyAccountRow(updated);
+      window.alert(`Đã đổi mật khẩu cho ${username}.`);
+    } catch (err) {
+      setAccountsError(toUiError(err));
+    } finally {
+      setAccountsSavingId(null);
+    }
+  }
+
+  function toggleAccountMenu(accountId: string, menuId: string, checked: boolean) {
+    setAccountsDraft((prev) => {
+      const cur = new Set(prev[accountId] ?? []);
+      if (checked) cur.add(menuId);
+      else cur.delete(menuId);
+      return { ...prev, [accountId]: Array.from(cur) };
+    });
   }
 
   function openInventoryCreateModal(tab: "phones" | "accessories" = inventoryTab) {
@@ -939,12 +1280,21 @@ export default function Home() {
     event.preventDefault();
     if (inventorySaving) return;
     const form = new FormData(event.currentTarget);
-    // Cửa hàng / phiên bản mạng không hiện trên form — lấy từ máy đang sửa/clone hoặc filter/user.
-    const storeId =
-      (editingPhone?.storeId as Exclude<StoreId, "all"> | undefined) ||
-      (clonePhoneDraft?.storeId as Exclude<StoreId, "all"> | undefined) ||
-      (storeFilter !== "all" ? storeFilter : currentUser?.storeId) ||
-      "store-1";
+    // Staff: luôn ghi cửa hàng gắn tài khoản. Owner: form storeId / máy đang sửa / filter.
+    const formStoreRaw = String(form.get("storeId") || "").trim();
+    const formStore =
+      formStoreRaw === "store-1" || formStoreRaw === "store-2" || formStoreRaw === "store-3"
+        ? (formStoreRaw as Exclude<StoreId, "all">)
+        : undefined;
+    const storeId: Exclude<StoreId, "all"> =
+      currentUser?.role === "staff"
+        ? currentUser.storeId
+        : formStore ||
+          (editingPhone?.storeId as Exclude<StoreId, "all"> | undefined) ||
+          (clonePhoneDraft?.storeId as Exclude<StoreId, "all"> | undefined) ||
+          (storeFilter !== "all" ? storeFilter : undefined) ||
+          currentUser?.storeId ||
+          "store-1";
     const isEdit = Boolean(editingPhoneId);
     const isClone = !isEdit && Boolean(clonePhoneDraft);
     const payload: PhoneItem = {
@@ -1221,6 +1571,17 @@ export default function Home() {
     pushLog("Cập nhật trạng thái sửa chữa", `${id}: ${status}`, repair.storeId);
   }
 
+  if (!sessionReady) {
+    return (
+      <main className="phone-pattern flex min-h-screen items-center justify-center p-4">
+        <div className="inline-flex items-center gap-2 rounded-lg border border-line bg-white px-4 py-3 text-sm font-bold text-muted shadow-panel">
+          <Loader2 size={18} className="animate-spin text-brand" />
+          Đang tải phiên…
+        </div>
+      </main>
+    );
+  }
+
   if (!currentUser) {
     return (
       <main className="phone-pattern flex min-h-screen items-center justify-center p-4">
@@ -1233,23 +1594,36 @@ export default function Home() {
             <h1 className="mt-6 text-3xl font-black">Đăng nhập quản trị</h1>
             <p className="mt-3 text-base font-semibold text-brand">Chào mừng ông Chủ Quỵnh Đẹp Zai</p>
           </div>
-          <form onSubmit={handleLogin} className="grid gap-4">
+          <form
+            onSubmit={handleLogin}
+            className="grid gap-4"
+            autoComplete="off"
+            data-form-type="other"
+          >
             <Field label="Tài khoản">
-              <select name="email" className="h-11 rounded-lg border border-line px-3">
-                {users.map((user) => (
-                  <option key={user.id} value={user.email}>
-                    {user.name} - {user.email}
-                  </option>
-                ))}
-              </select>
+              <input
+                name="username"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                className="h-11 rounded-lg border border-line px-3 font-semibold"
+                placeholder="Nhập tài khoản"
+                disabled={loginBusy}
+              />
             </Field>
             <Field label="Mật khẩu">
               <div className={`flex h-11 items-center rounded-lg border bg-white transition focus-within:border-brand ${loginError ? "border-red-300 bg-red-50" : "border-line"}`}>
                 <input
                   name="password"
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
                   className="min-w-0 flex-1 bg-transparent px-3 outline-none"
-                  placeholder="Vui lòng nhập pass"
+                  placeholder="Nhập mật khẩu"
                   type={isLoginPasswordVisible ? "text" : "password"}
+                  disabled={loginBusy}
                 />
                 <button
                   type="button"
@@ -1263,15 +1637,21 @@ export default function Home() {
               </div>
             </Field>
             {loginError && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{loginError}</p>}
-            <button className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark">
-              <ShieldCheck size={18} />
-              Vào hệ thống
+            <button
+              type="submit"
+              disabled={loginBusy}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark disabled:opacity-60"
+            >
+              {loginBusy ? <Loader2 size={18} className="animate-spin" /> : <ShieldCheck size={18} />}
+              {loginBusy ? "Đang đăng nhập…" : "Vào hệ thống"}
             </button>
           </form>
         </section>
       </main>
     );
   }
+
+  const visibleNavItems = navItems.filter((item) => canAccessMenu(currentUser, item.id));
 
   return (
     <main className="grid min-h-screen grid-cols-1 bg-canvas text-ink lg:grid-cols-[260px_minmax(0,1fr)]">
@@ -1284,19 +1664,17 @@ export default function Home() {
           </div>
         </div>
         <nav className="grid gap-2">
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const Icon = item.icon;
-            const isDisabled = item.id === "accounts" && currentUser.role !== "owner";
             return (
               <button
                 key={item.id}
-                disabled={isDisabled}
                 onClick={() => setActivePage(item.id)}
                 className={`group flex h-11 items-center gap-3 rounded-lg border px-3 text-left text-sm font-bold transition ${
                   activePage === item.id
                     ? "border-emerald-300/40 bg-brand text-white shadow-[0_10px_24px_rgba(15,139,98,0.32)]"
                     : "border-white/5 bg-white/[0.04] text-slate-300 hover:border-emerald-300/25 hover:bg-white/[0.09] hover:text-white"
-                } ${isDisabled ? "cursor-not-allowed opacity-45" : ""}`}
+                }`}
               >
                 <span
                   className={`grid h-7 w-7 place-items-center rounded-md transition ${
@@ -1350,22 +1728,27 @@ export default function Home() {
             <p className="mt-1 text-sm font-semibold text-muted">Xin chào, {currentUser.name}. Chúc bạn một ngày làm việc hiệu quả!</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <select value={storeFilter} onChange={(event) => setStoreFilter(event.target.value as StoreId)} className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold">
-              <option value="all">Toàn hệ thống</option>
-              {stores.map((store) => (
-                <option key={store.id} value={store.id}>
-                  {store.name}
-                </option>
-              ))}
+            <select
+              value={currentUser.role === "staff" ? currentUser.storeId : storeFilter}
+              onChange={(event) => {
+                if (currentUser.role === "staff") return;
+                setStoreFilter(event.target.value as StoreId);
+              }}
+              disabled={currentUser.role === "staff"}
+              title={currentUser.role === "staff" ? "Nhân viên chỉ xem cửa hàng được gán" : "Lọc theo cửa hàng"}
+              className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-600"
+            >
+              {currentUser.role === "owner" ? <option value="all">Toàn hệ thống</option> : null}
+              {stores
+                .filter((store) => currentUser.role === "owner" || store.id === currentUser.storeId)
+                .map((store) => (
+                  <option key={store.id} value={store.id}>
+                    {store.name}
+                  </option>
+                ))}
             </select>
             <button
-              onClick={() => {
-                setLoginError("");
-                setInventoryBackendError("");
-                setPhones([]);
-                setAccessories([]);
-                setCurrentUser(null);
-              }}
+              onClick={handleLogout}
               className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-3 text-sm font-bold"
             >
               <LogOut size={17} />
@@ -1851,6 +2234,27 @@ export default function Home() {
                           <SelectField label="Trạng thái" name="status" options={["Còn hàng", "Đã bán", "Đã hủy", "Chưa xử lý"].map((status) => [status, status])} defaultValue={phoneFormDefaults?.status ?? "Còn hàng"} />
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
+                          {currentUser.role === "owner" ? (
+                            <SelectField
+                              label="Cửa hàng"
+                              name="storeId"
+                              options={stores.map((s) => [s.id, s.name])}
+                              defaultValue={
+                                phoneFormDefaults?.storeId ??
+                                (storeFilter !== "all" ? storeFilter : "store-1")
+                              }
+                            />
+                          ) : (
+                            <Field label="Cửa hàng">
+                              <input type="hidden" name="storeId" value={currentUser.storeId} />
+                              <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-sm font-semibold text-slate-700">
+                                {storeName(currentUser.storeId)}
+                              </div>
+                            </Field>
+                          )}
+                          <div className="hidden sm:block" aria-hidden />
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
                           <ManageableSelect label="Màu sắc" name="color" options={colorOptions} setOptions={setColorOptions} defaultValue={phoneFormDefaults?.color} categoryCode={PHONE_LOOKUP_CATEGORIES.color} onRenameCascade={reloadInventoryFromDb} />
                           <ManageableSelect label="Dung lượng máy" name="storage" options={storageOptions} setOptions={setStorageOptions} defaultValue={phoneFormDefaults?.storage} categoryCode={PHONE_LOOKUP_CATEGORIES.storage} onRenameCascade={reloadInventoryFromDb} sortable />
                         </div>
@@ -2100,18 +2504,138 @@ export default function Home() {
           </Panel>
         )}
 
-        {activePage === "accounts" && (
-          <Panel title="Quản lý tài khoản">
-            <DataTable
-              headers={["Tên", "Email", "Vai trò", "Cửa hàng", "Quyền"]}
-              rows={users.map((user) => [
-                user.name,
-                user.email,
-                user.role === "owner" ? "Chủ cửa hàng" : "Nhân viên",
-                storeName(user.storeId),
-                user.role === "owner" ? "Toàn quyền, hủy mềm, xem báo cáo" : "Thêm/sửa nghiệp vụ, không hủy dữ liệu",
-              ])}
-            />
+        {activePage === "accounts" && currentUser.role === "owner" && (
+          <Panel title="Quản lý tài khoản & menu">
+            <p className="mb-4 text-sm font-semibold text-muted">
+              Owner (<strong>admin</strong>, <strong>quynhbupbe</strong>) có thể đổi mật khẩu, bật/tắt tài khoản và phân menu. Pass seed mặc định: <strong>123456</strong>.
+            </p>
+            {accountsError ? (
+              <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-danger">{accountsError}</p>
+            ) : null}
+            {accountsLoading ? (
+              <div className="inline-flex items-center gap-2 text-sm font-bold text-muted">
+                <Loader2 size={16} className="animate-spin" /> Đang tải tài khoản…
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-line">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-600">
+                    <tr>
+                      <th className="px-3 py-3">Tài khoản</th>
+                      <th className="px-3 py-3">Vai trò</th>
+                      <th className="px-3 py-3">Cửa hàng</th>
+                      <th className="px-3 py-3">Trạng thái</th>
+                      <th className="px-3 py-3">Menu được vào</th>
+                      <th className="px-3 py-3">Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {accountsList.map((acc) => {
+                      const draft = accountsDraft[acc.id] ?? [];
+                      const isOwnerRow = acc.role === "owner";
+                      const isSelf = acc.id === currentUser.id;
+                      const active = acc.isActive !== false;
+                      const busy = accountsSavingId === acc.id;
+                      return (
+                        <tr
+                          key={acc.id}
+                          className={`border-t border-line align-top ${active ? "" : "bg-slate-50/80 opacity-80"}`}
+                        >
+                          <td className="px-3 py-3">
+                            <div className="font-black text-ink">{acc.name}</div>
+                            <div className="font-mono text-xs font-semibold text-muted">{acc.username}</div>
+                          </td>
+                          <td className="px-3 py-3 font-bold">
+                            {isOwnerRow ? (
+                              <span className="rounded-full bg-brand-soft px-2 py-0.5 text-xs text-brand">Owner · full</span>
+                            ) : (
+                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700">Staff</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 font-semibold text-slate-700">{storeName(acc.storeId)}</td>
+                          <td className="px-3 py-3">
+                            {active ? (
+                              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700">Active</span>
+                            ) : (
+                              <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-bold text-danger">Inactive</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3">
+                            <div className="grid max-w-xl grid-cols-2 gap-1.5 sm:grid-cols-3">
+                              {navItems.map((menu) => {
+                                const checked = isOwnerRow || draft.includes(menu.id);
+                                return (
+                                  <label
+                                    key={`${acc.id}-${menu.id}`}
+                                    className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-semibold ${
+                                      checked ? "border-brand/30 bg-brand-soft text-brand-dark" : "border-line bg-white text-slate-600"
+                                    } ${isOwnerRow ? "cursor-default opacity-80" : ""}`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      className="accent-brand"
+                                      checked={checked}
+                                      disabled={isOwnerRow || busy}
+                                      onChange={(e) => toggleAccountMenu(acc.id, menu.id, e.target.checked)}
+                                    />
+                                    <span className="truncate">{MENU_LABELS[menu.id] ?? menu.label}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </td>
+                          <td className="px-3 py-3">
+                            <div className="flex min-w-[9rem] flex-col gap-1.5">
+                              {!isOwnerRow ? (
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => void saveAccountMenus(acc.id)}
+                                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-bold text-white hover:bg-brand-dark disabled:opacity-60"
+                                >
+                                  {busy ? <Loader2 size={14} className="animate-spin" /> : null}
+                                  Lưu menu
+                                </button>
+                              ) : (
+                                <span className="text-xs font-semibold text-muted">Menu: full</span>
+                              )}
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => void changeAccountPassword(acc.id, acc.username)}
+                                className="inline-flex h-9 items-center justify-center rounded-lg border border-line bg-white px-3 text-xs font-bold text-ink hover:bg-slate-50 disabled:opacity-60"
+                              >
+                                Đổi mật khẩu
+                              </button>
+                              <button
+                                type="button"
+                                disabled={busy || isSelf}
+                                title={isSelf ? "Không thể tự vô hiệu hóa" : active ? "Vô hiệu hóa" : "Kích hoạt lại"}
+                                onClick={() => void toggleAccountActive(acc.id, !active)}
+                                className={`inline-flex h-9 items-center justify-center rounded-lg px-3 text-xs font-bold disabled:opacity-50 ${
+                                  active
+                                    ? "bg-red-50 text-danger hover:bg-red-100"
+                                    : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                }`}
+                              >
+                                {active ? "Inactive" : "Active"}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {!accountsList.length ? (
+                      <tr>
+                        <td colSpan={6} className="px-3 py-8 text-center text-sm font-semibold text-muted">
+                          Chưa có tài khoản trong DB.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </Panel>
         )}
 
