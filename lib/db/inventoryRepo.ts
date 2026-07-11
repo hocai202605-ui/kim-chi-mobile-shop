@@ -289,37 +289,72 @@ export async function repoCancelAccessory(id: string): Promise<Accessory> {
   });
 }
 
-export async function repoListLookupLabels(categoryCode: string): Promise<string[]> {
+async function resolveStoreUuid(
+  storeCode: string,
+  client?: PoolClient
+): Promise<string> {
+  const q = client ?? getPool();
+  const { rows } = await q.query<{ id: string }>(
+    `select id from public.stores where code = $1 and is_active = true limit 1`,
+    [storeCode]
+  );
+  if (!rows[0]?.id) throw new Error(`Không tìm thấy cửa hàng ${storeCode}`);
+  return rows[0].id;
+}
+
+export async function repoListLookupLabels(
+  categoryCode: string,
+  storeCode: string
+): Promise<string[]> {
   const { rows } = await getPool().query<{ label: string }>(
     `select i.label
      from public.lookup_items i
      join public.lookup_categories c on c.id = i.category_id
-     where c.code = $1 and c.is_active and i.is_active
+     join public.stores s on s.id = i.store_id
+     where c.code = $1 and c.is_active and i.is_active and s.code = $2
      order by i.sort_order, i.label`,
-    [categoryCode]
+    [categoryCode, storeCode]
   );
   return rows.map((r) => r.label);
 }
 
-/** One query for many lookup categories — avoids N parallel API/DB connections. */
-export async function repoListLookupsByCategories(
+/**
+ * All stores × categories in one query.
+ * Shape: { "store-1": { phone_brand: [...], ... }, ... }
+ */
+export async function repoListLookupsByStore(
   categoryCodes: string[]
-): Promise<Record<string, string[]>> {
-  const out: Record<string, string[]> = {};
-  for (const code of categoryCodes) out[code] = [];
+): Promise<Record<string, Record<string, string[]>>> {
+  const out: Record<string, Record<string, string[]>> = {};
   if (!categoryCodes.length) return out;
 
-  const { rows } = await getPool().query<{ code: string; label: string }>(
-    `select c.code, i.label
+  const { rows } = await getPool().query<{
+    store_code: string;
+    code: string;
+    label: string;
+  }>(
+    `select s.code as store_code, c.code, i.label
      from public.lookup_items i
      join public.lookup_categories c on c.id = i.category_id
-     where c.code = any($1::text[]) and c.is_active and i.is_active
-     order by c.code, i.sort_order, i.label`,
+     join public.stores s on s.id = i.store_id
+     where c.code = any($1::text[]) and c.is_active and i.is_active and s.is_active
+     order by s.code, c.code, i.sort_order, i.label`,
     [categoryCodes]
   );
   for (const row of rows) {
-    if (!out[row.code]) out[row.code] = [];
-    out[row.code].push(row.label);
+    if (!out[row.store_code]) out[row.store_code] = {};
+    if (!out[row.store_code][row.code]) out[row.store_code][row.code] = [];
+    out[row.store_code][row.code].push(row.label);
+  }
+  // Ensure every active store has empty arrays for requested categories
+  const { rows: stores } = await getPool().query<{ code: string }>(
+    `select code from public.stores where is_active = true order by code`
+  );
+  for (const st of stores) {
+    if (!out[st.code]) out[st.code] = {};
+    for (const cat of categoryCodes) {
+      if (!out[st.code][cat]) out[st.code][cat] = [];
+    }
   }
   return out;
 }
@@ -359,12 +394,13 @@ async function getLookupCategory(
 }
 
 /**
- * Ensure label exists (active) in category. Reactivates inactive same code, or inserts.
- * Idempotent by lower(label) match on active rows.
+ * Ensure label exists (active) in category for a store.
+ * Reactivates inactive same code, or inserts. Scoped by store_id.
  */
 export async function repoEnsureLookupLabel(
   categoryCode: string,
   label: string,
+  storeCode: string,
   client?: PoolClient
 ): Promise<string> {
   const trimmed = label.trim();
@@ -372,12 +408,13 @@ export async function repoEnsureLookupLabel(
 
   const run = async (c: PoolClient) => {
     const cat = await getLookupCategory(c, categoryCode);
+    const storeUuid = await resolveStoreUuid(storeCode, c);
 
     const activeByLabel = await c.query<{ id: string; label: string }>(
       `select id, label from public.lookup_items
-       where category_id = $1 and is_active and lower(label) = lower($2)
+       where category_id = $1 and store_id = $2 and is_active and lower(label) = lower($3)
        limit 1`,
-      [cat.id, trimmed]
+      [cat.id, storeUuid, trimmed]
     );
     if (activeByLabel.rows[0]) return activeByLabel.rows[0].label;
 
@@ -385,9 +422,9 @@ export async function repoEnsureLookupLabel(
 
     const inactive = await c.query<{ id: string }>(
       `select id from public.lookup_items
-       where category_id = $1 and lower(code) = lower($2) and not is_active
+       where category_id = $1 and store_id = $2 and lower(code) = lower($3) and not is_active
        limit 1`,
-      [cat.id, code]
+      [cat.id, storeUuid, code]
     );
     if (inactive.rows[0]) {
       const { rows } = await c.query<{ label: string }>(
@@ -402,9 +439,9 @@ export async function repoEnsureLookupLabel(
 
     const activeByCode = await c.query<{ id: string; label: string }>(
       `select id, label from public.lookup_items
-       where category_id = $1 and lower(code) = lower($2) and is_active
+       where category_id = $1 and store_id = $2 and lower(code) = lower($3) and is_active
        limit 1`,
-      [cat.id, code]
+      [cat.id, storeUuid, code]
     );
     if (activeByCode.rows[0]) {
       // Same slug, different label — keep existing option; still OK for phone free-text.
@@ -412,16 +449,17 @@ export async function repoEnsureLookupLabel(
     }
 
     const maxSort = await c.query<{ m: number }>(
-      `select coalesce(max(sort_order), 0)::int as m from public.lookup_items where category_id = $1`,
-      [cat.id]
+      `select coalesce(max(sort_order), 0)::int as m
+       from public.lookup_items where category_id = $1 and store_id = $2`,
+      [cat.id, storeUuid]
     );
     const sortOrder = (maxSort.rows[0]?.m ?? 0) + 10;
 
     const { rows } = await c.query<{ label: string }>(
-      `insert into public.lookup_items (category_id, code, label, sort_order, is_system)
-       values ($1, $2, $3, $4, false)
+      `insert into public.lookup_items (category_id, store_id, code, label, sort_order, is_system)
+       values ($1, $2, $3, $4, $5, false)
        returning label`,
-      [cat.id, code, trimmed, sortOrder]
+      [cat.id, storeUuid, code, trimmed, sortOrder]
     );
     return rows[0]?.label ?? trimmed;
   };
@@ -430,9 +468,10 @@ export async function repoEnsureLookupLabel(
   return withTransaction(run);
 }
 
-/** Ensure many labels (skip empties). */
+/** Ensure many labels for a store (skip empties). */
 export async function repoEnsureLookupLabels(
   pairs: { categoryCode: string; label: string }[],
+  storeCode: string,
   client?: PoolClient
 ): Promise<void> {
   const filtered = pairs.filter((p) => p.label?.trim());
@@ -440,39 +479,45 @@ export async function repoEnsureLookupLabels(
 
   const run = async (c: PoolClient) => {
     for (const p of filtered) {
-      await repoEnsureLookupLabel(p.categoryCode, p.label, c);
+      await repoEnsureLookupLabel(p.categoryCode, p.label, storeCode, c);
     }
   };
   if (client) return run(client);
   return withTransaction(run);
 }
 
-/** Add option (or reactivate). Throws if duplicate active label. */
-export async function repoAddLookupLabel(categoryCode: string, label: string): Promise<string> {
+/** Add option (or reactivate) for a store. Throws if duplicate active label. */
+export async function repoAddLookupLabel(
+  categoryCode: string,
+  label: string,
+  storeCode: string
+): Promise<string> {
   const trimmed = label.trim();
   if (!trimmed) throw new Error("Nhãn option không được để trống.");
 
   return withTransaction(async (client) => {
     const cat = await getLookupCategory(client, categoryCode);
     if (!cat.allow_user_add) throw new Error("lookup_add_not_allowed");
+    const storeUuid = await resolveStoreUuid(storeCode, client);
 
     const exists = await client.query(
       `select 1 from public.lookup_items
-       where category_id = $1 and is_active and lower(label) = lower($2)
+       where category_id = $1 and store_id = $2 and is_active and lower(label) = lower($3)
        limit 1`,
-      [cat.id, trimmed]
+      [cat.id, storeUuid, trimmed]
     );
     if (exists.rowCount) throw new Error(`Option "${trimmed}" đã có trong danh sách.`);
 
-    return repoEnsureLookupLabel(categoryCode, trimmed, client);
+    return repoEnsureLookupLabel(categoryCode, trimmed, storeCode, client);
   });
 }
 
-/** Rename option by label; cascade to phones free-text column when mapped. */
+/** Rename option by label for a store; cascade only phones of that store. */
 export async function repoRenameLookupLabel(
   categoryCode: string,
   oldLabel: string,
-  newLabel: string
+  newLabel: string,
+  storeCode: string
 ): Promise<string> {
   const from = oldLabel.trim();
   const to = newLabel.trim();
@@ -486,21 +531,22 @@ export async function repoRenameLookupLabel(
 
   return withTransaction(async (client) => {
     const cat = await getLookupCategory(client, categoryCode);
+    const storeUuid = await resolveStoreUuid(storeCode, client);
 
     const { rows: found } = await client.query<{ id: string }>(
       `select id from public.lookup_items
-       where category_id = $1 and is_active and lower(label) = lower($2)
+       where category_id = $1 and store_id = $2 and is_active and lower(label) = lower($3)
        limit 1
        for update`,
-      [cat.id, from]
+      [cat.id, storeUuid, from]
     );
     if (!found[0]) throw new Error("lookup_item_not_found");
 
     const clash = await client.query(
       `select 1 from public.lookup_items
-       where category_id = $1 and is_active and lower(label) = lower($2) and id <> $3
+       where category_id = $1 and store_id = $2 and is_active and lower(label) = lower($3) and id <> $4
        limit 1`,
-      [cat.id, to, found[0].id]
+      [cat.id, storeUuid, to, found[0].id]
     );
     if (clash.rowCount) throw new Error(`Option "${to}" đã có trong danh sách.`);
 
@@ -514,10 +560,11 @@ export async function repoRenameLookupLabel(
 
     const col = LOOKUP_PHONE_COLUMN[categoryCode];
     if (col && from !== to) {
-      // only allow known columns from map (not user input)
+      // only allow known columns from map (not user input); scope to store
       await client.query(
-        `update public.phones set ${col} = $1, updated_at = now() where ${col} = $2`,
-        [to, from]
+        `update public.phones set ${col} = $1, updated_at = now()
+         where ${col} = $2 and store_id = $3`,
+        [to, from, storeUuid]
       );
     }
 
@@ -525,21 +572,23 @@ export async function repoRenameLookupLabel(
   });
 }
 
-/** Soft-deactivate option by label (owner-style; app-level allows all staff for MVP). */
+/** Soft-deactivate option by label for a store. */
 export async function repoDeactivateLookupLabel(
   categoryCode: string,
-  label: string
+  label: string,
+  storeCode: string
 ): Promise<void> {
   const trimmed = label.trim();
   if (!trimmed) throw new Error("lookup_item_not_found");
 
   await withTransaction(async (client) => {
     const cat = await getLookupCategory(client, categoryCode);
+    const storeUuid = await resolveStoreUuid(storeCode, client);
     const { rowCount } = await client.query(
       `update public.lookup_items
        set is_active = false, updated_at = now()
-       where category_id = $1 and is_active and lower(label) = lower($2)`,
-      [cat.id, trimmed]
+       where category_id = $1 and store_id = $2 and is_active and lower(label) = lower($3)`,
+      [cat.id, storeUuid, trimmed]
     );
     if (!rowCount) throw new Error("lookup_item_not_found");
   });
@@ -570,16 +619,20 @@ function compareLookupLabelsForSort(categoryCode: string, a: string, b: string):
 }
 
 /**
- * Re-rank active lookup_items for a category (updates sort_order permanently).
+ * Re-rank active lookup_items for a category+store (updates sort_order permanently).
  * phone_storage: 64GB → 128GB → … → 1TB. Other categories: vi numeric alpha.
  */
-export async function repoSortLookupLabels(categoryCode: string): Promise<string[]> {
+export async function repoSortLookupLabels(
+  categoryCode: string,
+  storeCode: string
+): Promise<string[]> {
   return withTransaction(async (client) => {
     const cat = await getLookupCategory(client, categoryCode);
+    const storeUuid = await resolveStoreUuid(storeCode, client);
     const { rows } = await client.query<{ id: string; label: string }>(
       `select id, label from public.lookup_items
-       where category_id = $1 and is_active`,
-      [cat.id]
+       where category_id = $1 and store_id = $2 and is_active`,
+      [cat.id, storeUuid]
     );
 
     const sorted = [...rows].sort((x, y) =>
@@ -601,10 +654,11 @@ export async function repoSortLookupLabels(categoryCode: string): Promise<string
   });
 }
 
-/** Phone field values → ensure present in lookup tables. */
+/** Phone field values → ensure present in that store's lookup tables. */
 export async function repoSyncPhoneLookupsFromValues(
   phone: Pick<
     PhoneItem,
+    | "storeId"
     | "brand"
     | "name"
     | "color"
@@ -627,18 +681,19 @@ export async function repoSyncPhoneLookupsFromValues(
       { categoryCode: "phone_battery_condition", label: phone.batteryCondition },
       { categoryCode: "phone_battery_capacity", label: phone.batteryCapacity ?? "" },
     ],
+    phone.storeId,
     client
   );
 }
 
 /** Single round-trip bundle for inventory page bootstrap. */
 export async function repoInventoryBootstrap(lookupCategoryCodes: string[]) {
-  const [phones, accessories, lookups] = await Promise.all([
+  const [phones, accessories, lookupsByStore] = await Promise.all([
     repoListPhones(),
     repoListAccessories(),
-    repoListLookupsByCategories(lookupCategoryCodes),
+    repoListLookupsByStore(lookupCategoryCodes),
   ]);
-  return { phones, accessories, lookups };
+  return { phones, accessories, lookupsByStore };
 }
 
 async function ensureCustomerId(

@@ -27,15 +27,26 @@ async function parseJson<T>(res: Response): Promise<T> {
   return body.data as T;
 }
 
-export async function listLookupLabels(categoryCode: string): Promise<string[]> {
-  const res = await fetch(`/api/inventory/lookups/${encodeURIComponent(categoryCode)}`, {
-    cache: "no-store",
-  });
+function storeQuery(storeId: string): string {
+  return `storeId=${encodeURIComponent(storeId)}`;
+}
+
+export async function listLookupLabels(
+  categoryCode: string,
+  storeId: string
+): Promise<string[]> {
+  const res = await fetch(
+    `/api/inventory/lookups/${encodeURIComponent(categoryCode)}?${storeQuery(storeId)}`,
+    { cache: "no-store" }
+  );
   return parseJson<string[]>(res);
 }
 
-export async function listLookupItems(categoryCode: string): Promise<LookupItem[]> {
-  const labels = await listLookupLabels(categoryCode);
+export async function listLookupItems(
+  categoryCode: string,
+  storeId: string
+): Promise<LookupItem[]> {
+  const labels = await listLookupLabels(categoryCode, storeId);
   return labels.map((label, i) => ({
     id: `${categoryCode}-${i}`,
     code: label,
@@ -52,12 +63,13 @@ export type LookupMutationResult = {
 export async function addLookupItem(
   categoryCode: string,
   label: string,
-  actorUsername: string
+  actorUsername: string,
+  storeId: string
 ): Promise<LookupMutationResult> {
   const res = await fetch(`/api/inventory/lookups/${encodeURIComponent(categoryCode)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ label, actorUsername }),
+    body: JSON.stringify({ label, actorUsername, storeId }),
   });
   return parseJson<LookupMutationResult>(res);
 }
@@ -66,12 +78,13 @@ export async function updateLookupItem(
   categoryCode: string,
   oldLabel: string,
   newLabel: string,
-  actorUsername: string
+  actorUsername: string,
+  storeId: string
 ): Promise<LookupMutationResult> {
   const res = await fetch(`/api/inventory/lookups/${encodeURIComponent(categoryCode)}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ oldLabel, label: newLabel, actorUsername }),
+    body: JSON.stringify({ oldLabel, label: newLabel, actorUsername, storeId }),
   });
   return parseJson<LookupMutationResult>(res);
 }
@@ -79,12 +92,13 @@ export async function updateLookupItem(
 export async function deactivateLookupItem(
   categoryCode: string,
   label: string,
-  actorUsername: string
+  actorUsername: string,
+  storeId: string
 ): Promise<LookupMutationResult> {
   const res = await fetch(`/api/inventory/lookups/${encodeURIComponent(categoryCode)}`, {
     method: "DELETE",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ label, actorUsername }),
+    body: JSON.stringify({ label, actorUsername, storeId }),
   });
   return parseJson<LookupMutationResult>(res);
 }
@@ -92,12 +106,13 @@ export async function deactivateLookupItem(
 /** Sort options + persist sort_order (storage: 64GB → 1TB). */
 export async function sortLookupItems(
   categoryCode: string,
-  actorUsername: string
+  actorUsername: string,
+  storeId: string
 ): Promise<LookupMutationResult> {
   const res = await fetch(`/api/inventory/lookups/${encodeURIComponent(categoryCode)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "sort", actorUsername }),
+    body: JSON.stringify({ action: "sort", actorUsername, storeId }),
   });
   return parseJson<LookupMutationResult>(res);
 }

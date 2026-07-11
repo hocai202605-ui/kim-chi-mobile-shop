@@ -69,10 +69,11 @@ function applyAccessoryFilters(rows: Accessory[], filters: AccessoryFilters = {}
 export type InventoryBootstrap = {
   phones: PhoneItem[];
   accessories: Accessory[];
-  lookups: Record<string, string[]>;
+  /** Per-store droplists: storeCode → categoryCode → labels */
+  lookupsByStore: Record<string, Record<string, string[]>>;
 };
 
-/** One request: phones + accessories + all phone lookups (fewer DB connections). */
+/** One request: phones + accessories + all phone lookups per store (fewer DB connections). */
 export async function loadInventoryBootstrap(): Promise<InventoryBootstrap> {
   const res = await fetch("/api/inventory/bootstrap", { cache: "no-store" });
   return parseJson<InventoryBootstrap>(res);

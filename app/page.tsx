@@ -647,15 +647,10 @@ export default function Home() {
   const [repairs, setRepairs] = useState(repairsSeed);
   const [ledger, setLedger] = useState(ledgerSeed);
   const [logs, setLogs] = useState(logSeed);
-  const [brandOptions, setBrandOptions] = useState(["iPhone", "Samsung", "Oppo", "Xiaomi"]);
-  const [nameOptions, setNameOptions] = useState(["10", "11", "12", "13 Pro", "13 Pro Max", "14", "14 Pro Max", "15 Pro Max", "Galaxy S22 Ultra", "Galaxy A54", "Z Fold 5", "Reno 8", "Find X5 Pro", "Redmi Note 12"]);
-  const [colorOptions, setColorOptions] = useState(["Đen", "Trắng", "Xanh", "Xanh dương", "Xanh biển", "Xanh lá", "Đỏ", "Vàng", "Tím", "Xám", "Titan", "Hồng", "Cam"]);
-  const [storageOptions, setStorageOptions] = useState(["64GB", "128GB", "256GB", "512GB", "1TB"]);
-  const [madeInOptions, setMadeInOptions] = useState(["VN/A", "LL/A", "Trung Quốc", "Việt Nam"]);
-  const [batteryOptions, setBatteryOptions] = useState(["Zin", "Đã thay", "Đã thay pin", "80-90%", "Zin 88%", "Zin 90%", "Zin 92%", "Zin 98%", "Zin 100%"]);
-  /** Chỉ load từ DB (lookup phone_battery_capacity) — không seed mock. */
-  const [batteryCapacityOptions, setBatteryCapacityOptions] = useState<string[]>([]);
-  const [conditionOptions, setConditionOptions] = useState(["Zin", "Cũ", "Like New", "Mới 100%"]);
+  /** Droplist theo cửa hàng: storeCode → categoryCode → labels */
+  const [lookupsByStore, setLookupsByStore] = useState<Record<string, Record<string, string[]>>>({});
+  /** Cửa hàng đang gắn form máy (quyết định droplist +/sửa/xóa). */
+  const [phoneFormStoreId, setPhoneFormStoreId] = useState<Exclude<StoreId, "all">>("store-1");
   const [inventoryBackendError, setInventoryBackendError] = useState("");
   /** Toast sau lưu/sửa/clone (hiện cả khi popup đã đóng). */
   const [inventoryToast, setInventoryToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -680,7 +675,7 @@ export default function Home() {
     }
   }, [storeFilter]);
 
-  /** Kho hàng: 1 request bootstrap (phones + accessories + lookups) — bớt storm kết nối. */
+  /** Kho hàng: 1 request bootstrap (phones + accessories + lookups theo store) — bớt storm kết nối. */
   const reloadInventoryFromDb = useCallback(async () => {
     setInventoryLoading(true);
     setInventoryBackendError("");
@@ -688,29 +683,12 @@ export default function Home() {
       const data = await apiLoadInventoryBootstrap();
       setPhones(data.phones);
       setAccessories(data.accessories);
-
-      const L = data.lookups;
-      const brands = L[PHONE_LOOKUP_CATEGORIES.brand] ?? [];
-      const names = L[PHONE_LOOKUP_CATEGORIES.modelName] ?? [];
-      const colors = L[PHONE_LOOKUP_CATEGORIES.color] ?? [];
-      const storages = L[PHONE_LOOKUP_CATEGORIES.storage] ?? [];
-      const madeIns = L[PHONE_LOOKUP_CATEGORIES.madeIn] ?? [];
-      const conditions = L[PHONE_LOOKUP_CATEGORIES.condition] ?? [];
-      const batteries = L[PHONE_LOOKUP_CATEGORIES.batteryCondition] ?? [];
-      const batCaps = L[PHONE_LOOKUP_CATEGORIES.batteryCapacity] ?? [];
-      if (brands.length) setBrandOptions(brands);
-      if (names.length) setNameOptions(names);
-      if (colors.length) setColorOptions(colors);
-      if (storages.length) setStorageOptions(storages);
-      if (madeIns.length) setMadeInOptions(madeIns);
-      if (conditions.length) setConditionOptions(conditions);
-      if (batteries.length) setBatteryOptions(batteries);
-      // Luôn lấy đúng danh sách DB (kể cả rỗng) — không giữ mock local
-      setBatteryCapacityOptions(batCaps);
+      setLookupsByStore(data.lookupsByStore ?? {});
       void refreshDashboardSummary();
     } catch (err) {
       setPhones([]);
       setAccessories([]);
+      setLookupsByStore({});
       setInventoryBackendError(toUiError(err));
     } finally {
       setInventoryLoading(false);
@@ -863,6 +841,43 @@ export default function Home() {
   const editingPhone = editingPhoneId ? phones.find((item) => item.id === editingPhoneId) : null;
   /** Defaults form máy: sửa theo id, hoặc draft clone khi thêm mới. */
   const phoneFormDefaults = editingPhone ?? clonePhoneDraft;
+
+  /** Options form máy theo cửa hàng đang chọn trên form. */
+  const formLookups = lookupsByStore[phoneFormStoreId] ?? {};
+  const brandOptions = formLookups[PHONE_LOOKUP_CATEGORIES.brand] ?? [];
+  const nameOptions = formLookups[PHONE_LOOKUP_CATEGORIES.modelName] ?? [];
+  const colorOptions = formLookups[PHONE_LOOKUP_CATEGORIES.color] ?? [];
+  const storageOptions = formLookups[PHONE_LOOKUP_CATEGORIES.storage] ?? [];
+  const madeInOptions = formLookups[PHONE_LOOKUP_CATEGORIES.madeIn] ?? [];
+  const conditionOptions = formLookups[PHONE_LOOKUP_CATEGORIES.condition] ?? [];
+  const batteryOptions = formLookups[PHONE_LOOKUP_CATEGORIES.batteryCondition] ?? [];
+  const batteryCapacityOptions = formLookups[PHONE_LOOKUP_CATEGORIES.batteryCapacity] ?? [];
+
+  const setFormLookupOptions = useCallback(
+    (categoryCode: string) => (next: string[]) => {
+      setLookupsByStore((prev) => ({
+        ...prev,
+        [phoneFormStoreId]: {
+          ...(prev[phoneFormStoreId] ?? {}),
+          [categoryCode]: next,
+        },
+      }));
+    },
+    [phoneFormStoreId]
+  );
+
+  /** Filter hãng: 1 cửa hàng → droplist store đó; Toàn hệ thống → union 3 store. */
+  const filterBrandOptions = useMemo(() => {
+    if (storeFilter !== "all") {
+      return lookupsByStore[storeFilter]?.[PHONE_LOOKUP_CATEGORIES.brand] ?? [];
+    }
+    const set = new Set<string>();
+    for (const storeMap of Object.values(lookupsByStore)) {
+      for (const b of storeMap[PHONE_LOOKUP_CATEGORIES.brand] ?? []) set.add(b);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "vi"));
+  }, [lookupsByStore, storeFilter]);
+
   const editingAccessory = editingAccessoryId ? accessories.find((item) => item.id === editingAccessoryId) : null;
   const viewingPhone = viewingPhoneId ? phones.find((item) => item.id === viewingPhoneId) : null;
   const inventoryMonthlyReport = useMemo(() => {
@@ -1206,19 +1221,33 @@ export default function Home() {
     });
   }
 
+  function resolvePhoneFormStore(
+    preferred?: string | null
+  ): Exclude<StoreId, "all"> {
+    if (currentUser?.role === "staff") return currentUser.storeId;
+    if (preferred === "store-1" || preferred === "store-2" || preferred === "store-3") {
+      return preferred;
+    }
+    if (storeFilter !== "all") return storeFilter;
+    return currentUser?.storeId ?? "store-1";
+  }
+
   function openInventoryCreateModal(tab: "phones" | "accessories" = inventoryTab) {
     setInventoryTab(tab);
     setEditingPhoneId(null);
     setClonePhoneDraft(null);
     setEditingAccessoryId(null);
+    setPhoneFormStoreId(resolvePhoneFormStore());
     setIsInventoryModalOpen(true);
   }
 
   function openPhoneEditModal(id: string) {
+    const phone = phones.find((item) => item.id === id);
     setInventoryTab("phones");
     setEditingPhoneId(id);
     setClonePhoneDraft(null);
     setEditingAccessoryId(null);
+    setPhoneFormStoreId(resolvePhoneFormStore(phone?.storeId));
     setIsInventoryModalOpen(true);
   }
 
@@ -1242,6 +1271,7 @@ export default function Home() {
       ...source,
       id: "",
     });
+    setPhoneFormStoreId(resolvePhoneFormStore(source.storeId));
     setCloneFormKey((k) => k + 1);
     setIsInventoryModalOpen(true);
   }
@@ -1327,20 +1357,31 @@ export default function Home() {
           ? prev.map((item) => (item.id === editingPhoneId ? saved : item))
           : [saved, ...prev]
       );
-      // Server ensure-lookup đã ghi DB; đồng bộ option local (không cần full bootstrap).
-      const pushOpt = (setter: (fn: (prev: string[]) => string[]) => void, value: string) => {
+      // Server ensure-lookup đã ghi DB theo store của máy; đồng bộ option local store đó.
+      const pushOptToStore = (store: string, categoryCode: string, value: string) => {
         const v = value?.trim();
         if (!v) return;
-        setter((prev) => (prev.some((o) => o.toLowerCase() === v.toLowerCase()) ? prev : [...prev, v]));
+        setLookupsByStore((prev) => {
+          const cur = prev[store]?.[categoryCode] ?? [];
+          if (cur.some((o) => o.toLowerCase() === v.toLowerCase())) return prev;
+          return {
+            ...prev,
+            [store]: {
+              ...(prev[store] ?? {}),
+              [categoryCode]: [...cur, v],
+            },
+          };
+        });
       };
-      pushOpt(setBrandOptions, saved.brand);
-      pushOpt(setNameOptions, saved.name);
-      pushOpt(setColorOptions, saved.color);
-      pushOpt(setStorageOptions, saved.storage);
-      pushOpt(setMadeInOptions, saved.madeIn);
-      pushOpt(setConditionOptions, saved.condition);
-      pushOpt(setBatteryOptions, saved.batteryCondition);
-      pushOpt(setBatteryCapacityOptions, saved.batteryCapacity || "");
+      const sid = saved.storeId;
+      pushOptToStore(sid, PHONE_LOOKUP_CATEGORIES.brand, saved.brand);
+      pushOptToStore(sid, PHONE_LOOKUP_CATEGORIES.modelName, saved.name);
+      pushOptToStore(sid, PHONE_LOOKUP_CATEGORIES.color, saved.color);
+      pushOptToStore(sid, PHONE_LOOKUP_CATEGORIES.storage, saved.storage);
+      pushOptToStore(sid, PHONE_LOOKUP_CATEGORIES.madeIn, saved.madeIn);
+      pushOptToStore(sid, PHONE_LOOKUP_CATEGORIES.condition, saved.condition);
+      pushOptToStore(sid, PHONE_LOOKUP_CATEGORIES.batteryCondition, saved.batteryCondition);
+      pushOptToStore(sid, PHONE_LOOKUP_CATEGORIES.batteryCapacity, saved.batteryCapacity || "");
       void refreshDashboardSummary();
       pushLog(
         isEdit ? "Sửa máy trong kho" : isClone ? "Nhân bản máy vào kho" : "Thêm máy vào kho",
@@ -2011,7 +2052,7 @@ export default function Home() {
                     className="h-10 rounded-lg border border-line bg-white px-3 font-semibold disabled:bg-slate-100 disabled:text-muted"
                   >
                     <option value="all">Tất cả hãng</option>
-                    {brandOptions.map((brand) => (
+                    {filterBrandOptions.map((brand) => (
                       <option key={brand} value={brand}>{brand}</option>
                     ))}
                   </select>
@@ -2218,8 +2259,31 @@ export default function Home() {
                     {inventoryTab === "phones" ? (
                       <form key={editingPhone?.id ?? (clonePhoneDraft ? `clone-${cloneFormKey}` : "new-phone")} onSubmit={savePhone} className="grid gap-3" autoComplete="off" spellCheck={false}>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <ManageableSelect label="Hãng" name="brand" options={brandOptions} setOptions={setBrandOptions} defaultValue={phoneFormDefaults?.brand} categoryCode={PHONE_LOOKUP_CATEGORIES.brand} onRenameCascade={reloadInventoryFromDb} allowManage={currentUser.role === "owner"} actorUsername={currentUser.username} />
-                          <ManageableSelect label="Tên máy" name="name" options={nameOptions} setOptions={setNameOptions} defaultValue={phoneFormDefaults?.name} categoryCode={PHONE_LOOKUP_CATEGORIES.modelName} onRenameCascade={reloadInventoryFromDb} allowManage={currentUser.role === "owner"} actorUsername={currentUser.username} />
+                          {currentUser.role === "owner" ? (
+                            <SelectField
+                              label="Cửa hàng"
+                              name="storeId"
+                              options={stores.map((s) => [s.id, s.name])}
+                              defaultValue={phoneFormStoreId}
+                              onValueChange={(v) => {
+                                if (v === "store-1" || v === "store-2" || v === "store-3") {
+                                  setPhoneFormStoreId(v);
+                                }
+                              }}
+                            />
+                          ) : (
+                            <Field label="Cửa hàng">
+                              <input type="hidden" name="storeId" value={currentUser.storeId} />
+                              <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-sm font-semibold text-slate-700">
+                                {storeName(currentUser.storeId)}
+                              </div>
+                            </Field>
+                          )}
+                          <div className="hidden sm:block" aria-hidden />
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <ManageableSelect label="Hãng" name="brand" options={brandOptions} setOptions={setFormLookupOptions(PHONE_LOOKUP_CATEGORIES.brand)} defaultValue={phoneFormDefaults?.brand} categoryCode={PHONE_LOOKUP_CATEGORIES.brand} storeId={phoneFormStoreId} onRenameCascade={reloadInventoryFromDb} allowManage actorUsername={currentUser.username} />
+                          <ManageableSelect label="Tên máy" name="name" options={nameOptions} setOptions={setFormLookupOptions(PHONE_LOOKUP_CATEGORIES.modelName)} defaultValue={phoneFormDefaults?.name} categoryCode={PHONE_LOOKUP_CATEGORIES.modelName} storeId={phoneFormStoreId} onRenameCascade={reloadInventoryFromDb} allowManage actorUsername={currentUser.username} />
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
                           <Field label="IMEI">
@@ -2234,37 +2298,16 @@ export default function Home() {
                           <SelectField label="Trạng thái" name="status" options={["Còn hàng", "Đã bán", "Đã hủy", "Chưa xử lý"].map((status) => [status, status])} defaultValue={phoneFormDefaults?.status ?? "Còn hàng"} />
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          {currentUser.role === "owner" ? (
-                            <SelectField
-                              label="Cửa hàng"
-                              name="storeId"
-                              options={stores.map((s) => [s.id, s.name])}
-                              defaultValue={
-                                phoneFormDefaults?.storeId ??
-                                (storeFilter !== "all" ? storeFilter : "store-1")
-                              }
-                            />
-                          ) : (
-                            <Field label="Cửa hàng">
-                              <input type="hidden" name="storeId" value={currentUser.storeId} />
-                              <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-sm font-semibold text-slate-700">
-                                {storeName(currentUser.storeId)}
-                              </div>
-                            </Field>
-                          )}
-                          <div className="hidden sm:block" aria-hidden />
+                          <ManageableSelect label="Màu sắc" name="color" options={colorOptions} setOptions={setFormLookupOptions(PHONE_LOOKUP_CATEGORIES.color)} defaultValue={phoneFormDefaults?.color} categoryCode={PHONE_LOOKUP_CATEGORIES.color} storeId={phoneFormStoreId} onRenameCascade={reloadInventoryFromDb} allowManage actorUsername={currentUser.username} />
+                          <ManageableSelect label="Dung lượng máy" name="storage" options={storageOptions} setOptions={setFormLookupOptions(PHONE_LOOKUP_CATEGORIES.storage)} defaultValue={phoneFormDefaults?.storage} categoryCode={PHONE_LOOKUP_CATEGORIES.storage} storeId={phoneFormStoreId} onRenameCascade={reloadInventoryFromDb} allowManage actorUsername={currentUser.username} sortable />
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <ManageableSelect label="Màu sắc" name="color" options={colorOptions} setOptions={setColorOptions} defaultValue={phoneFormDefaults?.color} categoryCode={PHONE_LOOKUP_CATEGORIES.color} onRenameCascade={reloadInventoryFromDb} allowManage={currentUser.role === "owner"} actorUsername={currentUser.username} />
-                          <ManageableSelect label="Dung lượng máy" name="storage" options={storageOptions} setOptions={setStorageOptions} defaultValue={phoneFormDefaults?.storage} categoryCode={PHONE_LOOKUP_CATEGORIES.storage} onRenameCascade={reloadInventoryFromDb} allowManage={currentUser.role === "owner"} actorUsername={currentUser.username} sortable />
+                          <ManageableSelect label="Quốc gia" name="madeIn" options={madeInOptions} setOptions={setFormLookupOptions(PHONE_LOOKUP_CATEGORIES.madeIn)} defaultValue={phoneFormDefaults?.madeIn} required={false} categoryCode={PHONE_LOOKUP_CATEGORIES.madeIn} storeId={phoneFormStoreId} onRenameCascade={reloadInventoryFromDb} allowManage actorUsername={currentUser.username} />
+                          <ManageableSelect label="Tình trạng máy" name="condition" options={conditionOptions} setOptions={setFormLookupOptions(PHONE_LOOKUP_CATEGORIES.condition)} defaultValue={phoneFormDefaults?.condition} categoryCode={PHONE_LOOKUP_CATEGORIES.condition} storeId={phoneFormStoreId} onRenameCascade={reloadInventoryFromDb} allowManage actorUsername={currentUser.username} />
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <ManageableSelect label="Quốc gia" name="madeIn" options={madeInOptions} setOptions={setMadeInOptions} defaultValue={phoneFormDefaults?.madeIn} required={false} categoryCode={PHONE_LOOKUP_CATEGORIES.madeIn} onRenameCascade={reloadInventoryFromDb} allowManage={currentUser.role === "owner"} actorUsername={currentUser.username} />
-                          <ManageableSelect label="Tình trạng máy" name="condition" options={conditionOptions} setOptions={setConditionOptions} defaultValue={phoneFormDefaults?.condition} categoryCode={PHONE_LOOKUP_CATEGORIES.condition} onRenameCascade={reloadInventoryFromDb} allowManage={currentUser.role === "owner"} actorUsername={currentUser.username} />
-                        </div>
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <ManageableSelect label="Tình trạng pin" name="batteryCondition" options={batteryOptions} setOptions={setBatteryOptions} defaultValue={phoneFormDefaults?.batteryCondition} categoryCode={PHONE_LOOKUP_CATEGORIES.batteryCondition} onRenameCascade={reloadInventoryFromDb} allowManage={currentUser.role === "owner"} actorUsername={currentUser.username} />
-                          <ManageableSelect label="Dung lượng pin" name="batteryCapacity" options={batteryCapacityOptions} setOptions={setBatteryCapacityOptions} defaultValue={phoneFormDefaults?.batteryCapacity} required={false} categoryCode={PHONE_LOOKUP_CATEGORIES.batteryCapacity} onRenameCascade={reloadInventoryFromDb} allowManage={currentUser.role === "owner"} actorUsername={currentUser.username} />
+                          <ManageableSelect label="Tình trạng pin" name="batteryCondition" options={batteryOptions} setOptions={setFormLookupOptions(PHONE_LOOKUP_CATEGORIES.batteryCondition)} defaultValue={phoneFormDefaults?.batteryCondition} categoryCode={PHONE_LOOKUP_CATEGORIES.batteryCondition} storeId={phoneFormStoreId} onRenameCascade={reloadInventoryFromDb} allowManage actorUsername={currentUser.username} />
+                          <ManageableSelect label="Dung lượng pin" name="batteryCapacity" options={batteryCapacityOptions} setOptions={setFormLookupOptions(PHONE_LOOKUP_CATEGORIES.batteryCapacity)} defaultValue={phoneFormDefaults?.batteryCapacity} required={false} categoryCode={PHONE_LOOKUP_CATEGORIES.batteryCapacity} storeId={phoneFormStoreId} onRenameCascade={reloadInventoryFromDb} allowManage actorUsername={currentUser.username} />
                         </div>
                         <div className="grid gap-3 sm:grid-cols-1">
                           <Field label="Ghi chú"><input name="note" defaultValue={phoneFormDefaults?.note} className="h-10 rounded-lg border border-line px-3" /></Field>
@@ -3187,7 +3230,19 @@ function ScrollableSelect({
   );
 }
 
-function SelectField({ label, name, options, defaultValue }: { label: string; name: string; options: string[][]; defaultValue?: string }) {
+function SelectField({
+  label,
+  name,
+  options,
+  defaultValue,
+  onValueChange,
+}: {
+  label: string;
+  name: string;
+  options: string[][];
+  defaultValue?: string;
+  onValueChange?: (value: string) => void;
+}) {
   const [value, setValue] = useState(defaultValue ?? "");
   const items = useMemo(
     () => options.map(([v, text]) => ({ value: v, label: text })),
@@ -3196,7 +3251,16 @@ function SelectField({ label, name, options, defaultValue }: { label: string; na
 
   return (
     <Field label={label} required>
-      <ScrollableSelect name={name} options={items} value={value} onChange={setValue} required />
+      <ScrollableSelect
+        name={name}
+        options={items}
+        value={value}
+        onChange={(next) => {
+          setValue(next);
+          onValueChange?.(next);
+        }}
+        required
+      />
     </Field>
   );
 }
@@ -3226,6 +3290,7 @@ function ManageableSelect({
   defaultValue,
   required = true,
   categoryCode,
+  storeId = "store-1",
   onRenameCascade,
   sortable = false,
   allowManage = true,
@@ -3239,13 +3304,15 @@ function ManageableSelect({
   required?: boolean;
   /** When set, +/sửa/xóa persist to lookup_items via API. */
   categoryCode?: string;
+  /** Cửa hàng sở hữu droplist (bắt buộc khi categoryCode có). */
+  storeId?: string;
   /** After rename (phones may cascade), refresh inventory from DB. */
   onRenameCascade?: () => Promise<void>;
   /** Hiện nút sắp xếp (ghi sort_order DB khi có categoryCode). */
   sortable?: boolean;
-  /** false = staff chỉ chọn option, không +/sửa/xóa/sort */
+  /** false = ẩn nút +/sửa/xóa/sort (mặc định bật; staff chỉ mutate được store của mình ở API) */
   allowManage?: boolean;
-  /** Username owner khi gọi API mutate lookup */
+  /** Username actor khi gọi API mutate lookup */
   actorUsername?: string;
 }) {
   const [value, setValue] = useState(defaultValue ?? "");
@@ -3267,7 +3334,7 @@ function ManageableSelect({
 
     try {
       setBusy(true);
-      const result = await apiSortLookupItems(categoryCode, actorUsername);
+      const result = await apiSortLookupItems(categoryCode, actorUsername, storeId);
       setOptions(result.labels);
       if (selected) setValue(selected);
     } catch (err) {
@@ -3295,7 +3362,7 @@ function ManageableSelect({
 
     try {
       setBusy(true);
-      const result = await apiAddLookupItem(categoryCode, next, actorUsername);
+      const result = await apiAddLookupItem(categoryCode, next, actorUsername, storeId);
       setOptions(result.labels);
       setValue(result.label ?? next);
     } catch (err) {
@@ -3321,7 +3388,7 @@ function ManageableSelect({
 
     try {
       setBusy(true);
-      const result = await apiUpdateLookupItem(categoryCode, oldVal, next, actorUsername);
+      const result = await apiUpdateLookupItem(categoryCode, oldVal, next, actorUsername, storeId);
       setOptions(result.labels);
       setValue(result.label ?? next);
       if (onRenameCascade) await onRenameCascade();
@@ -3346,7 +3413,7 @@ function ManageableSelect({
 
     try {
       setBusy(true);
-      const result = await apiDeactivateLookupItem(categoryCode, removed, actorUsername);
+      const result = await apiDeactivateLookupItem(categoryCode, removed, actorUsername, storeId);
       setOptions(result.labels);
       setValue("");
     } catch (err) {

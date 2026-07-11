@@ -106,6 +106,21 @@ export async function repoRequireOwner(actorUsername: string): Promise<AccountDt
   return actor;
 }
 
+/**
+ * Droplist mutate: owner mọi cửa hàng; staff chỉ store được gán.
+ * @throws not_authenticated | store_forbidden
+ */
+export async function repoRequireLookupManage(
+  actorUsername: string,
+  storeCode: string
+): Promise<AccountDto> {
+  const actor = await repoGetAccountByUsername(actorUsername, { requireActive: true });
+  if (!actor) throw new Error("not_authenticated");
+  if (actor.role === "owner") return actor;
+  if (actor.role === "staff" && actor.storeId === storeCode) return actor;
+  throw new Error("store_forbidden");
+}
+
 export async function repoUpdateAllowedMenus(
   accountId: string,
   allowedMenus: string[],
