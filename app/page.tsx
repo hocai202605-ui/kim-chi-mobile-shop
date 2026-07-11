@@ -66,10 +66,12 @@ import {
 } from "@/services/softwareService";
 import {
   apiListAccounts,
+  apiListLoginUsers,
   apiLogin,
   apiUpdateAccount,
   apiUpdateAccountMenus,
   type AccountUser,
+  type LoginUserOption,
 } from "@/services/accountsService";
 import { ALL_MENU_IDS } from "@/lib/constants";
 
@@ -493,6 +495,14 @@ function formatMoney(value: number) {
   return value.toLocaleString("vi-VN");
 }
 
+/** `YYYY-MM-DD` → `d/m/yyyy` (vi), không new Date() mơ hồ. */
+function formatDateVi(iso?: string | null): string {
+  if (!iso) return "";
+  const m = String(iso).trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return String(iso);
+  return `${Number(m[3])}/${Number(m[2])}/${m[1]}`;
+}
+
 function formatInputMoney(value?: number | string) {
   const digits = String(value ?? "").replace(/\D/g, "");
   return digits ? Number(digits).toLocaleString("vi-VN") : "";
@@ -611,6 +621,9 @@ export default function Home() {
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [isLoginPasswordVisible, setIsLoginPasswordVisible] = useState(false);
+  const [loginUsers, setLoginUsers] = useState<LoginUserOption[]>([]);
+  const [loginUsersLoading, setLoginUsersLoading] = useState(false);
+  const [loginUsername, setLoginUsername] = useState("");
   const [accountsList, setAccountsList] = useState<AccountUser[]>([]);
   const [accountsDraft, setAccountsDraft] = useState<Record<string, string[]>>({});
   const [accountsLoading, setAccountsLoading] = useState(false);
@@ -1018,6 +1031,38 @@ export default function Home() {
     setSessionReady(true);
   }, []);
 
+  /** Load droplist tài khoản cho màn login (public API). */
+  useEffect(() => {
+    if (!sessionReady || currentUser) return;
+    let cancelled = false;
+    setLoginUsersLoading(true);
+    void (async () => {
+      try {
+        const rows = await apiListLoginUsers();
+        if (cancelled) return;
+        setLoginUsers(rows);
+        setLoginUsername((prev) => {
+          if (prev && rows.some((r) => r.username === prev)) return prev;
+          const preferred =
+            rows.find((r) => r.username.toLowerCase() === "quynhbupbe") ||
+            rows.find((r) => r.username.toLowerCase() === "admin") ||
+            rows[0];
+          return preferred?.username ?? "";
+        });
+      } catch (err) {
+        if (!cancelled) {
+          setLoginUsers([]);
+          setLoginError(toUiError(err));
+        }
+      } finally {
+        if (!cancelled) setLoginUsersLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionReady, currentUser]);
+
   // Tự logout khi hết 2h; kiểm tra định kỳ + khi focus lại tab
   useEffect(() => {
     if (!currentUser) return;
@@ -1122,7 +1167,7 @@ export default function Home() {
     const username = String(form.get("username") || "").trim();
     const password = String(form.get("password") || "");
     if (!username) {
-      setLoginError("Vui lòng nhập tài khoản.");
+      setLoginError("Vui lòng chọn tài khoản.");
       return;
     }
     if (!password) {
@@ -1641,16 +1686,32 @@ export default function Home() {
             data-form-type="other"
           >
             <Field label="Tài khoản">
-              <input
+              <select
                 name="username"
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="none"
-                spellCheck={false}
-                className="h-11 rounded-lg border border-line px-3 font-semibold"
-                placeholder="Nhập tài khoản"
-                disabled={loginBusy}
-              />
+                required
+                value={loginUsername}
+                onChange={(e) => setLoginUsername(e.target.value)}
+                disabled={loginBusy || loginUsersLoading || loginUsers.length === 0}
+                className="h-11 w-full rounded-lg border border-line bg-white px-3 font-semibold disabled:bg-slate-50 disabled:text-muted"
+              >
+                {loginUsersLoading ? (
+                  <option value="">Đang tải tài khoản…</option>
+                ) : loginUsers.length === 0 ? (
+                  <option value="">Không có tài khoản active</option>
+                ) : (
+                  <>
+                    <option value="" disabled>
+                      Chọn tài khoản
+                    </option>
+                    {loginUsers.map((u) => (
+                      <option key={u.username} value={u.username}>
+                        {u.name} ({u.username}) · {storeName(u.storeId)}
+                        {u.role === "owner" ? " · Chủ" : ""}
+                      </option>
+                    ))}
+                  </>
+                )}
+              </select>
             </Field>
             <Field label="Mật khẩu">
               <div className={`flex h-11 items-center rounded-lg border bg-white transition focus-within:border-brand ${loginError ? "border-red-300 bg-red-50" : "border-line"}`}>
@@ -2403,8 +2464,8 @@ export default function Home() {
                         <Field label="Ghi chú"><div className="flex min-h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 py-2 text-slate-800">{viewingPhone.note || "Không có ghi chú"}</div></Field>
                       </div>
                       <div className="grid gap-3 sm:grid-cols-2">
-                        <Field label="Ngày nhập"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.importDate ? new Date(viewingPhone.importDate).toLocaleDateString("vi-VN") : "Chưa có"}</div></Field>
-                        <Field label="Ngày bán"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.saleDate ? new Date(viewingPhone.saleDate).toLocaleDateString("vi-VN") : "Chưa bán"}</div></Field>
+                        <Field label="Ngày nhập"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.importDate ? formatDateVi(viewingPhone.importDate) : "Chưa có"}</div></Field>
+                        <Field label="Ngày bán"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.saleDate ? formatDateVi(viewingPhone.saleDate) : "Chưa bán"}</div></Field>
                       </div>
                       <div className="grid gap-3 sm:grid-cols-2">
                         <Field label="Mã máy"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-mono text-slate-800">{viewingPhone.id}</div></Field>

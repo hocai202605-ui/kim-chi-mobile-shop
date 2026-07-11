@@ -98,6 +98,36 @@ export async function repoListAccounts(): Promise<AccountDto[]> {
   return rows.map(mapRow);
 }
 
+/** Public login picker — active accounts only, no secrets. */
+export type LoginUserOption = {
+  username: string;
+  name: string;
+  role: Role;
+  storeId: Exclude<StoreId, "all">;
+};
+
+export async function repoListLoginUsers(): Promise<LoginUserOption[]> {
+  const { rows } = await query<{
+    username: string;
+    display_name: string;
+    role: string;
+    store_code: string;
+  }>(
+    `select username, display_name, role, store_code
+     from public.app_accounts
+     where is_active
+     order by
+       case when role = 'owner' then 0 else 1 end,
+       lower(username)`
+  );
+  return rows.map((row) => ({
+    username: row.username,
+    name: row.display_name,
+    role: (row.role === "owner" ? "owner" : "staff") as Role,
+    storeId: (row.store_code || "store-1") as Exclude<StoreId, "all">,
+  }));
+}
+
 /** Require actor is active owner. */
 export async function repoRequireOwner(actorUsername: string): Promise<AccountDto> {
   const actor = await repoGetAccountByUsername(actorUsername, { requireActive: true });

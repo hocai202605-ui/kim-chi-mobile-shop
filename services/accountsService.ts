@@ -19,6 +19,19 @@ async function parseJson<T>(res: Response): Promise<T> {
   return body.data as T;
 }
 
+export type LoginUserOption = {
+  username: string;
+  name: string;
+  role: Role;
+  storeId: Exclude<StoreId, "all">;
+};
+
+/** Public list for login droplist (active users only). */
+export async function apiListLoginUsers(): Promise<LoginUserOption[]> {
+  const res = await fetch("/api/auth/users", { cache: "no-store" });
+  return parseJson<LoginUserOption[]>(res);
+}
+
 export async function apiLogin(
   username: string,
   password: string

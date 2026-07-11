@@ -55,6 +55,32 @@ async function skipStatusGuard(client: PoolClient) {
   await client.query(`select set_config('app.skip_status_guard', 'on', true)`);
 }
 
+/**
+ * PG `date` / `timestamptz` → `YYYY-MM-DD`.
+ * Không dùng String(date).slice(0,10) — ra "Wed Jul 01" mất năm → UI hiện 2001.
+ */
+function toDateOnly(value: unknown): string | undefined {
+  if (value == null || value === "") return undefined;
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return undefined;
+    const y = value.getUTCFullYear();
+    const m = String(value.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(value.getUTCDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  const s = String(value).trim();
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const parsed = new Date(s);
+  if (!Number.isNaN(parsed.getTime())) {
+    const y = parsed.getUTCFullYear();
+    const m = String(parsed.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(parsed.getUTCDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  return undefined;
+}
+
 function mapPhone(
   row: Record<string, unknown>,
   idToCode: Map<string, Exclude<StoreId, "all">>
@@ -72,8 +98,8 @@ function mapPhone(
     batteryCapacity: row.battery_capacity ? String(row.battery_capacity) : undefined,
     condition: String(row.condition ?? ""),
     note: row.note ? String(row.note) : undefined,
-    importDate: row.import_date ? String(row.import_date).slice(0, 10) : undefined,
-    saleDate: row.sale_date ? String(row.sale_date).slice(0, 10) : undefined,
+    importDate: toDateOnly(row.import_date),
+    saleDate: toDateOnly(row.sale_date),
     storeId: idToCode.get(String(row.store_id)) ?? "store-1",
     cost: toShopMoney(Number(row.cost)),
     expectedPrice: toShopMoney(Number(row.expected_price)),
@@ -831,7 +857,7 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
         ]
       );
       saleId = String(saleRows[0].id);
-      soldAt = String(saleRows[0].sold_at).slice(0, 10);
+      soldAt = toDateOnly(saleRows[0].sold_at) ?? "";
 
       await client.query(
         `insert into public.sale_items (
@@ -890,7 +916,7 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
         ]
       );
       saleId = String(saleRows[0].id);
-      soldAt = String(saleRows[0].sold_at).slice(0, 10);
+      soldAt = toDateOnly(saleRows[0].sold_at) ?? "";
 
       await client.query(
         `insert into public.sale_items (
@@ -964,7 +990,7 @@ export async function repoListRecentSales(limit = 50): Promise<CreatedSale[]> {
 
   return rows.map((row) => ({
     id: String(row.id),
-    soldAt: String(row.sold_at).slice(0, 10),
+    soldAt: toDateOnly(row.sold_at) ?? "",
     storeId: idToCode.get(String(row.store_id)) ?? "store-1",
     itemName: String(row.item_name),
     itemType: row.item_type === "accessory" ? ("Phụ kiện" as const) : ("Máy" as const),
