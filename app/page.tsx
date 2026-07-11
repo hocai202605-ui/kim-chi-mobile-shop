@@ -74,6 +74,13 @@ import {
   type LoginUserOption,
 } from "@/services/accountsService";
 import { ALL_MENU_IDS } from "@/lib/constants";
+import {
+  formatVnDateTime,
+  vnNowDate,
+  vnNowDateTimeLocal,
+  vnNowMonth,
+  vnNowYear,
+} from "@/lib/datetime";
 
 function toUiError(err: unknown): string {
   return err instanceof Error ? err.message : "Lỗi không xác định";
@@ -184,7 +191,7 @@ type OnlineRepair = {
   receiveDate: string;
   completeDate: string;
   paymentDate: string;
-  paymentStatus: "Đã thanh toán" | "Nợ dai";
+  paymentStatus: "Đã thanh toán" | "NỢ DAI";
   rewardPoints: number;
   isPaid: boolean; // Kept for legacy compatibility / simple checks
 };
@@ -503,6 +510,16 @@ function formatDateVi(iso?: string | null): string {
   return `${Number(m[3])}/${Number(m[2])}/${m[1]}`;
 }
 
+/** Droplist tiền (báo giá / phí DV): sort số tăng dần. */
+function sortMoneyLabelsAsc(labels: string[]): string[] {
+  return [...labels].sort((a, b) => {
+    const na = Number(String(a).replace(/\D/g, "") || 0);
+    const nb = Number(String(b).replace(/\D/g, "") || 0);
+    if (na !== nb) return na - nb;
+    return String(a).localeCompare(String(b), "vi");
+  });
+}
+
 function formatInputMoney(value?: number | string) {
   const digits = String(value ?? "").replace(/\D/g, "");
   return digits ? Number(digits).toLocaleString("vi-VN") : "";
@@ -630,7 +647,7 @@ export default function Home() {
   const [accountsError, setAccountsError] = useState("");
   const [accountsSavingId, setAccountsSavingId] = useState<string | null>(null);
   const [isStatsHidden, setIsStatsHidden] = useState(false);
-  const [reportYear, setReportYear] = useState(() => new Date().getFullYear().toString());
+  const [reportYear, setReportYear] = useState(() => vnNowYear().toString());
   const [hideReportSold, setHideReportSold] = useState(false);
   const [hideReportRevenue, setHideReportRevenue] = useState(false);
   const [hideReportProfit, setHideReportProfit] = useState(false);
@@ -639,7 +656,7 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [inventoryTab, setInventoryTab] = useState<"phones" | "accessories">("phones");
   const [inventoryPage, setInventoryPage] = useState(1);
-  const [inventoryReportMonth, setInventoryReportMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [inventoryReportMonth, setInventoryReportMonth] = useState(() => vnNowMonth());
   const [inventoryTypeFilter, setInventoryTypeFilter] = useState("all");
   const [inventoryBrandFilter, setInventoryBrandFilter] = useState("all");
   const [inventoryNameFilter, setInventoryNameFilter] = useState("");
@@ -654,10 +671,11 @@ export default function Home() {
   const [editingAccessoryId, setEditingAccessoryId] = useState<string | null>(null);
   const [editingSoftwareId, setEditingSoftwareId] = useState<string | null>(null);
   const [editingOnlineRepairId, setEditingOnlineRepairId] = useState<string | null>(null);
+  const [viewingOnlineRepairId, setViewingOnlineRepairId] = useState<string | null>(null);
   const [isOnlineRepairModalOpen, setIsOnlineRepairModalOpen] = useState(false);
   const [isOnlineRepairSensitiveHidden, setIsOnlineRepairSensitiveHidden] = useState(false);
   const [onlineRepairFilter, setOnlineRepairFilter] = useState("all");
-  const [onlineRepairMonth, setOnlineRepairMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [onlineRepairMonth, setOnlineRepairMonth] = useState(() => vnNowMonth());
   const [onlineRepairDate, setOnlineRepairDate] = useState("");
   const [customers, setCustomers] = useState(customersSeed);
   const [phones, setPhones] = useState<PhoneItem[]>([]);
@@ -885,24 +903,28 @@ export default function Home() {
   const softwareLookups = lookupsByStore[softwareLookupStoreId] ?? {};
   const softwareCustomerOptions = softwareLookups[SOFTWARE_LOOKUP_CATEGORIES.customer] ?? [];
   const softwareDeviceOptions = softwareLookups[SOFTWARE_LOOKUP_CATEGORIES.device] ?? [];
-  /** Label tiền = digits (khớp DB); form defaultValue dùng formatInputMoney để hiển thị. */
-  const softwareQuoteOptions = softwareLookups[SOFTWARE_LOOKUP_CATEGORIES.quote] ?? [];
-  const softwareFeeOptions = softwareLookups[SOFTWARE_LOOKUP_CATEGORIES.fee] ?? [];
+  /** Label tiền = digits; droplist báo giá / phí DV sort bé → lớn. */
+  const softwareQuoteOptions = sortMoneyLabelsAsc(
+    softwareLookups[SOFTWARE_LOOKUP_CATEGORIES.quote] ?? []
+  );
+  const softwareFeeOptions = sortMoneyLabelsAsc(
+    softwareLookups[SOFTWARE_LOOKUP_CATEGORIES.fee] ?? []
+  );
 
   const setFormLookupOptions = useCallback(
     (categoryCode: string, storeKey?: string) => (next: string[]) => {
       const sid = storeKey ?? phoneFormStoreId;
-      // Chuẩn hóa option tiền phần mềm → digits (ổn định parse + DB)
-      const normalized =
+      // Chuẩn hóa option tiền phần mềm → digits (ổn định parse + DB), sort bé → lớn
+      const isMoney =
         categoryCode === SOFTWARE_LOOKUP_CATEGORIES.quote ||
-        categoryCode === SOFTWARE_LOOKUP_CATEGORIES.fee
-          ? next
-              .map((x) => {
-                const digits = String(x).replace(/\D/g, "");
-                return digits;
-              })
+        categoryCode === SOFTWARE_LOOKUP_CATEGORIES.fee;
+      const normalized = isMoney
+        ? sortMoneyLabelsAsc(
+            next
+              .map((x) => String(x).replace(/\D/g, ""))
               .filter(Boolean)
-          : next;
+          )
+        : next;
       setLookupsByStore((prev) => ({
         ...prev,
         [sid]: {
@@ -928,6 +950,9 @@ export default function Home() {
 
   const editingAccessory = editingAccessoryId ? accessories.find((item) => item.id === editingAccessoryId) : null;
   const viewingPhone = viewingPhoneId ? phones.find((item) => item.id === viewingPhoneId) : null;
+  const viewingOnlineRepair = viewingOnlineRepairId
+    ? onlineRepairs.find((item) => item.id === viewingOnlineRepairId)
+    : null;
   const inventoryMonthlyReport = useMemo(() => {
     if (supabaseReportMonthly) return supabaseReportMonthly;
 
@@ -957,7 +982,7 @@ export default function Home() {
       (item) => item.status !== "Đã trả khách" && item.status !== "Đã hủy" && (storeFilter === "all" || item.storeId === storeFilter)
     ).length;
     // Online repair tickets still open (chưa thanh toán xong)
-    const onlineRepairsActive = onlineRepairs.filter((item) => !item.isPaid || item.paymentStatus === "Nợ dai").length;
+    const onlineRepairsActive = onlineRepairs.filter((item) => !item.isPaid || item.paymentStatus === "NỢ DAI").length;
 
     const phonesCount = dashboardSummary?.phonesInStock ?? activePhones.length;
     const accessoryQty = dashboardSummary?.accessoryQty ?? activeAccessories.reduce((sum, item) => sum + item.quantity, 0);
@@ -1010,7 +1035,7 @@ export default function Home() {
     setLogs((prev) => [
       {
         id: `g${Date.now()}`,
-        createdAt: new Date().toLocaleString("vi-VN"),
+        createdAt: new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }),
         user: currentUser?.name ?? "Demo",
         storeId,
         action,
@@ -1421,7 +1446,7 @@ export default function Home() {
       batteryCapacity: String(form.get("batteryCapacity") || ""),
       condition: String(form.get("condition")),
       note: String(form.get("note") || ""),
-      importDate: String(form.get("importDate") || new Date().toISOString().slice(0, 10)),
+      importDate: String(form.get("importDate") || vnNowDate()),
       saleDate: String(form.get("saleDate") || ""),
       storeId,
       cost: parseShopMoney(form.get("cost")),
@@ -1634,7 +1659,7 @@ export default function Home() {
     const storeId = String(form.get("storeId")) as Exclude<StoreId, "all">;
     const entry: Ledger = {
       id: `l${Date.now()}`,
-      createdAt: new Date().toISOString().slice(0, 10),
+      createdAt: vnNowDate(),
       storeId,
       type: String(form.get("type")) as "Thu" | "Chi",
       source: String(form.get("source")),
@@ -2373,7 +2398,7 @@ export default function Home() {
                           <Field label="Ghi chú"><input name="note" defaultValue={phoneFormDefaults?.note} className="h-10 rounded-lg border border-line px-3" /></Field>
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <Field label="Ngày nhập"><input name="importDate" type="date" defaultValue={phoneFormDefaults?.importDate || new Date().toISOString().slice(0, 10)} className="h-10 rounded-lg border border-line px-3" /></Field>
+                          <Field label="Ngày nhập"><input name="importDate" type="date" defaultValue={phoneFormDefaults?.importDate || vnNowDate()} className="h-10 rounded-lg border border-line px-3" /></Field>
                           <Field label="Ngày bán"><input name="saleDate" type="date" defaultValue={phoneFormDefaults?.saleDate} className="h-10 rounded-lg border border-line px-3" /></Field>
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
@@ -2707,10 +2732,13 @@ export default function Home() {
         )}
 
         {activePage === "software" && (() => {
-          const today = new Date().toLocaleDateString("vi-VN", { day: '2-digit' });
-          const currentMonth = new Date().toISOString().slice(0, 7);
-          const monthlyServices = softwareServices.filter(s => s.createdAt.startsWith(currentMonth));
-          const dailyServices = softwareServices.filter(s => s.createdAt.includes(new Date().toISOString().slice(0, 10)));
+          const today = new Date().toLocaleDateString("vi-VN", {
+            day: "2-digit",
+            timeZone: "Asia/Ho_Chi_Minh",
+          });
+          const currentMonth = vnNowMonth();
+          const monthlyServices = softwareServices.filter((s) => s.createdAt.startsWith(currentMonth));
+          const dailyServices = softwareServices.filter((s) => s.createdAt.includes(vnNowDate()));
           
           return (
           <section className="grid gap-4 xl:grid-cols-[420px_1fr]">
@@ -2736,7 +2764,7 @@ export default function Home() {
                 } else {
                   const newService: SoftwareService = {
                     id: `sw${Date.now()}`,
-                    createdAt: new Date().toISOString().slice(0, 16).replace("T", " "),
+                    createdAt: vnNowDateTimeLocal().replace("T", " "),
                     customerName: String(form.get("customerName")),
                     deviceName: String(form.get("deviceName")),
                     quantity: Number(form.get("quantity") || 1),
@@ -2770,7 +2798,7 @@ export default function Home() {
             <div className="grid gap-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="rounded-lg border border-brand bg-emerald-50 p-4">
-                  <span className="block text-sm font-bold text-emerald-800">Tháng {new Date().getMonth() + 1} (Doanh thu)</span>
+                  <span className="block text-sm font-bold text-emerald-800">Tháng {Number(vnNowMonth().slice(5, 7))} (Doanh thu)</span>
                   <strong className="text-3xl text-emerald-700">{formatMoney(monthlyServices.reduce((sum, s) => sum + s.revenue, 0))}</strong>
                 </div>
                 <div className="rounded-lg border border-line bg-white p-4 shadow-sm">
@@ -2809,7 +2837,7 @@ export default function Home() {
         })()}
 
         {activePage === "online-repairs" && (() => {
-          const todayString = new Date().toISOString().slice(0, 10);
+          const todayString = vnNowDate();
           const displayDate = onlineRepairDate || todayString;
           const orderTimeKey = (r: OnlineRepair) =>
             (r.receiveDate || r.createdAt || "").replace("T", " ");
@@ -2987,7 +3015,11 @@ export default function Home() {
                     name="deposit"
                     options={softwareFeeOptions}
                     setOptions={setFormLookupOptions(SOFTWARE_LOOKUP_CATEGORIES.fee, softwareLookupStoreId)}
-                    defaultValue={formatInputMoney(onlineRepairs.find((r) => r.id === editingOnlineRepairId)?.deposit ?? "")}
+                    defaultValue={formatInputMoney(
+                      editingOnlineRepairId
+                        ? onlineRepairs.find((r) => r.id === editingOnlineRepairId)?.deposit ?? 0
+                        : 0
+                    )}
                     categoryCode={SOFTWARE_LOOKUP_CATEGORIES.fee}
                     storeId={softwareLookupStoreId}
                     onRenameCascade={reloadSoftwareFromDb}
@@ -2996,12 +3028,18 @@ export default function Home() {
                   />
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Giờ"><input name="receiveDate" type="datetime-local" defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.receiveDate || new Date().toISOString().slice(0, 16)} className="h-10 rounded-lg border border-line px-3 text-xs" /></Field>
+                  <Field label="Giờ"><input name="receiveDate" type="datetime-local" defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.receiveDate || vnNowDateTimeLocal()} className="h-10 rounded-lg border border-line px-3 text-xs" /></Field>
                   <Field label="Thanh toán" required>
-                    <select name="paymentStatus" required defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.paymentStatus ?? ""} className="h-10 rounded-lg border border-line bg-white px-3 font-semibold">
-                      <option value="" disabled hidden>Chọn</option>
+                    <select
+                      name="paymentStatus"
+                      required
+                      defaultValue={
+                        onlineRepairs.find((r) => r.id === editingOnlineRepairId)?.paymentStatus ?? "NỢ DAI"
+                      }
+                      className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
+                    >
+                      <option value="NỢ DAI">NỢ DAI</option>
                       <option value="Đã thanh toán">Đã thanh toán</option>
-                      <option value="Nợ dai">Nợ dai</option>
                     </select>
                   </Field>
                 </div>
@@ -3044,7 +3082,7 @@ export default function Home() {
                   <strong className="text-3xl text-emerald-700">{isOnlineRepairSensitiveHidden ? "*** ₫" : formatMoney(monthlyRepairs.reduce((sum, r) => sum + (r.quote - r.deposit), 0))}</strong>
                   <div className="mt-2 flex items-center justify-between border-t border-emerald-200/50 pt-2 text-sm font-semibold text-emerald-700/80">
                     <span>Dư nợ tháng:</span>
-                    <span>{isOnlineRepairSensitiveHidden ? "***" : formatMoney(monthlyRepairs.filter(r => r.paymentStatus === "Nợ dai").reduce((sum, r) => sum + r.quote, 0))}</span>
+                    <span>{isOnlineRepairSensitiveHidden ? "***" : formatMoney(monthlyRepairs.filter(r => r.paymentStatus === "NỢ DAI").reduce((sum, r) => sum + r.quote, 0))}</span>
                   </div>
                 </div>
                 <div className="rounded-lg border border-line bg-white p-4 shadow-sm">
@@ -3055,7 +3093,7 @@ export default function Home() {
                   <strong className="text-3xl text-red-600">{isOnlineRepairSensitiveHidden ? "*** ₫" : formatMoney(dailyRepairs.reduce((sum, r) => sum + (r.quote - r.deposit), 0))}</strong>
                   <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 text-sm font-semibold text-slate-500">
                     <span>Dư nợ ngày:</span>
-                    <span>{isOnlineRepairSensitiveHidden ? "***" : formatMoney(dailyRepairs.filter(r => r.paymentStatus === "Nợ dai").reduce((sum, r) => sum + r.quote, 0))}</span>
+                    <span>{isOnlineRepairSensitiveHidden ? "***" : formatMoney(dailyRepairs.filter(r => r.paymentStatus === "NỢ DAI").reduce((sum, r) => sum + r.quote, 0))}</span>
                   </div>
                 </div>
               </div>
@@ -3066,7 +3104,7 @@ export default function Home() {
                     <select value={onlineRepairFilter} onChange={(e) => setOnlineRepairFilter(e.target.value)} className="h-10 rounded-lg border border-line px-3 text-sm font-bold">
                       <option value="all">Tất cả trạng thái</option>
                       <option value="paid">Đã thanh toán</option>
-                      <option value="unpaid">Nợ dai</option>
+                      <option value="unpaid">NỢ DAI</option>
                     </select>
                     
                     <div className="flex items-center gap-2 rounded-lg border border-line bg-slate-50 px-2">
@@ -3098,10 +3136,10 @@ export default function Home() {
                       
                       const formatDateTime = (dt: string) => {
                         if (!dt) return "-";
-                        return dt.replace("T", " ");
+                        return formatVnDateTime(dt) || dt.replace("T", " ");
                       };
                       
-                      const isNợ = item.paymentStatus === "Nợ dai";
+                      const isNợ = item.paymentStatus === "NỢ DAI";
                       const isDaThanhToan = item.paymentStatus === "Đã thanh toán";
 
                       return [
@@ -3115,10 +3153,28 @@ export default function Home() {
                           key={item.id}
                           className={`inline-flex h-8 items-center rounded text-xs font-bold px-2 shadow-sm border border-line ${isNợ ? "bg-red-50 text-red-600" : isDaThanhToan ? "bg-emerald-50 text-emerald-600" : "bg-slate-50 text-slate-600"}`}
                         >
-                          {isDaThanhToan ? "✅ Đã thanh toán" : "❌ Nợ dai"}
+                          {isDaThanhToan ? "✅ Đã thanh toán" : "❌ NỢ DAI"}
                         </span>,
-                        <div key={item.id} className="flex gap-2">
-                          <button onClick={() => { setEditingOnlineRepairId(item.id); setIsOnlineRepairModalOpen(true); }} className="text-brand hover:text-brand-dark"><Edit3 size={16} /></button>
+                        <div key={item.id} className="flex flex-nowrap items-center justify-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setViewingOnlineRepairId(item.id)}
+                            title="Chi tiết"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-900"
+                          >
+                            <Eye size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingOnlineRepairId(item.id);
+                              setIsOnlineRepairModalOpen(true);
+                            }}
+                            title="Sửa"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20"
+                          >
+                            <Edit3 size={16} />
+                          </button>
                         </div>
                       ];
                     })}
@@ -3126,6 +3182,118 @@ export default function Home() {
                 </div>
               </Panel>
             </div>
+
+            {viewingOnlineRepair && (
+              <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-md">
+                <section className="max-h-[92vh] w-full max-w-[640px] overflow-auto rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
+                  <div className="flex items-center justify-between border-b border-slate-200/60 bg-gradient-to-r from-brand/10 to-transparent p-5">
+                    <h2 className="text-xl font-black text-brand">Chi tiết đơn phần mềm</h2>
+                    <button
+                      type="button"
+                      onClick={() => setViewingOnlineRepairId(null)}
+                      className="h-9 rounded-xl border border-slate-200/60 bg-white/50 px-4 text-sm font-bold text-slate-600 backdrop-blur-md transition hover:bg-white hover:text-slate-900"
+                    >
+                      Đóng
+                    </button>
+                  </div>
+                  <div className="grid gap-4 p-5">
+                    <div className="flex items-center gap-3">
+                      <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-brand-soft text-brand">
+                        <Terminal size={24} />
+                      </div>
+                      <div>
+                        <strong className="block text-lg">{viewingOnlineRepair.customerName}</strong>
+                        <span className="text-sm font-semibold text-muted">{viewingOnlineRepair.deviceName}</span>
+                      </div>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label="Khách hàng / Thợ">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-bold text-brand">
+                          {viewingOnlineRepair.customerName}
+                        </div>
+                      </Field>
+                      <Field label="Loại khách">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">
+                          {viewingOnlineRepair.customerType || "Vãng lai"}
+                        </div>
+                      </Field>
+                      <Field label="Tên máy">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-semibold text-slate-800">
+                          {viewingOnlineRepair.deviceName}
+                        </div>
+                      </Field>
+                      <Field label="Trạng thái thanh toán">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3">
+                          <span
+                            className={`inline-flex h-8 items-center rounded px-2 text-xs font-bold ${
+                              viewingOnlineRepair.paymentStatus === "Đã thanh toán"
+                                ? "bg-emerald-50 text-emerald-600"
+                                : "bg-red-50 text-red-600"
+                            }`}
+                          >
+                            {viewingOnlineRepair.paymentStatus === "Đã thanh toán"
+                              ? "✅ Đã thanh toán"
+                              : "❌ NỢ DAI"}
+                          </span>
+                        </div>
+                      </Field>
+                      <Field label="Báo giá">
+                        <div className="flex h-12 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-xl font-black text-slate-800">
+                          {formatMoney(viewingOnlineRepair.quote)}
+                        </div>
+                      </Field>
+                      <Field label="Phí dịch vụ">
+                        <div className="flex h-12 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-xl font-black text-slate-700">
+                          {formatMoney(viewingOnlineRepair.deposit)}
+                        </div>
+                      </Field>
+                      <Field label="Lãi">
+                        <div className="flex h-12 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-xl font-black text-amber-700">
+                          {formatMoney(viewingOnlineRepair.quote - viewingOnlineRepair.deposit)}
+                        </div>
+                      </Field>
+                      <Field label="Giờ nhận">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-sm font-semibold text-slate-700">
+                          {formatVnDateTime(viewingOnlineRepair.receiveDate) ||
+                            (viewingOnlineRepair.receiveDate || "").replace("T", " ") ||
+                            "—"}
+                        </div>
+                      </Field>
+                      <Field label="Ghi chú / Lỗi">
+                        <div className="flex min-h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 py-2 text-slate-800 sm:col-span-2">
+                          {viewingOnlineRepair.issue?.trim() || "Không có"}
+                        </div>
+                      </Field>
+                      <Field label="Mã đơn">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-mono text-xs text-slate-600">
+                          {viewingOnlineRepair.id}
+                        </div>
+                      </Field>
+                    </div>
+                    <div className="flex justify-end gap-2 border-t border-line pt-4">
+                      <button
+                        type="button"
+                        onClick={() => setViewingOnlineRepairId(null)}
+                        className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted"
+                      >
+                        Đóng
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setViewingOnlineRepairId(null);
+                          setEditingOnlineRepairId(viewingOnlineRepair.id);
+                          setIsOnlineRepairModalOpen(true);
+                        }}
+                        className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark"
+                      >
+                        <Edit3 size={16} /> Sửa đơn
+                      </button>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            )}
           </section>
           );
         })()}

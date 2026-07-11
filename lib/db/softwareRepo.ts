@@ -1,4 +1,5 @@
 import type { OnlineRepair } from "@/types";
+import { toVnDateTimeLocal, vnDateTimeLocalToIso } from "@/lib/datetime";
 import { getPool } from "./pool";
 import { repoEnsureLookupLabels } from "./inventoryRepo";
 
@@ -50,32 +51,18 @@ type DbRow = {
   created_at: Date | string;
 };
 
+/** DB timestamptz → datetime-local wall clock Vietnam. */
 function toLocalDateTimeString(value: Date | string | null | undefined): string {
-  if (!value) return "";
-  const d = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(d.getTime())) {
-    // already "YYYY-MM-DD HH:mm" or datetime-local without Z
-    const s = String(value).trim();
-    if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(s)) {
-      return s.slice(0, 16).replace("T", " ");
-    }
-    return s;
-  }
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return toVnDateTimeLocal(value).replace("T", " ");
 }
 
+/** datetime-local from UI (giờ VN) → ISO UTC. */
 function toIsoOrNull(value: string | undefined | null): string | null {
-  if (!value || !String(value).trim()) return null;
-  const s = String(value).trim().replace(" ", "T");
-  // datetime-local: 2026-07-08T09:15
-  const d = new Date(s.length === 16 ? `${s}:00` : s);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString();
+  return vnDateTimeLocalToIso(value);
 }
 
 function paymentStatusToUi(status: "paid" | "debt"): OnlineRepair["paymentStatus"] {
-  return status === "paid" ? "Đã thanh toán" : "Nợ dai";
+  return status === "paid" ? "Đã thanh toán" : "NỢ DAI";
 }
 
 function paymentStatusToDb(
@@ -83,7 +70,7 @@ function paymentStatusToDb(
   isPaid?: boolean
 ): "paid" | "debt" {
   if (status === "Đã thanh toán" || status === "paid") return "paid";
-  if (status === "Nợ dai" || status === "debt") return "debt";
+  if (status === "NỢ DAI" || status === "Nợ dai" || status === "debt") return "debt";
   if (isPaid === true) return "paid";
   return "debt";
 }

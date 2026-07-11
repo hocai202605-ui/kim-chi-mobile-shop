@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { vnNowMonth } from "@/lib/datetime";
 import { repoReportMonthly } from "@/lib/db/inventoryRepo";
 import type { StoreId } from "@/types";
 
@@ -6,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    const ym = req.nextUrl.searchParams.get("ym") || new Date().toISOString().slice(0, 7);
+    const ym = req.nextUrl.searchParams.get("ym") || vnNowMonth();
     const store = (req.nextUrl.searchParams.get("store") || "all") as StoreId;
     const data = await repoReportMonthly(ym, store);
     return NextResponse.json({ data });

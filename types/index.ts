@@ -146,7 +146,7 @@ export type OnlineRepair = {
   receiveDate: string;
   completeDate: string;
   paymentDate: string;
-  paymentStatus: "Đã thanh toán" | "Nợ dai";
+  paymentStatus: "Đã thanh toán" | "NỢ DAI";
   rewardPoints: number;
   isPaid: boolean;
 };
