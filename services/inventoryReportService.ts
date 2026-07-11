@@ -50,6 +50,21 @@ export function toYearlyChartRows(rows: YearlyInventoryRow[]) {
   }));
 }
 
-export async function reportInventoryCapital(_storeId?: StoreId) {
-  throw new Error("reportInventoryCapital: dùng dashboard client từ list phones/accessories.");
+export type DashboardSummary = {
+  phonesInStock: number;
+  accessoryQty: number;
+  capitalShort: number;
+  capitalVnd: number;
+  profit: number;
+  revenue: number;
+};
+
+export async function reportDashboardSummary(storeId?: StoreId): Promise<DashboardSummary> {
+  const params = new URLSearchParams({
+    store: storeId ?? "all",
+  });
+  const res = await fetch(`/api/inventory/reports/dashboard?${params}`, { cache: "no-store" });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
+  return body.data as DashboardSummary;
 }

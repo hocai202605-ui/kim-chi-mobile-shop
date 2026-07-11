@@ -1,0 +1,16 @@
+import { NextRequest, NextResponse } from "next/server";
+import { repoDashboardSummary } from "@/lib/db/inventoryRepo";
+import type { StoreId } from "@/types";
+
+export const dynamic = "force-dynamic";
+
+export async function GET(req: NextRequest) {
+  try {
+    const store = (req.nextUrl.searchParams.get("store") || "all") as StoreId;
+    const data = await repoDashboardSummary(store);
+    return NextResponse.json({ data });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Lỗi tải dashboard";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

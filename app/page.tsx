@@ -42,9 +42,11 @@ import {
   upsertPhone as apiUpsertPhone,
 } from "@/services/inventoryService";
 import {
+  reportDashboardSummary,
   reportInventoryMonthly,
   reportInventoryYearly,
   toYearlyChartRows,
+  type DashboardSummary,
 } from "@/services/inventoryReportService";
 import {
   PHONE_LOOKUP_CATEGORIES,
@@ -53,6 +55,10 @@ import {
   sortLookupItems as apiSortLookupItems,
   updateLookupItem as apiUpdateLookupItem,
 } from "@/services/lookupService";
+import {
+  createSale as apiCreateSale,
+  listRecentSales as apiListRecentSales,
+} from "@/services/salesService";
 import {
   listSoftwareOrders as apiListSoftwareOrders,
   upsertSoftwareOrder as apiUpsertSoftwareOrder,
@@ -260,21 +266,84 @@ const ledgerSeed: Ledger[] = [
   { id: "l10", createdAt: "2026-07-06", storeId: "store-1", type: "Thu", source: "Cọc sửa r3", amount: 300000, payment: "Chuyển khoản", status: "Hiệu lực" },
 ];
 
+/** Bỏ dấu tiếng Việt để map màu ổn định (Cam / cam / CAM). */
+function normalizeColorKey(colorName: string): string {
+  return colorName
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d");
+}
+
 function getColorCode(colorName: string): string {
-  if (!colorName) return "#e2e8f0";
-  const name = colorName.toLowerCase();
-  if (name.includes("đỏ") || name.includes("red")) return "#ef4444";
-  if (name.includes("xanh dương") || name.includes("xanh biển") || name.includes("blue")) return "#3b82f6";
-  if (name.includes("xanh lá") || name.includes("xanh ngọc") || name.includes("green")) return "#22c55e";
-  if (name.includes("vàng") || name.includes("gold")) return "#eab308";
-  if (name.includes("đen") || name.includes("black") || name.includes("midnight")) return "#1e293b";
-  if (name.includes("trắng") || name.includes("white") || name.includes("starlight")) return "#ffffff";
-  if (name.includes("bạc") || name.includes("silver")) return "#cbd5e1";
-  if (name.includes("xám") || name.includes("gray") || name.includes("grey")) return "#64748b";
-  if (name.includes("tím") || name.includes("purple")) return "#a855f7";
-  if (name.includes("hồng") || name.includes("pink")) return "#ec4899";
+  if (!colorName?.trim()) return "#94a3b8";
+  const name = normalizeColorKey(colorName);
+
+  // Exact match trước (tránh nhầm / ưu tiên Cam = cam)
+  const exact: Record<string, string> = {
+    cam: "#f97316",
+    orange: "#f97316",
+    do: "#ef4444",
+    red: "#ef4444",
+    den: "#1e293b",
+    black: "#1e293b",
+    midnight: "#1e293b",
+    trang: "#ffffff",
+    white: "#ffffff",
+    starlight: "#ffffff",
+    bac: "#cbd5e1",
+    silver: "#cbd5e1",
+    xam: "#64748b",
+    gray: "#64748b",
+    grey: "#64748b",
+    vang: "#eab308",
+    gold: "#eab308",
+    tim: "#a855f7",
+    purple: "#a855f7",
+    hong: "#ec4899",
+    pink: "#ec4899",
+    titan: "#a8a29e",
+    titanium: "#a8a29e",
+    "xanh duong": "#3b82f6",
+    "xanh bien": "#3b82f6",
+    blue: "#3b82f6",
+    "xanh la": "#22c55e",
+    "xanh ngoc": "#22c55e",
+    "xanh reu": "#4d7c0f",
+    green: "#22c55e",
+    xanh: "#22c55e",
+  };
+  if (exact[name]) return exact[name];
+
+  // Partial match — Cam trước để không bị nhầm / rơi về xám nhạt (trông như trắng)
+  if (name.includes("cam") || name.includes("orange")) return "#f97316";
+  if ((name.includes("do") && !name.includes("duong")) || name.includes("red")) return "#ef4444";
+  if (name.includes("xanh duong") || name.includes("xanh bien") || name.includes("blue")) return "#3b82f6";
+  if (name.includes("xanh la") || name.includes("xanh ngoc") || name.includes("xanh reu") || name.includes("green")) return "#22c55e";
+  if (name.includes("vang") || name.includes("gold")) return "#eab308";
+  if (name.includes("den") || name.includes("black") || name.includes("midnight")) return "#1e293b";
+  if (name.includes("trang") || name.includes("white") || name.includes("starlight")) return "#ffffff";
+  if (name.includes("bac") || name.includes("silver")) return "#cbd5e1";
+  if (name.includes("xam") || name.includes("gray") || name.includes("grey")) return "#64748b";
+  if (name.includes("tim") || name.includes("purple")) return "#a855f7";
+  if (name.includes("hong") || name.includes("pink")) return "#ec4899";
   if (name.includes("titan")) return "#a8a29e";
-  return "#e2e8f0";
+  return "#94a3b8";
+}
+
+function ColorDot({ color, size = "md" }: { color: string; size?: "sm" | "md" }) {
+  const hex = getColorCode(color);
+  const light = ["#ffffff", "#cbd5e1", "#e2e8f0", "#f8fafc", "#94a3b8"].includes(hex.toLowerCase())
+    || hex.toLowerCase() === "#ffffff";
+  const dim = size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4";
+  return (
+    <span
+      title={color || "—"}
+      className={`${dim} shrink-0 rounded-full border shadow-sm ${light ? "border-slate-400" : "border-black/15"}`}
+      style={{ backgroundColor: hex }}
+    />
+  );
 }
 
 const logSeed: AuditLog[] = [
@@ -466,7 +535,7 @@ export default function Home() {
   const [logs, setLogs] = useState(logSeed);
   const [brandOptions, setBrandOptions] = useState(["iPhone", "Samsung", "Oppo", "Xiaomi"]);
   const [nameOptions, setNameOptions] = useState(["10", "11", "12", "13 Pro", "13 Pro Max", "14", "14 Pro Max", "15 Pro Max", "Galaxy S22 Ultra", "Galaxy A54", "Z Fold 5", "Reno 8", "Find X5 Pro", "Redmi Note 12"]);
-  const [colorOptions, setColorOptions] = useState(["Đen", "Trắng", "Xanh", "Xanh dương", "Xanh biển", "Xanh lá", "Đỏ", "Vàng", "Tím", "Xám", "Titan", "Hồng"]);
+  const [colorOptions, setColorOptions] = useState(["Đen", "Trắng", "Xanh", "Xanh dương", "Xanh biển", "Xanh lá", "Đỏ", "Vàng", "Tím", "Xám", "Titan", "Hồng", "Cam"]);
   const [storageOptions, setStorageOptions] = useState(["64GB", "128GB", "256GB", "512GB", "1TB"]);
   const [madeInOptions, setMadeInOptions] = useState(["VN/A", "LL/A", "Trung Quốc", "Việt Nam"]);
   const [batteryOptions, setBatteryOptions] = useState(["Zin", "Đã thay", "Đã thay pin", "80-90%", "Zin 88%", "Zin 90%", "Zin 92%", "Zin 98%", "Zin 100%"]);
@@ -482,7 +551,20 @@ export default function Home() {
   const [inventoryLoading, setInventoryLoading] = useState(false);
   const [supabaseReportMonthly, setSupabaseReportMonthly] = useState<{ soldPhones: number; revenue: number; profit: number } | null>(null);
   const [supabaseYearlyChart, setSupabaseYearlyChart] = useState<{ month: string; revenue: number; profit: number; sold: number }[] | null>(null);
+  const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
+  const [dashboardSummaryError, setDashboardSummaryError] = useState("");
+  const [dashboardSummaryLoading, setDashboardSummaryLoading] = useState(false);
   const canCancel = currentUser?.role === "owner";
+
+  const refreshDashboardSummary = useCallback(async () => {
+    try {
+      const summary = await reportDashboardSummary(storeFilter);
+      setDashboardSummary(summary);
+      setDashboardSummaryError("");
+    } catch (err) {
+      setDashboardSummaryError(toUiError(err));
+    }
+  }, [storeFilter]);
 
   /** Kho hàng: 1 request bootstrap (phones + accessories + lookups) — bớt storm kết nối. */
   const reloadInventoryFromDb = useCallback(async () => {
@@ -511,6 +593,7 @@ export default function Home() {
       if (batteries.length) setBatteryOptions(batteries);
       // Luôn lấy đúng danh sách DB (kể cả rỗng) — không giữ mock local
       setBatteryCapacityOptions(batCaps);
+      void refreshDashboardSummary();
     } catch (err) {
       setPhones([]);
       setAccessories([]);
@@ -518,7 +601,7 @@ export default function Home() {
     } finally {
       setInventoryLoading(false);
     }
-  }, []);
+  }, [refreshDashboardSummary]);
 
   /** Phần mềm: load từ Postgres qua API — không mock. */
   const reloadSoftwareFromDb = useCallback(async () => {
@@ -541,6 +624,26 @@ export default function Home() {
     void (async () => {
       await reloadInventoryFromDb();
       await reloadSoftwareFromDb();
+      try {
+        const rows = await apiListRecentSales();
+        setSales(
+          rows.map((r) => ({
+            id: r.id,
+            createdAt: r.soldAt,
+            customerId: "db",
+            storeId: r.storeId,
+            itemName: r.itemName,
+            itemType: r.itemType,
+            quantity: r.quantity,
+            amount: r.amount,
+            profit: r.profit,
+            payment: r.payment as PaymentMethod,
+            status: "Hoàn tất" as const,
+          }))
+        );
+      } catch {
+        /* keep seed until first successful load */
+      }
     })();
   }, [currentUser, reloadInventoryFromDb, reloadSoftwareFromDb]);
 
@@ -554,23 +657,34 @@ export default function Home() {
     if (!currentUser) {
       setSupabaseReportMonthly(null);
       setSupabaseYearlyChart(null);
+      setDashboardSummary(null);
+      setDashboardSummaryError("");
       return;
     }
     let cancelled = false;
     (async () => {
+      setDashboardSummaryLoading(true);
+      setDashboardSummaryError("");
       try {
         // Sequential reports to avoid connection spikes
+        const summary = await reportDashboardSummary(storeFilter);
+        if (cancelled) return;
+        setDashboardSummary(summary);
         const monthly = await reportInventoryMonthly(inventoryReportMonth, storeFilter);
         if (cancelled) return;
         setSupabaseReportMonthly(monthly);
         const yearly = await reportInventoryYearly(Number(reportYear), storeFilter);
         if (cancelled) return;
         setSupabaseYearlyChart(toYearlyChartRows(yearly));
-      } catch {
+      } catch (err) {
         if (!cancelled) {
+          setDashboardSummary(null);
+          setDashboardSummaryError(toUiError(err));
           setSupabaseReportMonthly(null);
           setSupabaseYearlyChart(null);
         }
+      } finally {
+        if (!cancelled) setDashboardSummaryLoading(false);
       }
     })();
     return () => {
@@ -655,24 +769,37 @@ export default function Home() {
   }, [inventoryReportMonth, sales, storeFilter, supabaseReportMonthly]);
 
   const dashboard = useMemo(() => {
+    // Fallback local from bootstrap when summary API not ready
     const activePhones = phones.filter((item) => item.status === "Còn hàng" && (storeFilter === "all" || item.storeId === storeFilter));
     const activeAccessories = accessories.filter((item) => item.status !== "Đã hủy" && (storeFilter === "all" || item.storeId === storeFilter));
+    const localCapitalShort =
+      activePhones.reduce((sum, item) => sum + item.cost, 0) +
+      activeAccessories.reduce((sum, item) => sum + item.cost * item.quantity, 0);
     const activeLedger = ledger.filter((item) => item.status === "Hiệu lực" && (storeFilter === "all" || item.storeId === storeFilter));
-    const activeRepairs = repairs.filter((item) => item.status !== "Đã trả khách" && item.status !== "Đã hủy" && (storeFilter === "all" || item.storeId === storeFilter));
-    const activeSales = sales.filter((item) => item.status === "Hoàn tất" && (storeFilter === "all" || item.storeId === storeFilter));
+    const mockRepairsActive = repairs.filter(
+      (item) => item.status !== "Đã trả khách" && item.status !== "Đã hủy" && (storeFilter === "all" || item.storeId === storeFilter)
+    ).length;
+    // Online repair tickets still open (chưa thanh toán xong)
+    const onlineRepairsActive = onlineRepairs.filter((item) => !item.isPaid || item.paymentStatus === "Nợ dai").length;
+
+    const phonesCount = dashboardSummary?.phonesInStock ?? activePhones.length;
+    const accessoryQty = dashboardSummary?.accessoryQty ?? activeAccessories.reduce((sum, item) => sum + item.quantity, 0);
+    const capitalVnd = dashboardSummary?.capitalVnd ?? shopMoneyToVnd(localCapitalShort);
+    const profit = dashboardSummary?.profit ?? 0;
+    const revenue = dashboardSummary?.revenue ?? 0;
 
     return {
-      phones: activePhones.length,
-      accessories: activeAccessories.reduce((sum, item) => sum + item.quantity, 0),
-      capital:
-        activePhones.reduce((sum, item) => sum + item.cost, 0) +
-        activeAccessories.reduce((sum, item) => sum + item.cost * item.quantity, 0),
-      profit: activeSales.reduce((sum, item) => sum + item.profit, 0),
+      phones: phonesCount,
+      accessories: accessoryQty,
+      capital: capitalVnd,
+      profit,
+      revenue,
       income: activeLedger.filter((item) => item.type === "Thu").reduce((sum, item) => sum + item.amount, 0),
       expense: activeLedger.filter((item) => item.type === "Chi").reduce((sum, item) => sum + item.amount, 0),
-      repairs: activeRepairs.length,
+      repairs: onlineRepairs.length > 0 ? onlineRepairsActive : mockRepairsActive,
+      fromDb: Boolean(dashboardSummary),
     };
-  }, [accessories, ledger, phones, repairs, sales, storeFilter]);
+  }, [accessories, dashboardSummary, ledger, onlineRepairs, phones, repairs, storeFilter]);
 
   const yearlyReportData = useMemo(() => {
     const months = Array.from({ length: 12 }, (_, i) => ({
@@ -864,6 +991,7 @@ export default function Home() {
       pushOpt(setConditionOptions, saved.condition);
       pushOpt(setBatteryOptions, saved.batteryCondition);
       pushOpt(setBatteryCapacityOptions, saved.batteryCapacity || "");
+      void refreshDashboardSummary();
       pushLog(
         isEdit ? "Sửa máy trong kho" : isClone ? "Nhân bản máy vào kho" : "Thêm máy vào kho",
         saved.imei,
@@ -919,6 +1047,7 @@ export default function Home() {
           ? prev.map((item) => (item.id === editingAccessoryId ? saved : item))
           : [saved, ...prev]
       );
+      void refreshDashboardSummary();
       pushLog(
         editingAccessoryId ? "Sửa phụ kiện trong kho" : "Thêm phụ kiện vào kho",
         saved.code,
@@ -942,7 +1071,7 @@ export default function Home() {
     }
   }
 
-  function createSale(event: FormEvent<HTMLFormElement>) {
+  async function createSale(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const storeId = String(form.get("storeId")) as Exclude<StoreId, "all">;
@@ -950,45 +1079,81 @@ export default function Home() {
     const itemId = String(form.get("itemId"));
     const quantity = Number(form.get("quantity") || 1);
     const amount = Number(form.get("amount") || 0);
-    const profit = Number(form.get("profit") || 0);
     const payment = String(form.get("payment")) as PaymentMethod;
-    const itemName =
-      itemType === "Máy"
-        ? phones.find((item) => item.id === itemId)?.name ?? "Máy"
-        : accessories.find((item) => item.id === itemId)?.name ?? "Phụ kiện";
-    const sale: Sale = {
-      id: `s${Date.now()}`,
-      createdAt: new Date().toISOString().slice(0, 10),
-      customerId: String(form.get("customerId")),
-      storeId,
-      itemName,
-      itemType,
-      quantity,
-      amount,
-      profit,
-      payment,
-      status: "Hoàn tất",
-    };
+    const customerId = String(form.get("customerId") || "");
+    const customer = customers.find((c) => c.id === customerId);
 
-    if (itemType === "Máy") {
-      setPhones((prev) => prev.map((item) => (item.id === itemId ? { ...item, status: "Đã bán" } : item)));
-    } else {
-      setAccessories((prev) =>
-        prev.map((item) =>
-          item.id === itemId
-            ? { ...item, quantity: Math.max(0, item.quantity - quantity), status: item.quantity - quantity <= 0 ? "Hết hàng" : item.status }
-            : item,
-        ),
-      );
+    if (!itemId) {
+      window.alert("Chọn hàng cần bán.");
+      return;
+    }
+    if (!amount || amount <= 0) {
+      window.alert("Nhập tổng tiền / đơn giá bán (vd 16.900 = 16tr9).");
+      return;
     }
 
-    setSales((prev) => [sale, ...prev]);
-    setLedger((prev) => [
-      { id: `l${Date.now()}`, createdAt: sale.createdAt, storeId, type: "Thu", source: `Phiếu bán ${sale.id}`, amount, payment, status: "Hiệu lực" },
-      ...prev,
-    ]);
-    pushLog("Tạo phiếu bán", sale.id, storeId);
-    event.currentTarget.reset();
+    try {
+      const saved = await apiCreateSale({
+        storeId,
+        itemType,
+        phoneId: itemType === "Máy" ? itemId : undefined,
+        accessoryId: itemType === "Phụ kiện" ? itemId : undefined,
+        quantity,
+        unitPrice: amount,
+        payment,
+        customerName: customer?.name,
+        customerPhone: customer?.phone,
+      });
+
+      const sale: Sale = {
+        id: saved.id,
+        createdAt: saved.soldAt,
+        customerId: customerId || "db",
+        storeId: saved.storeId,
+        itemName: saved.itemName,
+        itemType: saved.itemType,
+        quantity: saved.quantity,
+        amount: saved.amount,
+        profit: saved.profit,
+        payment: saved.payment as PaymentMethod,
+        status: "Hoàn tất",
+      };
+
+      setSales((prev) => [sale, ...prev.filter((s) => s.id !== sale.id)]);
+      setLedger((prev) => [
+        {
+          id: `l${Date.now()}`,
+          createdAt: sale.createdAt,
+          storeId,
+          type: "Thu",
+          source: `Phiếu bán ${sale.id}`,
+          amount: sale.amount,
+          payment,
+          status: "Hiệu lực",
+        },
+        ...prev,
+      ]);
+      pushLog("Tạo phiếu bán", sale.id, storeId);
+
+      // Đồng bộ kho + báo cáo + dashboard từ DB
+      await reloadInventoryFromDb();
+      try {
+        const monthly = await reportInventoryMonthly(inventoryReportMonth, storeFilter);
+        setSupabaseReportMonthly(monthly);
+        const yearly = await reportInventoryYearly(Number(reportYear), storeFilter);
+        setSupabaseYearlyChart(toYearlyChartRows(yearly));
+      } catch {
+        /* report refresh best-effort */
+      }
+      void refreshDashboardSummary();
+
+      window.alert(
+        `Đã lưu phiếu bán DB: ${saved.itemName} · ${formatMoney(saved.amount)} ₫ · lãi ${formatMoney(saved.profit)} ₫`
+      );
+      event.currentTarget.reset();
+    } catch (err) {
+      window.alert(toUiError(err));
+    }
   }
 
   function createRepair(event: FormEvent<HTMLFormElement>) {
@@ -1222,19 +1387,62 @@ export default function Home() {
 
         {activePage === "dashboard" && (
           <div className="grid gap-4">
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
-              Mật khẩu màn hình trong phiếu sửa đang được hiển thị như ghi chú thường theo phạm vi MVP; cần nâng cấp bảo mật ở giai đoạn backend.
+            <div className="rounded-lg border border-brand/30 bg-brand-soft/60 p-3 text-sm font-semibold text-ink">
+              {dashboardSummaryLoading
+                ? "Đang đồng bộ dashboard từ DB…"
+                : dashboard.fromDb
+                  ? `Đã đồng bộ kho + phiếu bán (${storeName(storeFilter)}). Vốn quy ra ₫ (giá kho ×1.000). Thu/chi vẫn là dữ liệu demo.`
+                  : dashboardSummaryError
+                    ? `Chưa đồng bộ DB: ${dashboardSummaryError}`
+                    : "Dashboard đang dùng cache local — mở lại hoặc đổi cửa hàng để tải summary."}
             </div>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <StatCard label="Máy còn hàng" value={isStatsHidden ? "***" : `${dashboard.phones}`} hint={storeName(storeFilter)} icon={<Smartphone size={20} />} />
-              <StatCard label="Phụ kiện tồn" value={isStatsHidden ? "***" : `${dashboard.accessories}`} hint="Tổng số lượng khả dụng" icon={<PackagePlus size={20} />} />
-              <StatCard label="Tổng vốn" value={isStatsHidden ? "***" : formatMoney(dashboard.capital)} hint="Máy + phụ kiện tồn" icon={<Store size={20} />} />
-              <StatCard label="Lãi đã ghi" value={isStatsHidden ? "***" : formatMoney(dashboard.profit)} hint="Từ phiếu bán hiệu lực" icon={<Activity size={20} />} />
-              <StatCard label="Tổng thu" value={isStatsHidden ? "***" : formatMoney(dashboard.income)} hint="Theo sổ thu chi" icon={<ReceiptText size={20} />} />
-              <StatCard label="Tổng chi" value={isStatsHidden ? "***" : formatMoney(dashboard.expense)} hint="Theo sổ thu chi" icon={<CreditCard size={20} />} />
-              <StatCard label="Máy đang sửa" value={isStatsHidden ? "***" : `${dashboard.repairs}`} hint="Chưa trả khách" icon={<Wrench size={20} />} />
-              <StatCard label="Dòng tiền ròng" value={isStatsHidden ? "***" : formatMoney(dashboard.income - dashboard.expense)} hint="Thu trừ chi" icon={<FileText size={20} />} />
+              <StatCard label="Máy còn hàng" value={isStatsHidden || dashboardSummaryLoading ? "***" : `${dashboard.phones}`} hint={`${storeName(storeFilter)} · kho DB`} icon={<Smartphone size={20} />} />
+              <StatCard label="Phụ kiện tồn" value={isStatsHidden || dashboardSummaryLoading ? "***" : `${dashboard.accessories}`} hint="Tổng SL · kho DB" icon={<PackagePlus size={20} />} />
+              <StatCard label="Tổng vốn" value={isStatsHidden || dashboardSummaryLoading ? "***" : formatMoney(dashboard.capital)} hint="Máy + PK tồn · ₫ thật" icon={<Store size={20} />} />
+              <StatCard label="Lãi đã ghi" value={isStatsHidden || dashboardSummaryLoading ? "***" : formatMoney(dashboard.profit)} hint="Σ profit phiếu bán completed" icon={<Activity size={20} />} />
+              <StatCard label="Tổng thu" value={isStatsHidden ? "***" : formatMoney(dashboard.income)} hint="Demo sổ thu chi" icon={<ReceiptText size={20} />} />
+              <StatCard label="Tổng chi" value={isStatsHidden ? "***" : formatMoney(dashboard.expense)} hint="Demo sổ thu chi" icon={<CreditCard size={20} />} />
+              <StatCard label="Máy đang sửa" value={isStatsHidden ? "***" : `${dashboard.repairs}`} hint={onlineRepairs.length > 0 ? "Phiếu online (còn nợ/chưa TT)" : "Demo sửa chữa"} icon={<Wrench size={20} />} />
+              <StatCard label="Dòng tiền ròng" value={isStatsHidden ? "***" : formatMoney(dashboard.income - dashboard.expense)} hint="Thu − chi (demo)" icon={<FileText size={20} />} />
             </div>
+
+            <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
+              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-black">Tháng này (đồng bộ báo cáo kho)</h2>
+                  <p className="text-sm font-semibold text-muted">Cùng API với màn Báo cáo kho · {inventoryReportMonth}</p>
+                </div>
+                <Field label="Tháng" className="w-full sm:w-44">
+                  <input
+                    type="month"
+                    value={inventoryReportMonth}
+                    onChange={(event) => setInventoryReportMonth(event.target.value)}
+                    className="h-10 rounded-lg border border-line px-3 font-bold"
+                  />
+                </Field>
+              </div>
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="rounded-lg border border-line bg-slate-50 p-4">
+                  <p className="text-sm font-bold text-muted">Bán được</p>
+                  <strong className="mt-2 block text-2xl text-sky-800">
+                    {isStatsHidden || !supabaseReportMonthly ? "***" : `${supabaseReportMonthly.soldPhones} con`}
+                  </strong>
+                </div>
+                <div className="rounded-lg border border-line bg-slate-50 p-4">
+                  <p className="text-sm font-bold text-muted">Doanh thu tháng</p>
+                  <strong className="mt-2 block text-2xl text-amber-700">
+                    {isStatsHidden || !supabaseReportMonthly ? "***" : formatMoney(supabaseReportMonthly.revenue)}
+                  </strong>
+                </div>
+                <div className="rounded-lg border border-line bg-slate-50 p-4">
+                  <p className="text-sm font-bold text-muted">Lãi tháng</p>
+                  <strong className="mt-2 block text-2xl text-emerald-700">
+                    {isStatsHidden || !supabaseReportMonthly ? "***" : formatMoney(supabaseReportMonthly.profit)}
+                  </strong>
+                </div>
+              </div>
+            </section>
           </div>
         )}
 
@@ -1275,6 +1483,13 @@ export default function Home() {
                   </button>
                 </div>
               </div>
+              {supabaseReportMonthly &&
+              inventoryMonthlyReport.revenue === 0 &&
+              inventoryMonthlyReport.soldPhones === 0 ? (
+                <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">
+                  Chưa có phiếu bán trong tháng {inventoryReportMonth} trên DB. Vào <strong>Phiếu bán</strong> tạo phiếu (ghi DB) rồi quay lại — doanh thu sẽ đồng bộ.
+                </div>
+              ) : null}
               <div className="mt-4 grid gap-4 md:grid-cols-3">
                 <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
                   <p className="text-sm font-bold text-muted">Bán được</p>
@@ -1282,7 +1497,7 @@ export default function Home() {
                     <strong className="text-3xl text-sky-800">{isStatsHidden || hideReportSold ? "***" : `${inventoryMonthlyReport.soldPhones} con`}</strong>
                     <button onClick={() => setHideReportSold(!hideReportSold)} className="grid h-11 w-11 place-items-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100"><Smartphone size={20} /></button>
                   </div>
-                  <p className="mt-4 text-sm font-semibold text-muted">Số máy bán trong tháng</p>
+                  <p className="mt-4 text-sm font-semibold text-muted">Số máy bán trong tháng (DB)</p>
                 </section>
                 <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
                   <p className="text-sm font-bold text-muted">Tổng doanh thu tháng</p>
@@ -1290,7 +1505,7 @@ export default function Home() {
                     <strong className="text-3xl text-amber-700">{isStatsHidden || hideReportRevenue ? "***" : formatMoney(inventoryMonthlyReport.revenue)}</strong>
                     <button onClick={() => setHideReportRevenue(!hideReportRevenue)} className="grid h-11 w-11 place-items-center rounded-lg bg-amber-50 text-amber-700 transition hover:bg-amber-100"><ReceiptText size={20} /></button>
                   </div>
-                  <p className="mt-4 text-sm font-semibold text-muted">Từ phiếu bán hoàn tất</p>
+                  <p className="mt-4 text-sm font-semibold text-muted">Từ public.sales (completed)</p>
                 </section>
                 <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
                   <p className="text-sm font-bold text-muted">Tổng lợi nhuận tháng</p>
@@ -1298,7 +1513,7 @@ export default function Home() {
                     <strong className="text-3xl text-emerald-700">{isStatsHidden || hideReportProfit ? "***" : formatMoney(inventoryMonthlyReport.profit)}</strong>
                     <button onClick={() => setHideReportProfit(!hideReportProfit)} className="grid h-11 w-11 place-items-center rounded-lg bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100"><Activity size={20} /></button>
                   </div>
-                  <p className="mt-4 text-sm font-semibold text-muted">Lãi ghi nhận trong tháng</p>
+                  <p className="mt-4 text-sm font-semibold text-muted">Lãi ghi nhận trong tháng (DB)</p>
                 </section>
               </div>
             </section>
@@ -1504,7 +1719,7 @@ export default function Home() {
                     <span className="font-mono text-xl font-black tracking-wide text-red-600" key={`imei-${item.id}`}>{item.imei.slice(-5)}</span>,
                     <span className="text-lg font-black text-emerald-600" key={`price-${item.id}`}>{formatMoney(item.expectedPrice)}</span>,
                     <div key={`color-${item.id}`} className="flex items-center justify-center gap-2">
-                      <div className="h-3.5 w-3.5 shrink-0 rounded-full border border-slate-200 shadow-sm" style={{ backgroundColor: getColorCode(item.color) }} />
+                      <ColorDot color={item.color} />
                       <span className="text-base font-medium text-slate-700">{item.color}</span>
                     </div>,
                     <span className="text-base font-bold text-slate-700" key={`batcap-${item.id}`}>{item.batteryCapacity || "—"}</span>,
@@ -1724,7 +1939,7 @@ export default function Home() {
                       <div className="grid gap-3 sm:grid-cols-2">
                         <Field label="Màu sắc">
                           <div className="flex h-10 w-full items-center gap-2 rounded-lg border border-line bg-slate-50 px-3 text-slate-800">
-                            <span className="h-3.5 w-3.5 rounded-full border border-slate-200" style={{ backgroundColor: getColorCode(viewingPhone.color) }} />
+                            <ColorDot color={viewingPhone.color} />
                             {viewingPhone.color}
                           </div>
                         </Field>
@@ -1771,10 +1986,12 @@ export default function Home() {
                 <SelectField label="Loại hàng" name="itemType" options={[["Máy", "Máy"], ["Phụ kiện", "Phụ kiện"]]} />
                 <SelectField label="Chọn hàng" name="itemId" options={[...phones.filter((p) => p.status === "Còn hàng").map((p) => [p.id, `${p.name} - ${p.imei}`]), ...accessories.filter((a) => a.quantity > 0).map((a) => [a.id, `${a.name} (${a.quantity})`])]} />
                 <Field label="Số lượng"><input name="quantity" type="number" min="1" defaultValue="1" className="h-10 rounded-lg border border-line px-3" /></Field>
-                <Field label="Tổng tiền"><input name="amount" type="number" min="0" className="h-10 rounded-lg border border-line px-3" /></Field>
-                <Field label="Lãi/Giá vốn nhập tay"><input name="profit" type="number" min="0" className="h-10 rounded-lg border border-line px-3" /></Field>
+                <Field label="Đơn giá / Tổng (short OK)">
+                  <input name="amount" type="number" min="0" placeholder="vd 16900 = 16.900.000₫" className="h-10 rounded-lg border border-line px-3" />
+                </Field>
+                <p className="text-xs font-semibold text-muted">Lãi tự tính: giá bán (×1.000 nếu short) − giá vốn kho. Phiếu ghi DB → báo cáo doanh thu.</p>
                 <SelectField label="Thanh toán" name="payment" options={["Tiền mặt", "Chuyển khoản", "Thẻ", "Khác"].map((p) => [p, p])} />
-                <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white"><Plus size={18} />Tạo phiếu bán</button>
+                <button type="submit" className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white"><Plus size={18} />Tạo phiếu bán (DB)</button>
               </form>
             </Panel>
             <Panel title="Phiếu bán gần đây">
@@ -2285,6 +2502,7 @@ function ScrollableSelect({
   disabled = false,
   className = "",
   placeholder = "Chọn",
+  colorPreview = false,
 }: {
   name: string;
   options: ScrollableSelectOption[];
@@ -2294,6 +2512,8 @@ function ScrollableSelect({
   disabled?: boolean;
   className?: string;
   placeholder?: string;
+  /** Hiện chấm màu cạnh option (dùng cho Màu sắc). */
+  colorPreview?: boolean;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -2385,10 +2605,11 @@ function ScrollableSelect({
                         onChange(o.value);
                         setOpen(false);
                       }}
-                      className={`flex h-10 w-full items-center px-3 text-left text-sm font-semibold transition hover:bg-brand-soft ${
+                      className={`flex h-10 w-full items-center gap-2 px-3 text-left text-sm font-semibold transition hover:bg-brand-soft ${
                         active ? "bg-brand-soft text-brand" : "text-ink"
                       }`}
                     >
+                      {colorPreview ? <ColorDot color={o.label} size="sm" /> : null}
                       <span className="truncate">{o.label}</span>
                     </button>
                   </li>
@@ -2428,8 +2649,11 @@ function ScrollableSelect({
         onClick={() => !disabled && setOpen((v) => !v)}
         className="flex h-10 w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-line bg-white px-3 text-left outline-none focus:border-brand disabled:opacity-60"
       >
-        <span className={`min-w-0 flex-1 truncate font-semibold ${value ? "text-ink" : "text-muted"}`}>
-          {value ? selectedLabel : placeholder}
+        <span className="flex min-w-0 flex-1 items-center gap-2">
+          {colorPreview && value ? <ColorDot color={value} size="sm" /> : null}
+          <span className={`min-w-0 flex-1 truncate font-semibold ${value ? "text-ink" : "text-muted"}`}>
+            {value ? selectedLabel : placeholder}
+          </span>
         </span>
         <ChevronDown size={16} className={`shrink-0 text-muted transition ${open ? "rotate-180" : ""}`} />
       </button>
@@ -2616,6 +2840,7 @@ function ManageableSelect({
           required={required}
           disabled={busy}
           className="min-w-0 flex-1"
+          colorPreview={name === "color"}
         />
         {sortable ? (
           <button

@@ -1,5 +1,5 @@
 import type { Accessory, PhoneItem, StoreId } from "@/types";
-import { toShopMoney } from "@/lib/format";
+import { shopMoneyToVnd, toShopMoney } from "@/lib/format";
 import {
   accessoryStatusToDb,
   accessoryStatusToUi,
@@ -8,6 +8,36 @@ import {
 } from "@/lib/mappers/inventory";
 import { getPool, withTransaction } from "./pool";
 import type { PoolClient } from "pg";
+
+export type CreateSaleInput = {
+  storeId: Exclude<StoreId, "all">;
+  itemType: "phone" | "accessory";
+  phoneId?: string;
+  accessoryId?: string;
+  quantity?: number;
+  /**
+   * Tổng tiền dòng bán (short shop hoặc full) — server → VND.
+   * Máy: = giá bán 1 máy. PK: = tổng tiền cả dòng (không × qty lần 2).
+   */
+  unitPrice: number;
+  payment: "cash" | "transfer" | "card" | "other";
+  customerName?: string;
+  customerPhone?: string;
+  note?: string;
+};
+
+export type CreatedSale = {
+  id: string;
+  soldAt: string;
+  storeId: Exclude<StoreId, "all">;
+  itemName: string;
+  itemType: "Máy" | "Phụ kiện";
+  quantity: number;
+  amount: number;
+  profit: number;
+  payment: string;
+  status: "Hoàn tất";
+};
 
 type StoreRow = { id: string; code: string };
 
@@ -609,6 +639,309 @@ export async function repoInventoryBootstrap(lookupCategoryCodes: string[]) {
     repoListLookupsByCategories(lookupCategoryCodes),
   ]);
   return { phones, accessories, lookups };
+}
+
+async function ensureCustomerId(
+  client: PoolClient,
+  name?: string,
+  phone?: string
+): Promise<string> {
+  const n = (name || "Khách lẻ").trim() || "Khách lẻ";
+  const p = (phone || "0000000000").trim() || "0000000000";
+  const existing = await client.query<{ id: string }>(
+    `select id from public.customers
+     where is_active and phone = $1
+     limit 1`,
+    [p]
+  );
+  if (existing.rows[0]?.id) return existing.rows[0].id;
+  const { rows } = await client.query<{ id: string }>(
+    `insert into public.customers (name, phone, note)
+     values ($1, $2, '')
+     returning id`,
+    [n, p]
+  );
+  if (!rows[0]?.id) throw new Error("Không tạo được khách hàng.");
+  return rows[0].id;
+}
+
+function paymentToUi(p: string): string {
+  if (p === "cash") return "Tiền mặt";
+  if (p === "transfer") return "Chuyển khoản";
+  if (p === "card") return "Thẻ";
+  return "Khác";
+}
+
+/**
+ * Tạo phiếu bán completed + cập nhật tồn (máy sold / trừ PK).
+ * total_amount / profit lưu **VND thật** (kho short × 1000).
+ */
+export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSale> {
+  const { codeToId, idToCode } = await loadStoreMaps();
+  const storeUuid = codeToId.get(input.storeId);
+  if (!storeUuid) throw new Error(`Không tìm thấy cửa hàng ${input.storeId}`);
+
+  const lineTotalVnd = shopMoneyToVnd(toShopMoney(Number(input.unitPrice) || 0));
+  if (lineTotalVnd <= 0) throw new Error("Giá bán không hợp lệ.");
+
+  return withTransaction(async (client) => {
+    await skipStatusGuard(client);
+    const customerId = await ensureCustomerId(client, input.customerName, input.customerPhone);
+
+    let itemName = "";
+    let quantity = 1;
+    let unitCostVnd = 0;
+    let unitPriceVnd = 0;
+    let amount = 0;
+    let profit = 0;
+    let saleId = "";
+    let soldAt = "";
+
+    if (input.itemType === "phone") {
+      if (!input.phoneId) throw new Error("Thiếu máy cần bán.");
+      const { rows: phoneRows } = await client.query(
+        `select * from public.phones where id = $1 for update`,
+        [input.phoneId]
+      );
+      const phone = phoneRows[0];
+      if (!phone) throw new Error("Không tìm thấy máy.");
+      if (phone.status !== "in_stock") throw new Error("Máy không còn hàng.");
+      if (String(phone.store_id) !== storeUuid) throw new Error("Máy không thuộc cửa hàng đã chọn.");
+
+      quantity = 1;
+      itemName = `${phone.brand} ${phone.model_name}`.trim();
+      unitCostVnd = shopMoneyToVnd(toShopMoney(Number(phone.cost)));
+      unitPriceVnd = lineTotalVnd;
+      amount = lineTotalVnd;
+      profit = amount - unitCostVnd;
+
+      const { rows: saleRows } = await client.query(
+        `insert into public.sales (
+           store_id, customer_id, payment_method, status,
+           total_amount, total_cost, total_profit, note
+         ) values (
+           $1, $2, $3::public.payment_method, 'completed',
+           $4, $5, $6, $7
+         ) returning id, sold_at`,
+        [
+          storeUuid,
+          customerId,
+          input.payment,
+          amount,
+          unitCostVnd,
+          profit,
+          input.note ?? "",
+        ]
+      );
+      saleId = String(saleRows[0].id);
+      soldAt = String(saleRows[0].sold_at).slice(0, 10);
+
+      await client.query(
+        `insert into public.sale_items (
+           sale_id, sale_status, item_type, phone_id, item_name,
+           quantity, unit_cost, unit_price, amount, profit
+         ) values (
+           $1, 'completed', 'phone', $2, $3,
+           1, $4, $5, $6, $7
+         )`,
+        [saleId, phone.id, itemName, unitCostVnd, unitPriceVnd, amount, profit]
+      );
+
+      await client.query(
+        `update public.phones
+         set status = 'sold', sale_date = $2::date, updated_at = now()
+         where id = $1`,
+        [phone.id, soldAt]
+      );
+    } else {
+      if (!input.accessoryId) throw new Error("Thiếu phụ kiện cần bán.");
+      quantity = Math.max(1, Math.round(Number(input.quantity) || 1));
+      const { rows: accRows } = await client.query(
+        `select * from public.accessories where id = $1 for update`,
+        [input.accessoryId]
+      );
+      const acc = accRows[0];
+      if (!acc || acc.status === "cancelled") throw new Error("Không tìm thấy phụ kiện.");
+      if (String(acc.store_id) !== storeUuid) throw new Error("Phụ kiện không thuộc cửa hàng đã chọn.");
+      const stock = Number(acc.quantity) || 0;
+      if (stock < quantity) throw new Error("Không đủ tồn phụ kiện.");
+
+      itemName = String(acc.name);
+      const unitCostShort = toShopMoney(Number(acc.cost));
+      unitCostVnd = shopMoneyToVnd(unitCostShort);
+      // Form amount = tổng dòng; unit price = total / qty
+      amount = lineTotalVnd;
+      unitPriceVnd = Math.round(amount / quantity);
+      profit = amount - unitCostVnd * quantity;
+
+      const { rows: saleRows } = await client.query(
+        `insert into public.sales (
+           store_id, customer_id, payment_method, status,
+           total_amount, total_cost, total_profit, note
+         ) values (
+           $1, $2, $3::public.payment_method, 'completed',
+           $4, $5, $6, $7
+         ) returning id, sold_at`,
+        [
+          storeUuid,
+          customerId,
+          input.payment,
+          amount,
+          unitCostVnd * quantity,
+          profit,
+          input.note ?? "",
+        ]
+      );
+      saleId = String(saleRows[0].id);
+      soldAt = String(saleRows[0].sold_at).slice(0, 10);
+
+      await client.query(
+        `insert into public.sale_items (
+           sale_id, sale_status, item_type, accessory_id, item_name,
+           quantity, unit_cost, unit_price, amount, profit
+         ) values (
+           $1, 'completed', 'accessory', $2, $3,
+           $4, $5, $6, $7, $8
+         )`,
+        [
+          saleId,
+          acc.id,
+          itemName,
+          quantity,
+          unitCostVnd,
+          unitPriceVnd,
+          amount,
+          profit,
+        ]
+      );
+
+      const left = stock - quantity;
+      await client.query(
+        `update public.accessories
+         set quantity = $2,
+             status = case when $2 <= 0 then 'out_of_stock'::public.accessory_status else status end,
+             updated_at = now()
+         where id = $1`,
+        [acc.id, left]
+      );
+    }
+
+    return {
+      id: saleId,
+      soldAt,
+      storeId: input.storeId,
+      itemName,
+      itemType: input.itemType === "phone" ? "Máy" : "Phụ kiện",
+      quantity,
+      amount,
+      profit,
+      payment: paymentToUi(input.payment),
+      status: "Hoàn tất" as const,
+    };
+  });
+}
+
+/** Recent completed sales for UI list. */
+export async function repoListRecentSales(limit = 50): Promise<CreatedSale[]> {
+  const { idToCode } = await loadStoreMaps();
+  const { rows } = await getPool().query(
+    `select s.id, s.sold_at, s.store_id, s.total_amount, s.total_profit, s.payment_method, s.status,
+            coalesce(
+              (select si.item_name from public.sale_items si where si.sale_id = s.id order by si.created_at limit 1),
+              'Hàng'
+            ) as item_name,
+            coalesce(
+              (select si.item_type from public.sale_items si where si.sale_id = s.id order by si.created_at limit 1),
+              'phone'
+            ) as item_type,
+            coalesce(
+              (select si.quantity from public.sale_items si where si.sale_id = s.id order by si.created_at limit 1),
+              1
+            ) as quantity
+     from public.sales s
+     where s.status = 'completed'
+     order by s.sold_at_ts desc
+     limit $1`,
+    [limit]
+  );
+
+  return rows.map((row) => ({
+    id: String(row.id),
+    soldAt: String(row.sold_at).slice(0, 10),
+    storeId: idToCode.get(String(row.store_id)) ?? "store-1",
+    itemName: String(row.item_name),
+    itemType: row.item_type === "accessory" ? ("Phụ kiện" as const) : ("Máy" as const),
+    quantity: Number(row.quantity) || 1,
+    amount: Number(row.total_amount) || 0,
+    profit: Number(row.total_profit) || 0,
+    payment: paymentToUi(String(row.payment_method)),
+    status: "Hoàn tất" as const,
+  }));
+}
+
+/** Dashboard KPIs: stock from phones/accessories + lifetime sales profit/revenue. */
+export async function repoDashboardSummary(storeCode?: StoreId): Promise<{
+  phonesInStock: number;
+  accessoryQty: number;
+  capitalShort: number;
+  capitalVnd: number;
+  profit: number;
+  revenue: number;
+}> {
+  const pool = getPool();
+  let storeId: string | null = null;
+  if (storeCode && storeCode !== "all") {
+    const { codeToId } = await loadStoreMaps();
+    storeId = codeToId.get(storeCode) ?? null;
+  }
+
+  const [phonesRes, accRes, salesRes] = await Promise.all([
+    pool.query<{ status: string; cost: string | number }>(
+      `select status, cost from public.phones
+       where ($1::uuid is null or store_id = $1)`,
+      [storeId]
+    ),
+    pool.query<{ status: string; quantity: string | number; cost: string | number }>(
+      `select status, quantity, cost from public.accessories
+       where ($1::uuid is null or store_id = $1)`,
+      [storeId]
+    ),
+    pool.query<{ profit: string | number; revenue: string | number }>(
+      `select
+         coalesce(sum(total_profit), 0)::bigint as profit,
+         coalesce(sum(total_amount), 0)::bigint as revenue
+       from public.sales
+       where status = 'completed'
+         and ($1::uuid is null or store_id = $1)`,
+      [storeId]
+    ),
+  ]);
+
+  let phonesInStock = 0;
+  let capitalShort = 0;
+  for (const row of phonesRes.rows) {
+    if (row.status !== "in_stock") continue;
+    phonesInStock += 1;
+    capitalShort += toShopMoney(Number(row.cost));
+  }
+
+  let accessoryQty = 0;
+  for (const row of accRes.rows) {
+    if (row.status === "cancelled") continue;
+    const qty = Math.max(0, Number(row.quantity) || 0);
+    accessoryQty += qty;
+    capitalShort += toShopMoney(Number(row.cost)) * qty;
+  }
+
+  const sales = salesRes.rows[0] ?? { profit: 0, revenue: 0 };
+  return {
+    phonesInStock,
+    accessoryQty,
+    capitalShort,
+    capitalVnd: capitalShort * 1000,
+    profit: Number(sales.profit ?? 0),
+    revenue: Number(sales.revenue ?? 0),
+  };
 }
 
 export async function repoReportMonthly(yearMonth: string, storeCode?: StoreId) {
