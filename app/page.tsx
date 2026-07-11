@@ -402,6 +402,16 @@ function accountToUser(a: AccountUser): User {
   };
 }
 
+/** Filter cửa hàng mặc định sau login / restore session. */
+function defaultStoreFilterForUser(user: User): StoreId {
+  if (user.role === "staff") return user.storeId;
+  // Owner quynhbupbe: mặc định Kim Chi (store-1), không “Toàn hệ thống”
+  if (user.username.trim().toLowerCase() === "quynhbupbe") {
+    return "store-1";
+  }
+  return "all";
+}
+
 function saveSession(user: User) {
   try {
     const now = Date.now();
@@ -976,7 +986,7 @@ export default function Home() {
     const saved = loadSession();
     if (saved) {
       setCurrentUser(saved.user);
-      setStoreFilter(saved.user.role === "owner" ? "all" : saved.user.storeId);
+      setStoreFilter(defaultStoreFilterForUser(saved.user));
       const first = navItems.find((item) => canAccessMenu(saved.user, item.id));
       if (first) setActivePage(first.id);
     }
@@ -1110,7 +1120,7 @@ export default function Home() {
       }
       setCurrentUser(user);
       saveSession(user);
-      setStoreFilter(user.role === "owner" ? "all" : user.storeId);
+      setStoreFilter(defaultStoreFilterForUser(user));
       const first = navItems.find((item) => canAccessMenu(user, item.id));
       if (first) setActivePage(first.id);
     } catch (err) {
