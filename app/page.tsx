@@ -366,17 +366,16 @@ const logSeed: AuditLog[] = [
 ];
 
 const navItems = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { id: "inventory", label: "Kho hàng", icon: Boxes },
-  { id: "inventoryReports", label: "Báo cáo kho hàng", icon: FileText },
+  { id: "dashboard", label: "Quản lý Dashboard", icon: LayoutDashboard },
+  { id: "inventory", label: "Quản lý kho hàng", icon: Boxes },
+  { id: "inventoryReports", label: "Quản lý báo cáo kho hàng", icon: FileText },
   { id: "sales", label: "Quản lý bán hàng", icon: ReceiptText },
-  { id: "software", label: "Sửa chữa", icon: Wrench },
-  { id: "online-repairs", label: "Phần mềm", icon: Terminal },
-  { id: "customers", label: "Khách hàng", icon: Users },
-  { id: "repairs", label: "Sửa chữa (cũ)", icon: Wrench },
-  { id: "ledger", label: "Thu chi", icon: CreditCard },
-  { id: "logs", label: "Nhật ký", icon: ClipboardList },
-  { id: "accounts", label: "Tài khoản", icon: UserCog },
+  { id: "software", label: "Quản lý sửa chữa", icon: Wrench },
+  { id: "online-repairs", label: "Quản lý phần mềm", icon: Terminal },
+  { id: "customers", label: "Quản lý khách hàng", icon: Users },
+  { id: "ledger", label: "Quản lý thu chi", icon: CreditCard },
+  { id: "logs", label: "Quản lý nhật ký", icon: ClipboardList },
+  { id: "accounts", label: "Quản lý tài khoản", icon: UserCog },
 ] as const;
 
 type PageId = (typeof navItems)[number]["id"];
@@ -838,7 +837,6 @@ export default function Home() {
       return compareSearchInventory({ name: a.name, price: a.price }, { name: b.name, price: b.price });
     });
 
-  const filteredRepairs = repairs.filter((item) => storeFilter === "all" || item.storeId === storeFilter);
   const filteredLedger = ledger.filter((item) => storeFilter === "all" || item.storeId === storeFilter);
   const filteredSales = sales.filter((item) => storeFilter === "all" || item.storeId === storeFilter);
   const inventoryPageSize = 10;
@@ -1056,7 +1054,8 @@ export default function Home() {
 
   useEffect(() => {
     if (!currentUser) return;
-    if (!canAccessMenu(currentUser, activePage)) {
+    const pageExists = navItems.some((item) => item.id === activePage);
+    if (!pageExists || !canAccessMenu(currentUser, activePage)) {
       const first = navItems.find((item) => canAccessMenu(currentUser, item.id));
       setActivePage(first?.id ?? "inventory");
     }
@@ -1557,36 +1556,6 @@ export default function Home() {
     }
   }
 
-  function createRepair(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const storeId = String(form.get("storeId")) as Exclude<StoreId, "all">;
-    const deposit = Number(form.get("deposit") || 0);
-    const repair: Repair = {
-      id: `r${Date.now()}`,
-      createdAt: new Date().toISOString().slice(0, 10),
-      customerId: String(form.get("customerId")),
-      storeId,
-      deviceName: String(form.get("deviceName")),
-      screenPassword: String(form.get("screenPassword")),
-      issue: String(form.get("issue")),
-      intakeNote: String(form.get("intakeNote")),
-      quote: Number(form.get("quote") || 0),
-      deposit,
-      status: "Đang chờ",
-    };
-
-    setRepairs((prev) => [repair, ...prev]);
-    if (deposit > 0) {
-      setLedger((prev) => [
-        { id: `l${Date.now()}`, createdAt: repair.createdAt, storeId, type: "Thu", source: `Cọc sửa ${repair.id}`, amount: deposit, payment: "Tiền mặt", status: "Hiệu lực" },
-        ...prev,
-      ]);
-    }
-    pushLog("Tạo phiếu sửa", repair.id, storeId);
-    event.currentTarget.reset();
-  }
-
   function createExpense(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -1613,13 +1582,6 @@ export default function Home() {
     setSales((prev) => prev.map((item) => (item.id === id ? { ...item, status: "Đã hủy" } : item)));
     setLedger((prev) => prev.map((item) => (item.source.includes(id) ? { ...item, status: "Đã hủy" } : item)));
     pushLog("Hủy mềm phiếu bán", id, sale.storeId);
-  }
-
-  function updateRepairStatus(id: string, status: RepairStatus) {
-    const repair = repairs.find((item) => item.id === id);
-    if (!repair) return;
-    setRepairs((prev) => prev.map((item) => (item.id === id ? { ...item, status } : item)));
-    pushLog("Cập nhật trạng thái sửa chữa", `${id}: ${status}`, repair.storeId);
   }
 
   if (!sessionReady) {
@@ -2481,42 +2443,6 @@ export default function Home() {
               ])}
             />
           </Panel>
-        )}
-
-        {activePage === "repairs" && (
-          <section className="grid gap-4 xl:grid-cols-[420px_1fr]">
-            <Panel title="Tạo phiếu nhận máy">
-              <form onSubmit={createRepair} className="grid gap-3">
-                <SelectField label="Khách hàng" name="customerId" options={customers.map((c) => [c.id, `${c.name} - ${c.phone}`])} />
-                <SelectField label="Cửa hàng" name="storeId" options={stores.map((s) => [s.id, s.name])} />
-                <Field label="Tên máy"><input name="deviceName" className="h-10 rounded-lg border border-line px-3" placeholder="iPhone XS" /></Field>
-                <Field label="Mật khẩu màn hình"><input name="screenPassword" className="h-10 rounded-lg border border-line px-3" placeholder="Lưu dạng ghi chú thường" /></Field>
-                <Field label="Lỗi cần sửa"><input name="issue" className="h-10 rounded-lg border border-line px-3" /></Field>
-                <Field label="Báo giá"><input name="quote" type="number" min="0" className="h-10 rounded-lg border border-line px-3" /></Field>
-                <Field label="Tiền cọc"><input name="deposit" type="number" min="0" className="h-10 rounded-lg border border-line px-3" /></Field>
-                <Field label="Tình trạng lúc nhận"><textarea name="intakeNote" className="min-h-24 rounded-lg border border-line px-3 py-2" /></Field>
-                <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white"><Plus size={18} />Tạo phiếu sửa</button>
-              </form>
-            </Panel>
-            <Panel title="Theo dõi sửa chữa">
-              <DataTable
-                headers={["Ngày", "Khách", "Máy", "Lỗi", "Cọc", "Trạng thái", "Cập nhật"]}
-                rows={filteredRepairs.map((item) => [
-                  item.createdAt,
-                  customers.find((c) => c.id === item.customerId)?.name ?? "-",
-                  item.deviceName,
-                  item.issue,
-                  formatMoney(item.deposit),
-                  <StatusBadge key={item.id} tone={item.status === "Đã hủy" ? "danger" : item.status === "Đã trả khách" ? "ok" : "warn"}>{item.status}</StatusBadge>,
-                  <select key={item.id} value={item.status} onChange={(event) => updateRepairStatus(item.id, event.target.value as RepairStatus)} className="h-9 rounded-lg border border-line px-2 text-sm">
-                    {["Đang chờ", "Đang sửa", "Đã xong", "Đã trả khách", "Đã hủy"].map((status) => (
-                      <option key={status}>{status}</option>
-                    ))}
-                  </select>,
-                ])}
-              />
-            </Panel>
-          </section>
         )}
 
         {activePage === "ledger" && (

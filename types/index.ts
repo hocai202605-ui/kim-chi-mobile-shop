@@ -19,7 +19,6 @@ export type MenuId =
   | "software"
   | "online-repairs"
   | "customers"
-  | "repairs"
   | "ledger"
   | "logs"
   | "accounts";

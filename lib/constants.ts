@@ -22,7 +22,6 @@ export const ALL_MENU_IDS = [
   "software",
   "online-repairs",
   "customers",
-  "repairs",
   "ledger",
   "logs",
   "accounts",
