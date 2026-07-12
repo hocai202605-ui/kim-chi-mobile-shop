@@ -178,3 +178,16 @@ export async function repoUpsertSoftwareOrder(
   await ensureSoftwareLookups(created, input.lookupStoreId);
   return created;
 }
+
+/** Xóa cứng đơn phần mềm theo id (UUID). */
+export async function repoDeleteSoftwareOrder(id: string): Promise<OnlineRepair> {
+  const orderId = String(id || "").trim();
+  if (!orderId) throw new Error("Thiếu mã đơn phần mềm.");
+
+  const { rows } = await getPool().query<DbRow>(
+    `delete from public.software_orders where id = $1 returning *`,
+    [orderId]
+  );
+  if (!rows[0]) throw new Error("Không tìm thấy đơn phần mềm để xóa.");
+  return mapRow(rows[0]);
+}

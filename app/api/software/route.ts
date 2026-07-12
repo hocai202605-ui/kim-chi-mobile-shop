@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  repoDeleteSoftwareOrder,
   repoListSoftwareOrders,
   repoUpsertSoftwareOrder,
 } from "@/lib/db/softwareRepo";
@@ -23,6 +24,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ data: saved });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Lỗi lưu đơn phần mềm";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const body = await req.json().catch(() => ({}));
+    const id =
+      (typeof body?.id === "string" && body.id) ||
+      req.nextUrl.searchParams.get("id") ||
+      "";
+    const deleted = await repoDeleteSoftwareOrder(id);
+    return NextResponse.json({ data: deleted });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Lỗi xóa đơn phần mềm";
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

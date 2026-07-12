@@ -32,3 +32,12 @@ export async function upsertSoftwareOrder(
   });
   return parseJson<OnlineRepair>(res);
 }
+
+export async function deleteSoftwareOrder(id: string): Promise<OnlineRepair> {
+  const res = await fetch("/api/software", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id }),
+  });
+  return parseJson<OnlineRepair>(res);
+}

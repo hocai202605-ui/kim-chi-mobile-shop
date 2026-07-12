@@ -61,6 +61,7 @@ import {
   listRecentSales as apiListRecentSales,
 } from "@/services/salesService";
 import {
+  deleteSoftwareOrder as apiDeleteSoftwareOrder,
   listSoftwareOrders as apiListSoftwareOrders,
   upsertSoftwareOrder as apiUpsertSoftwareOrder,
 } from "@/services/softwareService";
@@ -671,6 +672,9 @@ export default function Home() {
   const [editingAccessoryId, setEditingAccessoryId] = useState<string | null>(null);
   const [editingSoftwareId, setEditingSoftwareId] = useState<string | null>(null);
   const [editingOnlineRepairId, setEditingOnlineRepairId] = useState<string | null>(null);
+  /** Prefill form khi clone đơn phần mềm (mode tạo mới, không phải sửa). */
+  const [cloneOnlineRepairDraft, setCloneOnlineRepairDraft] = useState<OnlineRepair | null>(null);
+  const [cloneOnlineRepairFormKey, setCloneOnlineRepairFormKey] = useState(0);
   const [viewingOnlineRepairId, setViewingOnlineRepairId] = useState<string | null>(null);
   const [isOnlineRepairModalOpen, setIsOnlineRepairModalOpen] = useState(false);
   const [isOnlineRepairSensitiveHidden, setIsOnlineRepairSensitiveHidden] = useState(false);
@@ -1418,8 +1422,66 @@ export default function Home() {
     if (softwareSaving) return;
     setIsOnlineRepairModalOpen(false);
     setEditingOnlineRepairId(null);
+    setCloneOnlineRepairDraft(null);
     setSoftwareBackendError("");
     setSoftwareSaving(false);
+  }
+
+  /** Clone đơn phần mềm → confirm → form tạo mới (prefill, mọi ô vẫn sửa được). */
+  function openOnlineRepairCloneModal(id: string) {
+    const source = onlineRepairs.find((item) => item.id === id);
+    if (!source) return;
+
+    const ok = window.confirm(
+      `Nhân bản đơn "${source.customerName} — ${source.deviceName}"?\n\nForm sẽ điền sẵn thông tin. Bạn có thể sửa bất kỳ ô nào rồi lưu thành đơn mới.\nGiờ nhận mặc định = hiện tại; trạng thái thanh toán = NỢ DAI.`
+    );
+    if (!ok) return;
+
+    setEditingOnlineRepairId(null);
+    setCloneOnlineRepairDraft({
+      ...source,
+      id: "",
+      receiveDate: vnNowDateTimeLocal(),
+      completeDate: "",
+      paymentDate: "",
+      paymentStatus: "NỢ DAI",
+      isPaid: false,
+      rewardPoints: 0,
+    });
+    setCloneOnlineRepairFormKey((k) => k + 1);
+    setIsOnlineRepairModalOpen(true);
+  }
+
+  /** Xóa đơn phần mềm — bắt buộc confirm trước khi gọi API. */
+  async function deleteOnlineRepair(id: string) {
+    const source = onlineRepairs.find((item) => item.id === id);
+    if (!source) return;
+
+    const ok = window.confirm(
+      `Xóa đơn "${source.customerName} — ${source.deviceName}"?\n\nThao tác này không hoàn tác được.`
+    );
+    if (!ok) return;
+
+    setSoftwareBackendError("");
+    try {
+      await apiDeleteSoftwareOrder(id);
+      pushLog(
+        "Xóa đơn phần mềm",
+        `${source.customerName} — ${source.deviceName}`,
+        softwareLookupStoreId
+      );
+      if (editingOnlineRepairId === id) closeOnlineRepairModal();
+      if (viewingOnlineRepairId === id) setViewingOnlineRepairId(null);
+      await reloadSoftwareFromDb();
+      showUiToast(
+        "success",
+        `Đã xóa đơn ${source.customerName} — ${source.deviceName}.`
+      );
+    } catch (err) {
+      const msg = toUiError(err);
+      setSoftwareBackendError(msg);
+      showUiToast("error", `Xóa đơn phần mềm thất bại: ${msg}`);
+    }
   }
 
   async function savePhone(event: FormEvent<HTMLFormElement>) {
@@ -2861,9 +2923,14 @@ export default function Home() {
                 ) : null}
               </div>
             )}
-            {isOnlineRepairModalOpen && (
+            {isOnlineRepairModalOpen && (() => {
+              const onlineRepairFormDefaults = editingOnlineRepairId
+                ? onlineRepairs.find((r) => r.id === editingOnlineRepairId) ?? null
+                : cloneOnlineRepairDraft;
+              const isCloneMode = !editingOnlineRepairId && Boolean(cloneOnlineRepairDraft);
+              return (
               <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/60 p-4 backdrop-blur-md">
-                <div className="relative my-auto w-full max-w-2xl rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
+                <div className="relative my-auto w-full max-w-4xl rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
                   {softwareSaving ? (
                     <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 rounded-2xl bg-white/55 backdrop-blur-sm">
                       <Loader2 size={40} className="animate-spin text-brand" />
@@ -2871,7 +2938,13 @@ export default function Home() {
                     </div>
                   ) : null}
                   <div className="flex items-center justify-between border-b border-slate-200/60 bg-white/80 p-4 backdrop-blur-md">
-                    <h2 className="text-xl font-black text-brand">{editingOnlineRepairId ? "Sửa đơn Phần mềm" : "Tạo đơn Phần mềm"}</h2>
+                    <h2 className="text-xl font-black text-brand">
+                      {editingOnlineRepairId
+                        ? "Sửa đơn Phần mềm"
+                        : isCloneMode
+                          ? "Tạo đơn (nhân bản)"
+                          : "Tạo đơn Phần mềm"}
+                    </h2>
                     <button
                       type="button"
                       onClick={closeOnlineRepairModal}
@@ -2887,8 +2960,16 @@ export default function Home() {
                         {softwareBackendError}
                       </div>
                     ) : null}
+                    {isCloneMode ? (
+                      <div className="mb-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800">
+                        Đã copy thông tin đơn mẫu — sửa nếu cần, rồi lưu thành đơn mới.
+                      </div>
+                    ) : null}
                     <form
-                      key={editingOnlineRepairId ?? "new"}
+                      key={
+                        editingOnlineRepairId ??
+                        (isCloneMode ? `clone-${cloneOnlineRepairFormKey}` : "new")
+                      }
                       onSubmit={async (e) => {
                         e.preventDefault();
                         if (softwareSaving) return;
@@ -2899,9 +2980,11 @@ export default function Home() {
                           form.get("paymentStatus")
                         ) as OnlineRepair["paymentStatus"];
                         const isEdit = Boolean(editingOnlineRepairId);
+                        const isClone = !isEdit && Boolean(cloneOnlineRepairDraft);
                         const existing = editingOnlineRepairId
                           ? onlineRepairs.find((r) => r.id === editingOnlineRepairId)
                           : null;
+                        const draft = isClone ? cloneOnlineRepairDraft : null;
 
                         const lookupStore = softwareLookupStoreId;
                         const payload = {
@@ -2909,12 +2992,26 @@ export default function Home() {
                           customerName: String(form.get("customerName")),
                           customerType: (form.get("customerType")
                             ? String(form.get("customerType"))
-                            : existing?.customerType || "Vãng lai") as OnlineRepair["customerType"],
+                            : existing?.customerType ||
+                              draft?.customerType ||
+                              "Vãng lai") as OnlineRepair["customerType"],
                           deviceName: String(form.get("deviceName")),
-                          issue: existing?.issue ?? "",
+                          issue: existing?.issue ?? draft?.issue ?? "",
                           quote,
                           deposit,
-                          receiveDate: String(form.get("receiveDate") || ""),
+                          receiveDate: (() => {
+                            const d = String(form.get("receiveDatePart") || "").trim();
+                            const h = String(form.get("receiveHour") || "").trim().padStart(2, "0");
+                            const m = String(form.get("receiveMinute") || "").trim().padStart(2, "0");
+                            // Fallback: ô time gộp (nếu còn)
+                            const t =
+                              h && m && /^\d{2}$/.test(h) && /^\d{2}$/.test(m)
+                                ? `${h}:${m}`
+                                : String(form.get("receiveTimePart") || "").trim();
+                            if (d && t) return `${d}T${t}`;
+                            if (d) return d;
+                            return String(form.get("receiveDate") || "");
+                          })(),
                           completeDate: existing?.completeDate ?? "",
                           paymentDate: existing?.paymentDate ?? "",
                           paymentStatus: pStatus,
@@ -2948,7 +3045,11 @@ export default function Home() {
                           pushSw(SOFTWARE_LOOKUP_CATEGORIES.quote, String(Math.round(saved.quote || 0)));
                           pushSw(SOFTWARE_LOOKUP_CATEGORIES.fee, String(Math.round(saved.deposit || 0)));
                           pushLog(
-                            isEdit ? "Sửa đơn phần mềm" : "Tạo đơn phần mềm",
+                            isEdit
+                              ? "Sửa đơn phần mềm"
+                              : isClone
+                                ? "Nhân bản đơn phần mềm"
+                                : "Tạo đơn phần mềm",
                             `${saved.customerName} — ${saved.deviceName}`,
                             lookupStore
                           );
@@ -2958,10 +3059,13 @@ export default function Home() {
                             "success",
                             isEdit
                               ? `Đã sửa đơn ${saved.customerName} — ${saved.deviceName} thành công.`
-                              : `Đã tạo đơn ${saved.customerName} — ${saved.deviceName} thành công.`
+                              : isClone
+                                ? `Đã nhân bản đơn ${saved.customerName} — ${saved.deviceName} thành công.`
+                                : `Đã tạo đơn ${saved.customerName} — ${saved.deviceName} thành công.`
                           );
                           setSoftwareSaving(false);
                           setEditingOnlineRepairId(null);
+                          setCloneOnlineRepairDraft(null);
                           setIsOnlineRepairModalOpen(false);
                         } catch (err) {
                           const msg = toUiError(err);
@@ -2980,7 +3084,7 @@ export default function Home() {
                     name="customerName"
                     options={softwareCustomerOptions}
                     setOptions={setFormLookupOptions(SOFTWARE_LOOKUP_CATEGORIES.customer, softwareLookupStoreId)}
-                    defaultValue={onlineRepairs.find((r) => r.id === editingOnlineRepairId)?.customerName}
+                    defaultValue={onlineRepairFormDefaults?.customerName}
                     categoryCode={SOFTWARE_LOOKUP_CATEGORIES.customer}
                     storeId={softwareLookupStoreId}
                     onRenameCascade={reloadSoftwareFromDb}
@@ -2993,7 +3097,7 @@ export default function Home() {
                     name="deviceName"
                     options={softwareDeviceOptions}
                     setOptions={setFormLookupOptions(SOFTWARE_LOOKUP_CATEGORIES.device, softwareLookupStoreId)}
-                    defaultValue={onlineRepairs.find((r) => r.id === editingOnlineRepairId)?.deviceName}
+                    defaultValue={onlineRepairFormDefaults?.deviceName}
                     categoryCode={SOFTWARE_LOOKUP_CATEGORIES.device}
                     storeId={softwareLookupStoreId}
                     onRenameCascade={reloadSoftwareFromDb}
@@ -3008,7 +3112,7 @@ export default function Home() {
                     name="quote"
                     options={softwareQuoteOptions}
                     setOptions={setFormLookupOptions(SOFTWARE_LOOKUP_CATEGORIES.quote, softwareLookupStoreId)}
-                    defaultValue={formatInputMoney(onlineRepairs.find((r) => r.id === editingOnlineRepairId)?.quote ?? "")}
+                    defaultValue={formatInputMoney(onlineRepairFormDefaults?.quote ?? "")}
                     categoryCode={SOFTWARE_LOOKUP_CATEGORIES.quote}
                     storeId={softwareLookupStoreId}
                     onRenameCascade={reloadSoftwareFromDb}
@@ -3022,9 +3126,7 @@ export default function Home() {
                     options={softwareFeeOptions}
                     setOptions={setFormLookupOptions(SOFTWARE_LOOKUP_CATEGORIES.fee, softwareLookupStoreId)}
                     defaultValue={formatInputMoney(
-                      editingOnlineRepairId
-                        ? onlineRepairs.find((r) => r.id === editingOnlineRepairId)?.deposit ?? 0
-                        : 0
+                      onlineRepairFormDefaults != null ? onlineRepairFormDefaults.deposit ?? 0 : 0
                     )}
                     categoryCode={SOFTWARE_LOOKUP_CATEGORIES.fee}
                     storeId={softwareLookupStoreId}
@@ -3035,14 +3137,80 @@ export default function Home() {
                   />
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Giờ"><input name="receiveDate" type="datetime-local" defaultValue={onlineRepairs.find(r => r.id === editingOnlineRepairId)?.receiveDate || vnNowDateTimeLocal()} className="h-10 rounded-lg border border-line px-3 text-xs" /></Field>
+                  {(() => {
+                    const raw =
+                      onlineRepairFormDefaults?.receiveDate || vnNowDateTimeLocal();
+                    const local = String(raw).slice(0, 16).replace(" ", "T");
+                    const [datePart = "", timePart = ""] = local.includes("T")
+                      ? local.split("T")
+                      : [local.slice(0, 10), "00:00"];
+                    const [hourPart = "00", minutePart = "00"] = (timePart || "00:00")
+                      .slice(0, 5)
+                      .split(":");
+                    const hours = Array.from({ length: 24 }, (_, i) =>
+                      String(i).padStart(2, "0")
+                    );
+                    const minutes = Array.from({ length: 60 }, (_, i) =>
+                      String(i).padStart(2, "0")
+                    );
+                    return (
+                      <div className="grid min-w-0 gap-1.5 sm:col-span-1">
+                        <span className="text-base font-black text-slate-950">
+                          Ngày & giờ <span className="ml-1 text-red-500">*</span>
+                        </span>
+                        <div className="grid min-w-0 grid-cols-[minmax(0,1.4fr)_minmax(0,0.7fr)_minmax(0,0.7fr)] gap-2">
+                          <label className="grid min-w-0 gap-1">
+                            <span className="text-xs font-bold text-brand">Ngày</span>
+                            <input
+                              name="receiveDatePart"
+                              type="date"
+                              required
+                              defaultValue={datePart}
+                              title="Ngày tháng năm"
+                              className="h-10 w-full min-w-0 rounded-lg border border-line bg-brand-soft/40 px-2 text-sm font-black text-brand outline-none focus:border-brand"
+                            />
+                          </label>
+                          <label className="grid min-w-0 gap-1">
+                            <span className="text-xs font-bold text-amber-800">Giờ</span>
+                            <select
+                              name="receiveHour"
+                              required
+                              defaultValue={hourPart.padStart(2, "0")}
+                              title="Giờ (0–23)"
+                              className="h-10 w-full min-w-0 rounded-lg border border-line bg-amber-50 px-1.5 text-sm font-black text-amber-900 outline-none focus:border-amber-500"
+                            >
+                              {hours.map((h) => (
+                                <option key={`h-${h}`} value={h}>
+                                  {h}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="grid min-w-0 gap-1">
+                            <span className="text-xs font-bold text-amber-800">Phút</span>
+                            <select
+                              name="receiveMinute"
+                              required
+                              defaultValue={minutePart.padStart(2, "0")}
+                              title="Phút (0–59)"
+                              className="h-10 w-full min-w-0 rounded-lg border border-line bg-amber-50 px-1.5 text-sm font-black text-amber-900 outline-none focus:border-amber-500"
+                            >
+                              {minutes.map((m) => (
+                                <option key={`m-${m}`} value={m}>
+                                  {m}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+                    );
+                  })()}
                   <Field label="Thanh toán" required>
                     <select
                       name="paymentStatus"
                       required
-                      defaultValue={
-                        onlineRepairs.find((r) => r.id === editingOnlineRepairId)?.paymentStatus ?? "NỢ DAI"
-                      }
+                      defaultValue={onlineRepairFormDefaults?.paymentStatus ?? "NỢ DAI"}
                       className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
                     >
                       <option value="NỢ DAI">NỢ DAI</option>
@@ -3064,15 +3232,30 @@ export default function Home() {
                     disabled={softwareSaving}
                     className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-70"
                   >
-                    {softwareSaving ? <Loader2 size={18} className="animate-spin" /> : editingOnlineRepairId ? <Edit3 size={18} /> : <Plus size={18} />}
-                    {softwareSaving ? "Đang lưu…" : editingOnlineRepairId ? "Lưu thay đổi" : "Tạo đơn"}
+                    {softwareSaving ? (
+                      <Loader2 size={18} className="animate-spin" />
+                    ) : editingOnlineRepairId ? (
+                      <Edit3 size={18} />
+                    ) : isCloneMode ? (
+                      <CopyPlus size={18} />
+                    ) : (
+                      <Plus size={18} />
+                    )}
+                    {softwareSaving
+                      ? "Đang lưu…"
+                      : editingOnlineRepairId
+                        ? "Lưu thay đổi"
+                        : isCloneMode
+                          ? "Lưu đơn mới"
+                          : "Tạo đơn"}
                   </button>
                 </div>
               </form>
                   </div>
                 </div>
               </div>
-            )}
+              );
+            })()}
 
             <div className="grid gap-4">
               <div className="rounded-lg bg-gradient-to-br from-indigo-800 via-blue-700 to-brand p-4 sm:p-5 text-white shadow relative overflow-hidden flex flex-col md:flex-row justify-between items-center md:text-left text-center gap-4 mb-4">
@@ -3139,7 +3322,14 @@ export default function Home() {
                       {isOnlineRepairSensitiveHidden ? <EyeOff size={18} /> : <Eye size={18} />}
                       {isOnlineRepairSensitiveHidden ? "Hiện" : "Ẩn"}
                     </button>
-                    <button onClick={() => { setEditingOnlineRepairId(null); setIsOnlineRepairModalOpen(true); }} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white shadow hover:bg-brand-dark">
+                    <button
+                      onClick={() => {
+                        setEditingOnlineRepairId(null);
+                        setCloneOnlineRepairDraft(null);
+                        setIsOnlineRepairModalOpen(true);
+                      }}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white shadow hover:bg-brand-dark"
+                    >
                       <Plus size={18} /> Tạo đơn mới
                     </button>
                   </div>
@@ -3188,6 +3378,7 @@ export default function Home() {
                           <button
                             type="button"
                             onClick={() => {
+                              setCloneOnlineRepairDraft(null);
                               setEditingOnlineRepairId(item.id);
                               setIsOnlineRepairModalOpen(true);
                             }}
@@ -3195,6 +3386,22 @@ export default function Home() {
                             className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20"
                           >
                             <Edit3 size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openOnlineRepairCloneModal(item.id)}
+                            title="Nhân bản thêm mới"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100"
+                          >
+                            <CopyPlus size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void deleteOnlineRepair(item.id)}
+                            title="Xóa đơn"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100"
+                          >
+                            <Trash2 size={16} />
                           </button>
                         </div>
                       ];
@@ -3303,6 +3510,7 @@ export default function Home() {
                         type="button"
                         onClick={() => {
                           setViewingOnlineRepairId(null);
+                          setCloneOnlineRepairDraft(null);
                           setEditingOnlineRepairId(viewingOnlineRepair.id);
                           setIsOnlineRepairModalOpen(true);
                         }}
@@ -3777,7 +3985,7 @@ function ManageableSelect({
 
   return (
     <Field label={label} required={required}>
-      <div className="flex gap-1">
+      <div className="flex min-w-0 items-center gap-1.5">
         <ScrollableSelect
           name={name}
           options={displayOptions}
@@ -3790,19 +3998,19 @@ function ManageableSelect({
           allowFreeText={allowFreeText}
           placeholder={allowFreeText ? "Chọn hoặc nhập" : "Chọn"}
         />
-        {allowManage && sortable ? (
-          <button
-            type="button"
-            onClick={() => void handleSort()}
-            disabled={busy || options.length < 2}
-            title="Sắp xếp (nhỏ → lớn)"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 disabled:opacity-50"
-          >
-            <ArrowUpDown size={18} />
-          </button>
-        ) : null}
         {allowManage ? (
-          <>
+          <div className="flex shrink-0 items-center gap-1">
+            {sortable ? (
+              <button
+                type="button"
+                onClick={() => void handleSort()}
+                disabled={busy || options.length < 2}
+                title="Sắp xếp (nhỏ → lớn)"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 disabled:opacity-50"
+              >
+                <ArrowUpDown size={18} />
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={handleAdd}
@@ -3830,7 +4038,7 @@ function ManageableSelect({
             >
               <Trash2 size={18} />
             </button>
-          </>
+          </div>
         ) : null}
       </div>
     </Field>
