@@ -88,8 +88,11 @@ function toUiError(err: unknown): string {
 }
 
 const SESSION_KEY = "kimchi.session";
-/** Tự đăng xuất sau 2 giờ (không lưu mật khẩu trong session). */
-const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
+/** Tự đăng xuất sau 8 giờ không thao tác (idle). Có dùng thì gia hạn lại. */
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+/** Không ghi sessionStorage quá dày khi user click liên tục. */
+const SESSION_TOUCH_THROTTLE_MS = 60_000;
+let lastSessionTouchAt = 0;
 
 type Role = "owner" | "staff";
 type StoreId = "all" | "store-1" | "store-2" | "store-3";
@@ -432,11 +435,34 @@ function saveSession(user: User) {
     };
     // Chỉ user + thời hạn — tuyệt đối không ghi password
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(payload));
+    lastSessionTouchAt = now;
     try {
       localStorage.removeItem(SESSION_KEY);
     } catch {
       /* ignore */
     }
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Gia hạn phiên khi user còn thao tác (sliding idle timeout).
+ * Không đụng user payload; không gia hạn nếu đã hết hạn.
+ */
+function touchSession(force = false) {
+  try {
+    const now = Date.now();
+    if (!force && now - lastSessionTouchAt < SESSION_TOUCH_THROTTLE_MS) return;
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return;
+    const payload = JSON.parse(raw) as SessionPayload;
+    if (!payload?.user?.id || !payload.user?.username) return;
+    if (typeof payload.expiresAt !== "number") return;
+    if (now >= payload.expiresAt) return;
+    payload.expiresAt = now + SESSION_TTL_MS;
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(payload));
+    lastSessionTouchAt = now;
   } catch {
     /* ignore */
   }
@@ -453,6 +479,7 @@ function clearSession() {
   } catch {
     /* ignore */
   }
+  lastSessionTouchAt = 0;
 }
 
 function loadSession(): { user: User; expiresAt: number } | null {
@@ -1094,14 +1121,16 @@ export default function Home() {
     };
   }, [sessionReady, currentUser]);
 
-  // Tự logout khi hết 2h; kiểm tra định kỳ + khi focus lại tab
+  // Idle 8h không thao tác → logout; còn dùng thì touchSession gia hạn
   useEffect(() => {
     if (!currentUser) return;
 
     const forceLogoutIfExpired = () => {
       const s = loadSession();
       if (!s) {
-        setLoginError("Phiên đăng nhập đã hết (2 giờ). Vui lòng đăng nhập lại.");
+        setLoginError(
+          "Phiên đăng nhập đã hết (8 giờ không thao tác). Vui lòng đăng nhập lại."
+        );
         handleLogout();
         return true;
       }
@@ -1110,36 +1139,41 @@ export default function Home() {
 
     if (forceLogoutIfExpired()) return;
 
-    const remaining = (() => {
-      try {
-        const raw = sessionStorage.getItem(SESSION_KEY);
-        if (!raw) return 0;
-        const p = JSON.parse(raw) as SessionPayload;
-        return Math.max(0, (p.expiresAt ?? 0) - Date.now());
-      } catch {
-        return 0;
-      }
-    })();
+    // Lần đầu mount: coi như đang dùng, gia hạn mốc idle
+    touchSession(true);
 
-    const timer = window.setTimeout(() => {
-      setLoginError("Phiên đăng nhập đã hết (2 giờ). Vui lòng đăng nhập lại.");
-      handleLogout();
-    }, remaining || SESSION_TTL_MS);
+    const onActivity = () => {
+      touchSession(false);
+    };
+
+    const activityOpts: AddEventListenerOptions = { capture: true, passive: true };
+    window.addEventListener("pointerdown", onActivity, activityOpts);
+    window.addEventListener("keydown", onActivity, activityOpts);
+    window.addEventListener("scroll", onActivity, activityOpts);
+    window.addEventListener("touchstart", onActivity, activityOpts);
 
     const onVisibility = () => {
-      if (document.visibilityState === "visible") forceLogoutIfExpired();
+      if (document.visibilityState === "visible") {
+        if (!forceLogoutIfExpired()) touchSession(false);
+      }
     };
-    const onFocus = () => forceLogoutIfExpired();
+    const onFocus = () => {
+      if (!forceLogoutIfExpired()) touchSession(false);
+    };
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("focus", onFocus);
 
+    // Poll đủ dày để logout gần đúng mốc 8h idle (không phụ thuộc 1 setTimeout cố định)
     const poll = window.setInterval(() => {
       forceLogoutIfExpired();
     }, 60_000);
 
     return () => {
-      window.clearTimeout(timer);
       window.clearInterval(poll);
+      window.removeEventListener("pointerdown", onActivity, activityOpts);
+      window.removeEventListener("keydown", onActivity, activityOpts);
+      window.removeEventListener("scroll", onActivity, activityOpts);
+      window.removeEventListener("touchstart", onActivity, activityOpts);
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("focus", onFocus);
     };
@@ -3345,11 +3379,6 @@ export default function Home() {
                         "Ưu tiên": "text-red-600 bg-red-50 px-2 py-0.5 rounded-full text-xs font-bold",
                       }[item.customerType] || "text-slate-500";
                       
-                      const formatDateTime = (dt: string) => {
-                        if (!dt) return "-";
-                        return formatVnDateTime(dt) || dt.replace("T", " ");
-                      };
-                      
                       const isNợ = item.paymentStatus === "NỢ DAI";
                       const isDaThanhToan = item.paymentStatus === "Đã thanh toán";
 
@@ -3359,7 +3388,7 @@ export default function Home() {
                         formatMoney(item.quote),
                         isOnlineRepairSensitiveHidden ? "***" : formatMoney(item.deposit),
                         <span key={item.id} className="font-black text-amber-700">{isOnlineRepairSensitiveHidden ? "***" : formatMoney(item.quote - item.deposit)}</span>,
-                        <span key={item.id} className="text-xs font-semibold text-slate-500 whitespace-nowrap">{formatDateTime(item.receiveDate)}</span>,
+                        <ColoredDateTime key={`dt-${item.id}`} value={item.receiveDate} />,
                         <span
                           key={item.id}
                           className={`inline-flex h-8 items-center rounded text-xs font-bold px-2 shadow-sm border border-line ${isNợ ? "bg-red-50 text-red-600" : isDaThanhToan ? "bg-emerald-50 text-emerald-600" : "bg-slate-50 text-slate-600"}`}
@@ -3481,10 +3510,8 @@ export default function Home() {
                         </div>
                       </Field>
                       <Field label="Giờ nhận">
-                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-sm font-semibold text-slate-700">
-                          {formatVnDateTime(viewingOnlineRepair.receiveDate) ||
-                            (viewingOnlineRepair.receiveDate || "").replace("T", " ") ||
-                            "—"}
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3">
+                          <ColoredDateTime value={viewingOnlineRepair.receiveDate} size="md" />
                         </div>
                       </Field>
                       <Field label="Ghi chú / Lỗi">
@@ -3537,6 +3564,33 @@ function Panel({ title, children }: { title: string; children: ReactNode }) {
       <h2 className="mb-4 text-lg font-black">{title}</h2>
       {children}
     </section>
+  );
+}
+
+/** Ngày (xanh brand) + giờ phút (vàng amber) — đồng bộ form tạo đơn. */
+function ColoredDateTime({
+  value,
+  size = "sm",
+}: {
+  value?: string | null;
+  size?: "sm" | "md";
+}) {
+  const raw = formatVnDateTime(value) || String(value || "").replace("T", " ").trim();
+  if (!raw) {
+    return <span className="text-muted">—</span>;
+  }
+  const m = raw.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)/);
+  const textCls = size === "md" ? "text-sm font-bold" : "text-xs font-semibold";
+  if (!m) {
+    return <span className={`${textCls} text-slate-600 whitespace-nowrap`}>{raw}</span>;
+  }
+  const datePart = m[1];
+  const timePart = m[2].slice(0, 5); // HH:mm
+  return (
+    <span className={`inline-flex items-center gap-1.5 whitespace-nowrap ${textCls}`}>
+      <span className="rounded-md bg-brand-soft/70 px-1.5 py-0.5 font-black text-brand">{datePart}</span>
+      <span className="rounded-md bg-amber-50 px-1.5 py-0.5 font-black text-amber-800">{timePart}</span>
+    </span>
   );
 }
 
