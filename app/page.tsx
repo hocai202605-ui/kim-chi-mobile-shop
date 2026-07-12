@@ -2267,26 +2267,26 @@ export default function Home() {
               </div>
 
               <div className="flex flex-col gap-4 p-4">
-                <aside className="grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-                    <span className="block text-sm font-bold text-emerald-700">Số lượng đã bán</span>
-                    <strong className="text-2xl text-emerald-700">
+                <aside className="grid gap-2 sm:grid-cols-3">
+                  <div className="flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+                    <span className="min-w-0 text-sm font-bold text-emerald-700">Số lượng đã bán</span>
+                    <strong className="shrink-0 text-xl font-black tabular-nums text-emerald-700">
                       {isStatsHidden ? "***" : (inventoryTab === "phones"
                         ? phones.filter((p) => p.status === "Đã bán" && (storeFilter === "all" || p.storeId === storeFilter)).length
                         : sales.filter((s) => s.itemType === "Phụ kiện" && s.status === "Hoàn tất" && (storeFilter === "all" || s.storeId === storeFilter)).reduce((sum, s) => sum + s.quantity, 0))}
                     </strong>
                   </div>
-                  <div className="rounded-lg border border-sky-200 bg-sky-50 p-4">
-                    <span className="block text-sm font-bold text-sky-700">Số lượng còn hàng</span>
-                    <strong className="text-2xl text-sky-700">
+                  <div className="flex items-center justify-between gap-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2.5">
+                    <span className="min-w-0 text-sm font-bold text-sky-700">Số lượng còn hàng</span>
+                    <strong className="shrink-0 text-xl font-black tabular-nums text-sky-700">
                       {isStatsHidden ? "***" : (inventoryTab === "phones"
                         ? phones.filter((p) => p.status === "Còn hàng" && (storeFilter === "all" || p.storeId === storeFilter)).length
                         : accessories.filter((a) => a.status === "Còn hàng" && (storeFilter === "all" || a.storeId === storeFilter)).reduce((sum, a) => sum + a.quantity, 0))}
                     </strong>
                   </div>
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-                    <span className="block text-sm font-bold text-amber-700">Số lượng chưa xử lý</span>
-                    <strong className="text-2xl text-amber-700">
+                  <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+                    <span className="min-w-0 text-sm font-bold text-amber-700">Số lượng chưa xử lý</span>
+                    <strong className="shrink-0 text-xl font-black tabular-nums text-amber-700">
                       {isStatsHidden ? "***" : (inventoryTab === "phones"
                         ? phones.filter((p) => p.status === "Chưa xử lý" && (storeFilter === "all" || p.storeId === storeFilter)).length
                         : 0)}
