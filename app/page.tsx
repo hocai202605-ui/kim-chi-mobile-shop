@@ -376,16 +376,16 @@ const logSeed: AuditLog[] = [
 ];
 
 const navItems = [
-  { id: "online-repairs", label: "Quản lý phần mềm", icon: Terminal },
-  { id: "inventory", label: "Quản lý kho hàng", icon: Boxes },
-  { id: "inventoryReports", label: "Quản lý báo cáo kho hàng", icon: FileText },
-  { id: "sales", label: "Quản lý bán hàng", icon: ReceiptText },
-  { id: "software", label: "Quản lý sửa chữa", icon: Wrench },
-  { id: "customers", label: "Quản lý khách hàng", icon: Users },
-  { id: "ledger", label: "Quản lý thu chi", icon: CreditCard },
-  { id: "logs", label: "Quản lý nhật ký", icon: ClipboardList },
-  { id: "accounts", label: "Quản lý tài khoản", icon: UserCog },
-  { id: "dashboard", label: "Quản lý Dashboard", icon: LayoutDashboard },
+  { id: "online-repairs", label: "Phần mềm", icon: Terminal },
+  { id: "inventory", label: "Kho hàng", icon: Boxes },
+  { id: "inventoryReports", label: "Báo cáo kho hàng", icon: FileText },
+  { id: "sales", label: "Bán hàng", icon: ReceiptText },
+  { id: "software", label: "Sửa chữa", icon: Wrench },
+  { id: "customers", label: "Khách hàng", icon: Users },
+  { id: "ledger", label: "Thu chi", icon: CreditCard },
+  { id: "logs", label: "Nhật ký", icon: ClipboardList },
+  { id: "accounts", label: "Tài khoản", icon: UserCog },
+  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
 ] as const;
 
 type PageId = (typeof navItems)[number]["id"];
@@ -1468,42 +1468,13 @@ export default function Home() {
     setInventoryBackendError("");
     try {
       const saved = await apiUpsertPhone({ ...payload, id: editingPhoneId ?? undefined });
-      setPhones((prev) =>
-        editingPhoneId
-          ? prev.map((item) => (item.id === editingPhoneId ? saved : item))
-          : [saved, ...prev]
-      );
-      // Server ensure-lookup đã ghi DB theo store của máy; đồng bộ option local store đó.
-      const pushOptToStore = (store: string, categoryCode: string, value: string) => {
-        const v = value?.trim();
-        if (!v) return;
-        setLookupsByStore((prev) => {
-          const cur = prev[store]?.[categoryCode] ?? [];
-          if (cur.some((o) => o.toLowerCase() === v.toLowerCase())) return prev;
-          return {
-            ...prev,
-            [store]: {
-              ...(prev[store] ?? {}),
-              [categoryCode]: [...cur, v],
-            },
-          };
-        });
-      };
-      const sid = saved.storeId;
-      pushOptToStore(sid, PHONE_LOOKUP_CATEGORIES.brand, saved.brand);
-      pushOptToStore(sid, PHONE_LOOKUP_CATEGORIES.modelName, saved.name);
-      pushOptToStore(sid, PHONE_LOOKUP_CATEGORIES.color, saved.color);
-      pushOptToStore(sid, PHONE_LOOKUP_CATEGORIES.storage, saved.storage);
-      pushOptToStore(sid, PHONE_LOOKUP_CATEGORIES.madeIn, saved.madeIn);
-      pushOptToStore(sid, PHONE_LOOKUP_CATEGORIES.condition, saved.condition);
-      pushOptToStore(sid, PHONE_LOOKUP_CATEGORIES.batteryCondition, saved.batteryCondition);
-      pushOptToStore(sid, PHONE_LOOKUP_CATEGORIES.batteryCapacity, saved.batteryCapacity || "");
-      void refreshDashboardSummary();
       pushLog(
         isEdit ? "Sửa máy trong kho" : isClone ? "Nhân bản máy vào kho" : "Thêm máy vào kho",
         saved.imei,
         storeId
       );
+      // Reload grid + droplist từ DB để khớp dữ liệu server (sort, status, lookup…).
+      await reloadInventoryFromDb();
       const successMsg = isEdit
         ? `Đã sửa máy ${saved.brand} ${saved.name} (IMEI …${saved.imei.slice(-5)}) thành công.`
         : isClone
@@ -1549,17 +1520,13 @@ export default function Home() {
         ...payload,
         id: editingAccessoryId ?? undefined,
       });
-      setAccessories((prev) =>
-        editingAccessoryId
-          ? prev.map((item) => (item.id === editingAccessoryId ? saved : item))
-          : [saved, ...prev]
-      );
-      void refreshDashboardSummary();
       pushLog(
         editingAccessoryId ? "Sửa phụ kiện trong kho" : "Thêm phụ kiện vào kho",
         saved.code,
         storeId
       );
+      // Reload grid từ DB để danh sách phụ kiện khớp server.
+      await reloadInventoryFromDb();
       showUiToast(
         "success",
         isEdit ? `Đã sửa phụ kiện ${saved.name} thành công.` : `Đã thêm phụ kiện ${saved.name} thành công.`
@@ -2960,11 +2927,6 @@ export default function Home() {
                         setSoftwareBackendError("");
                         try {
                           const saved = await apiUpsertSoftwareOrder(payload);
-                          setOnlineRepairs((prev) =>
-                            editingOnlineRepairId
-                              ? prev.map((r) => (r.id === editingOnlineRepairId ? saved : r))
-                              : [saved, ...prev]
-                          );
                           // Đồng bộ option local store (server đã ensure DB)
                           const pushSw = (cat: string, val: string) => {
                             const v = val?.trim();
@@ -2990,6 +2952,8 @@ export default function Home() {
                             `${saved.customerName} — ${saved.deviceName}`,
                             lookupStore
                           );
+                          // Reload grid từ DB để danh sách đơn khớp server.
+                          await reloadSoftwareFromDb();
                           showUiToast(
                             "success",
                             isEdit
@@ -3021,6 +2985,7 @@ export default function Home() {
                     storeId={softwareLookupStoreId}
                     onRenameCascade={reloadSoftwareFromDb}
                     allowManage
+                    allowFreeText
                     actorUsername={currentUser.username}
                   />
                   <ManageableSelect
@@ -3033,6 +2998,7 @@ export default function Home() {
                     storeId={softwareLookupStoreId}
                     onRenameCascade={reloadSoftwareFromDb}
                     allowManage
+                    allowFreeText
                     actorUsername={currentUser.username}
                   />
                 </div>
@@ -3047,6 +3013,7 @@ export default function Home() {
                     storeId={softwareLookupStoreId}
                     onRenameCascade={reloadSoftwareFromDb}
                     allowManage
+                    allowFreeText
                     actorUsername={currentUser.username}
                   />
                   <ManageableSelect
@@ -3063,6 +3030,7 @@ export default function Home() {
                     storeId={softwareLookupStoreId}
                     onRenameCascade={reloadSoftwareFromDb}
                     allowManage
+                    allowFreeText
                     actorUsername={currentUser.username}
                   />
                 </div>
@@ -3370,7 +3338,8 @@ const DROPDOWN_PANEL_MAX_H = `${DROPDOWN_MAX_VISIBLE * 2.5}rem`; // 10 × h-10
 
 type ScrollableSelectOption = { value: string; label: string };
 
-/** Custom droplist: max 10 rows + scroll; fixed panel so modal overflow doesn't clip. */
+/** Custom droplist: max 10 rows + scroll; fixed panel so modal overflow doesn't clip.
+ *  allowFreeText = combobox: gõ tay + chọn từ list (lọc theo text đang gõ). */
 function ScrollableSelect({
   name,
   options,
@@ -3381,6 +3350,7 @@ function ScrollableSelect({
   className = "",
   placeholder = "Chọn",
   colorPreview = false,
+  allowFreeText = false,
 }: {
   name: string;
   options: ScrollableSelectOption[];
@@ -3392,9 +3362,12 @@ function ScrollableSelect({
   placeholder?: string;
   /** Hiện chấm màu cạnh option (dùng cho Màu sắc). */
   colorPreview?: boolean;
+  /** true = nhập tay + droplist (combobox), không bắt buộc chọn đúng option. */
+  allowFreeText?: boolean;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLUListElement>(null);
   const [open, setOpen] = useState(false);
   const [panelStyle, setPanelStyle] = useState<CSSProperties>({});
@@ -3409,24 +3382,37 @@ function ScrollableSelect({
     return hit?.label ?? (value || "");
   }, [options, value]);
 
+  const visibleOptions = useMemo(() => {
+    if (!allowFreeText) return options;
+    const q = value.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter(
+      (o) =>
+        o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q)
+    );
+  }, [allowFreeText, options, value]);
+
   const updatePanelPosition = useCallback(() => {
-    const el = triggerRef.current;
+    const el = allowFreeText ? inputRef.current : triggerRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
+    // Nút chevron cạnh input: lấy width cả khối root
+    const rootW = rootRef.current?.getBoundingClientRect().width ?? r.width;
     const spaceBelow = window.innerHeight - r.bottom - 8;
     const maxH = DROPDOWN_MAX_VISIBLE * 40; // px ≈ h-10
-    const openUp = spaceBelow < Math.min(maxH, options.length * 40) && r.top > spaceBelow;
+    const openUp =
+      spaceBelow < Math.min(maxH, visibleOptions.length * 40) && r.top > spaceBelow;
     setPanelStyle({
       position: "fixed",
-      left: r.left,
-      width: Math.max(r.width, 120),
+      left: allowFreeText ? (rootRef.current?.getBoundingClientRect().left ?? r.left) : r.left,
+      width: Math.max(allowFreeText ? rootW : r.width, 120),
       zIndex: 200,
       maxHeight: DROPDOWN_PANEL_MAX_H,
       ...(openUp
         ? { bottom: window.innerHeight - r.top + 4, top: "auto" }
         : { top: r.bottom + 4, bottom: "auto" }),
     });
-  }, [options.length]);
+  }, [allowFreeText, visibleOptions.length]);
 
   useEffect(() => {
     if (!open) return;
@@ -3468,10 +3454,14 @@ function ScrollableSelect({
             style={panelStyle}
             className="overflow-y-auto rounded-lg border border-line bg-white py-1 shadow-panel"
           >
-            {options.length === 0 ? (
-              <li className="px-3 py-2 text-sm font-semibold text-muted">Chưa có option</li>
+            {visibleOptions.length === 0 ? (
+              <li className="px-3 py-2 text-sm font-semibold text-muted">
+                {allowFreeText && value.trim()
+                  ? "Không khớp — có thể dùng text vừa nhập"
+                  : "Chưa có option"}
+              </li>
             ) : (
-              options.map((o) => {
+              visibleOptions.map((o) => {
                 const active = o.value === value;
                 return (
                   <li key={`${name}-opt-${o.value}`}>
@@ -3501,40 +3491,81 @@ function ScrollableSelect({
 
   return (
     <div ref={rootRef} className={`relative min-w-0 ${className}`}>
-      {/* Native select for FormData + HTML required validation (visually hidden) */}
-      <select
-        name={name}
-        required={required}
-        value={value}
-        disabled={disabled}
-        tabIndex={-1}
-        aria-hidden
-        onChange={(e) => onChange(e.target.value)}
-        className="pointer-events-none absolute h-px w-px opacity-0"
-      >
-        <option value="">{placeholder}</option>
-        {options.map((o) => (
-          <option key={`${name}-${o.value}`} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+      {allowFreeText ? (
+        <>
+          {/* FormData: giá trị gõ tay không bị chặn bởi option list */}
+          <input type="hidden" name={name} value={value} />
+          <div className="flex h-10 w-full min-w-0 items-center gap-1 rounded-lg border border-line bg-white focus-within:border-brand">
+            {colorPreview && value ? (
+              <span className="pl-3">
+                <ColorDot color={value} size="sm" />
+              </span>
+            ) : null}
+            <input
+              ref={inputRef}
+              type="text"
+              value={value}
+              disabled={disabled}
+              required={required}
+              placeholder={placeholder}
+              autoComplete="off"
+              onFocus={() => !disabled && setOpen(true)}
+              onChange={(e) => {
+                onChange(e.target.value);
+                if (!open) setOpen(true);
+              }}
+              className="min-w-0 flex-1 bg-transparent px-3 text-sm font-semibold text-ink outline-none placeholder:text-muted disabled:opacity-60"
+            />
+            <button
+              type="button"
+              disabled={disabled}
+              tabIndex={-1}
+              aria-label="Mở danh sách"
+              onClick={() => !disabled && setOpen((v) => !v)}
+              className="grid h-full w-9 shrink-0 place-items-center text-muted hover:text-ink disabled:opacity-60"
+            >
+              <ChevronDown size={16} className={`transition ${open ? "rotate-180" : ""}`} />
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          {/* Native select for FormData + HTML required validation (visually hidden) */}
+          <select
+            name={name}
+            required={required}
+            value={value}
+            disabled={disabled}
+            tabIndex={-1}
+            aria-hidden
+            onChange={(e) => onChange(e.target.value)}
+            className="pointer-events-none absolute h-px w-px opacity-0"
+          >
+            <option value="">{placeholder}</option>
+            {options.map((o) => (
+              <option key={`${name}-${o.value}`} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
 
-      <button
-        ref={triggerRef}
-        type="button"
-        disabled={disabled}
-        onClick={() => !disabled && setOpen((v) => !v)}
-        className="flex h-10 w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-line bg-white px-3 text-left outline-none focus:border-brand disabled:opacity-60"
-      >
-        <span className="flex min-w-0 flex-1 items-center gap-2">
-          {colorPreview && value ? <ColorDot color={value} size="sm" /> : null}
-          <span className={`min-w-0 flex-1 truncate font-semibold ${value ? "text-ink" : "text-muted"}`}>
-            {value ? selectedLabel : placeholder}
-          </span>
-        </span>
-        <ChevronDown size={16} className={`shrink-0 text-muted transition ${open ? "rotate-180" : ""}`} />
-      </button>
+          <button
+            ref={triggerRef}
+            type="button"
+            disabled={disabled}
+            onClick={() => !disabled && setOpen((v) => !v)}
+            className="flex h-10 w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-line bg-white px-3 text-left outline-none focus:border-brand disabled:opacity-60"
+          >
+            <span className="flex min-w-0 flex-1 items-center gap-2">
+              {colorPreview && value ? <ColorDot color={value} size="sm" /> : null}
+              <span className={`min-w-0 flex-1 truncate font-semibold ${value ? "text-ink" : "text-muted"}`}>
+                {value ? selectedLabel : placeholder}
+              </span>
+            </span>
+            <ChevronDown size={16} className={`shrink-0 text-muted transition ${open ? "rotate-180" : ""}`} />
+          </button>
+        </>
+      )}
 
       {panel}
     </div>
@@ -3606,6 +3637,7 @@ function ManageableSelect({
   sortable = false,
   allowManage = true,
   actorUsername = "",
+  allowFreeText = false,
 }: {
   label: string;
   name: string;
@@ -3625,6 +3657,8 @@ function ManageableSelect({
   allowManage?: boolean;
   /** Username actor khi gọi API mutate lookup */
   actorUsername?: string;
+  /** true = gõ tay + chọn droplist (dùng form phần mềm). */
+  allowFreeText?: boolean;
 }) {
   const [value, setValue] = useState(defaultValue ?? "");
   const [busy, setBusy] = useState(false);
@@ -3753,6 +3787,8 @@ function ManageableSelect({
           disabled={busy}
           className="min-w-0 flex-1"
           colorPreview={name === "color"}
+          allowFreeText={allowFreeText}
+          placeholder={allowFreeText ? "Chọn hoặc nhập" : "Chọn"}
         />
         {allowManage && sortable ? (
           <button
