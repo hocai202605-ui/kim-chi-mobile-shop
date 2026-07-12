@@ -707,7 +707,8 @@ export default function Home() {
   const [isOnlineRepairSensitiveHidden, setIsOnlineRepairSensitiveHidden] = useState(false);
   const [onlineRepairFilter, setOnlineRepairFilter] = useState("all");
   const [onlineRepairMonth, setOnlineRepairMonth] = useState(() => vnNowMonth());
-  const [onlineRepairDate, setOnlineRepairDate] = useState("");
+  /** Grid phần mềm: mặc định lọc ngày hôm nay (VN); user có thể đổi hoặc xóa để xem cả tháng. */
+  const [onlineRepairDate, setOnlineRepairDate] = useState(() => vnNowDate());
   const [customers, setCustomers] = useState(customersSeed);
   const [phones, setPhones] = useState<PhoneItem[]>([]);
   const [accessories, setAccessories] = useState<Accessory[]>([]);
@@ -3899,7 +3900,8 @@ function ManageableSelect({
   sortable = false,
   allowManage = true,
   actorUsername = "",
-  allowFreeText = false,
+  /** Mặc định bật combobox (gõ tay + droplist) — chuẩn toàn hệ thống. */
+  allowFreeText = true,
 }: {
   label: string;
   name: string;
@@ -3919,7 +3921,10 @@ function ManageableSelect({
   allowManage?: boolean;
   /** Username actor khi gọi API mutate lookup */
   actorUsername?: string;
-  /** true = gõ tay + chọn droplist (dùng form phần mềm). */
+  /**
+   * true (mặc định) = gõ tay + chọn droplist + lọc option.
+   * false = chỉ chọn trong list (dùng khi option cố định).
+   */
   allowFreeText?: boolean;
 }) {
   const [value, setValue] = useState(defaultValue ?? "");
