@@ -50,6 +50,7 @@ export async function POST(req: NextRequest) {
       customerName: body?.customerName ? String(body.customerName) : undefined,
       customerPhone: body?.customerPhone ? String(body.customerPhone) : undefined,
       note: body?.note ? String(body.note) : undefined,
+      actorUsername: body?.actorUsername ? String(body.actorUsername) : undefined,
     };
 
     if (itemType === "phone" && !input.phoneId) {

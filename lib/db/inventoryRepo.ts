@@ -24,6 +24,8 @@ export type CreateSaleInput = {
   customerName?: string;
   customerPhone?: string;
   note?: string;
+  /** Username app_accounts — created_by / updated_by. */
+  actorUsername?: string;
 };
 
 export type CreatedSale = {
@@ -139,14 +141,20 @@ export async function repoListAccessories(): Promise<Accessory[]> {
   return rows.map((r) => mapAccessory(r, idToCode));
 }
 
+function normalizeActorUsername(value?: string | null): string | null {
+  const t = String(value ?? "").trim();
+  return t || null;
+}
+
 export async function repoUpsertPhone(
-  input: Omit<PhoneItem, "id"> & { id?: string }
+  input: Omit<PhoneItem, "id"> & { id?: string; actorUsername?: string }
 ): Promise<PhoneItem> {
   const { codeToId, idToCode } = await loadStoreMaps();
   const storeId = codeToId.get(input.storeId);
   if (!storeId) throw new Error(`Không tìm thấy cửa hàng ${input.storeId}`);
 
   const status = phoneStatusToDb(input.status);
+  const actor = normalizeActorUsername(input.actorUsername);
 
   return withTransaction(async (client) => {
     // keep set_config for older DBs that still have guards; no-op after migration drop
@@ -162,8 +170,9 @@ export async function repoUpsertPhone(
           battery_condition = $9, battery_capacity = $10, condition = $11, note = $12,
           import_date = $13, sale_date = $14, cost = $15, expected_price = $16,
           status = $17::public.phone_status,
+          updated_by = coalesce($18, updated_by),
           updated_at = now()
-        where id = $18
+        where id = $19
         returning *`,
         [
           storeId,
@@ -183,6 +192,7 @@ export async function repoUpsertPhone(
           toShopMoney(Number(input.cost)),
           toShopMoney(Number(input.expectedPrice)),
           status,
+          actor,
           input.id,
         ]
       );
@@ -193,9 +203,10 @@ export async function repoUpsertPhone(
         `insert into public.phones (
           store_id, brand, model_name, imei, color, storage, made_in, network_version,
           battery_condition, battery_capacity, condition, note, import_date, sale_date,
-          cost, expected_price, status
+          cost, expected_price, status,
+          created_by, updated_by
         ) values (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::public.phone_status
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::public.phone_status,$18,$18
         ) returning *`,
         [
           storeId,
@@ -215,6 +226,7 @@ export async function repoUpsertPhone(
           toShopMoney(Number(input.cost)),
           toShopMoney(Number(input.expectedPrice)),
           status,
+          actor,
         ]
       );
       saved = mapPhone(rows[0], idToCode);
@@ -227,7 +239,7 @@ export async function repoUpsertPhone(
 }
 
 export async function repoUpsertAccessory(
-  input: Omit<Accessory, "id"> & { id?: string }
+  input: Omit<Accessory, "id"> & { id?: string; actorUsername?: string }
 ): Promise<Accessory> {
   const { codeToId, idToCode } = await loadStoreMaps();
   const storeId = codeToId.get(input.storeId);
@@ -238,6 +250,7 @@ export async function repoUpsertAccessory(
   if (status === "cancelled" && !input.id) {
     status = qty > 0 ? "in_stock" : "out_of_stock";
   }
+  const actor = normalizeActorUsername(input.actorUsername);
 
   return withTransaction(async (client) => {
     await skipStatusGuard(client);
@@ -248,8 +261,9 @@ export async function repoUpsertAccessory(
           store_id = $1, code = $2, name = $3, quantity = $4,
           cost = $5, price = $6,
           status = case when $7 = 'cancelled' then status else $7::public.accessory_status end,
+          updated_by = coalesce($8, updated_by),
           updated_at = now()
-        where id = $8
+        where id = $9
         returning *`,
         [
           storeId,
@@ -259,6 +273,7 @@ export async function repoUpsertAccessory(
           toShopMoney(Number(input.cost)),
           toShopMoney(Number(input.price)),
           status,
+          actor,
           input.id,
         ]
       );
@@ -267,8 +282,15 @@ export async function repoUpsertAccessory(
     }
 
     const { rows } = await client.query(
-      `insert into public.accessories (store_id, code, name, quantity, cost, price, status)
-       values ($1,$2,$3,$4,$5,$6, case when $4 > 0 then 'in_stock'::public.accessory_status else 'out_of_stock'::public.accessory_status end)
+      `insert into public.accessories (
+         store_id, code, name, quantity, cost, price, status,
+         created_by, updated_by
+       )
+       values (
+         $1,$2,$3,$4,$5,$6,
+         case when $4 > 0 then 'in_stock'::public.accessory_status else 'out_of_stock'::public.accessory_status end,
+         $7, $7
+       )
        returning *`,
       [
         storeId,
@@ -277,38 +299,55 @@ export async function repoUpsertAccessory(
         qty,
         toShopMoney(Number(input.cost)),
         toShopMoney(Number(input.price)),
+        actor,
       ]
     );
     return mapAccessory(rows[0], idToCode);
   });
 }
 
-export async function repoCancelPhone(id: string): Promise<PhoneItem> {
+export async function repoCancelPhone(
+  id: string,
+  actorUsername?: string
+): Promise<PhoneItem> {
   const { idToCode } = await loadStoreMaps();
+  const actor = normalizeActorUsername(actorUsername);
   return withTransaction(async (client) => {
     await skipStatusGuard(client);
     const { rows } = await client.query(
       `update public.phones
-       set status = 'cancelled', cancelled_at = now(), updated_at = now()
+       set status = 'cancelled',
+           cancelled_at = now(),
+           cancelled_by = coalesce($2, cancelled_by),
+           updated_by = coalesce($2, updated_by),
+           updated_at = now()
        where id = $1 and status <> 'cancelled'
        returning *`,
-      [id]
+      [id, actor]
     );
     if (!rows[0]) throw new Error("Không hủy được máy (không tìm thấy hoặc đã hủy).");
     return mapPhone(rows[0], idToCode);
   });
 }
 
-export async function repoCancelAccessory(id: string): Promise<Accessory> {
+export async function repoCancelAccessory(
+  id: string,
+  actorUsername?: string
+): Promise<Accessory> {
   const { idToCode } = await loadStoreMaps();
+  const actor = normalizeActorUsername(actorUsername);
   return withTransaction(async (client) => {
     await skipStatusGuard(client);
     const { rows } = await client.query(
       `update public.accessories
-       set status = 'cancelled', cancelled_at = now(), updated_at = now()
+       set status = 'cancelled',
+           cancelled_at = now(),
+           cancelled_by = coalesce($2, cancelled_by),
+           updated_by = coalesce($2, updated_by),
+           updated_at = now()
        where id = $1 and status <> 'cancelled'
        returning *`,
-      [id]
+      [id, actor]
     );
     if (!rows[0]) throw new Error("Không hủy được phụ kiện (không tìm thấy hoặc đã hủy).");
     return mapAccessory(rows[0], idToCode);
@@ -500,7 +539,9 @@ export async function repoEnsureLookupLabel(
     const sortOrder = (maxSort.rows[0]?.m ?? 0) + 10;
 
     const { rows } = await c.query<{ label: string }>(
-      `insert into public.lookup_items (category_id, store_id, code, label, sort_order, is_system)
+      `insert into public.lookup_items (
+         category_id, store_id, code, label, sort_order, is_system
+       )
        values ($1, $2, $3, $4, $5, false)
        returning label`,
       [cat.id, storeUuid, code, trimmed, sortOrder]
@@ -534,10 +575,12 @@ export async function repoEnsureLookupLabels(
 export async function repoAddLookupLabel(
   categoryCode: string,
   label: string,
-  storeCode: string
+  storeCode: string,
+  actorUsername?: string
 ): Promise<string> {
   const trimmed = label.trim();
   if (!trimmed) throw new Error("Nhãn option không được để trống.");
+  const actor = normalizeActorUsername(actorUsername);
 
   return withTransaction(async (client) => {
     const cat = await getLookupCategory(client, categoryCode);
@@ -552,7 +595,18 @@ export async function repoAddLookupLabel(
     );
     if (exists.rowCount) throw new Error(`Option "${trimmed}" đã có trong danh sách.`);
 
-    return repoEnsureLookupLabel(categoryCode, trimmed, storeCode, client);
+    const saved = await repoEnsureLookupLabel(categoryCode, trimmed, storeCode, client);
+    if (actor) {
+      await client.query(
+        `update public.lookup_items
+         set created_by = coalesce(created_by, $4),
+             updated_by = $4,
+             updated_at = now()
+         where category_id = $1 and store_id = $2 and is_active and lower(label) = lower($3)`,
+        [cat.id, storeUuid, trimmed, actor]
+      );
+    }
+    return saved;
   });
 }
 
@@ -561,8 +615,10 @@ export async function repoRenameLookupLabel(
   categoryCode: string,
   oldLabel: string,
   newLabel: string,
-  storeCode: string
+  storeCode: string,
+  actorUsername?: string
 ): Promise<string> {
+  const actor = normalizeActorUsername(actorUsername);
   const from = oldLabel.trim();
   const to = newLabel.trim();
   if (!from) throw new Error("lookup_item_not_found");
@@ -596,10 +652,12 @@ export async function repoRenameLookupLabel(
 
     const { rows } = await client.query<{ label: string }>(
       `update public.lookup_items
-       set label = $2, updated_at = now()
+       set label = $2,
+           updated_by = coalesce($3, updated_by),
+           updated_at = now()
        where id = $1
        returning label`,
-      [found[0].id, to]
+      [found[0].id, to, actor]
     );
 
     if (from !== to) {
@@ -607,18 +665,20 @@ export async function repoRenameLookupLabel(
       if (phoneCol) {
         // only allow known columns from map (not user input); scope to store
         await client.query(
-          `update public.phones set ${phoneCol} = $1, updated_at = now()
+          `update public.phones set ${phoneCol} = $1,
+             updated_by = coalesce($4, updated_by), updated_at = now()
            where ${phoneCol} = $2 and store_id = $3`,
-          [to, from, storeUuid]
+          [to, from, storeUuid, actor]
         );
       }
 
       const swTextCol = LOOKUP_SOFTWARE_TEXT_COLUMN[categoryCode];
       if (swTextCol) {
         await client.query(
-          `update public.software_orders set ${swTextCol} = $1, updated_at = now()
+          `update public.software_orders set ${swTextCol} = $1,
+             updated_by = coalesce($3, updated_by), updated_at = now()
            where ${swTextCol} = $2`,
-          [to, from]
+          [to, from, actor]
         );
       }
 
@@ -628,9 +688,10 @@ export async function repoRenameLookupLabel(
         const toN = parseLookupMoneyLabel(to);
         if (fromN != null && toN != null && fromN !== toN) {
           await client.query(
-            `update public.software_orders set ${swMoneyCol} = $1, updated_at = now()
+            `update public.software_orders set ${swMoneyCol} = $1,
+               updated_by = coalesce($3, updated_by), updated_at = now()
              where ${swMoneyCol} = $2`,
-            [toN, fromN]
+            [toN, fromN, actor]
           );
         }
       }
@@ -644,19 +705,23 @@ export async function repoRenameLookupLabel(
 export async function repoDeactivateLookupLabel(
   categoryCode: string,
   label: string,
-  storeCode: string
+  storeCode: string,
+  actorUsername?: string
 ): Promise<void> {
   const trimmed = label.trim();
   if (!trimmed) throw new Error("lookup_item_not_found");
+  const actor = normalizeActorUsername(actorUsername);
 
   await withTransaction(async (client) => {
     const cat = await getLookupCategory(client, categoryCode);
     const storeUuid = await resolveStoreUuid(storeCode, client);
     const { rowCount } = await client.query(
       `update public.lookup_items
-       set is_active = false, updated_at = now()
+       set is_active = false,
+           updated_by = coalesce($4, updated_by),
+           updated_at = now()
        where category_id = $1 and store_id = $2 and is_active and lower(label) = lower($3)`,
-      [cat.id, storeUuid, trimmed]
+      [cat.id, storeUuid, trimmed, actor]
     );
     if (!rowCount) throw new Error("lookup_item_not_found");
   });
@@ -767,7 +832,8 @@ export async function repoInventoryBootstrap(lookupCategoryCodes: string[]) {
 async function ensureCustomerId(
   client: PoolClient,
   name?: string,
-  phone?: string
+  phone?: string,
+  actor?: string | null
 ): Promise<string> {
   const n = (name || "Khách lẻ").trim() || "Khách lẻ";
   const p = (phone || "0000000000").trim() || "0000000000";
@@ -779,10 +845,10 @@ async function ensureCustomerId(
   );
   if (existing.rows[0]?.id) return existing.rows[0].id;
   const { rows } = await client.query<{ id: string }>(
-    `insert into public.customers (name, phone, note)
-     values ($1, $2, '')
+    `insert into public.customers (name, phone, note, created_by, updated_by)
+     values ($1, $2, '', $3, $3)
      returning id`,
-    [n, p]
+    [n, p, actor ?? null]
   );
   if (!rows[0]?.id) throw new Error("Không tạo được khách hàng.");
   return rows[0].id;
@@ -807,9 +873,16 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
   const lineTotalVnd = shopMoneyToVnd(toShopMoney(Number(input.unitPrice) || 0));
   if (lineTotalVnd <= 0) throw new Error("Giá bán không hợp lệ.");
 
+  const actor = normalizeActorUsername(input.actorUsername);
+
   return withTransaction(async (client) => {
     await skipStatusGuard(client);
-    const customerId = await ensureCustomerId(client, input.customerName, input.customerPhone);
+    const customerId = await ensureCustomerId(
+      client,
+      input.customerName,
+      input.customerPhone,
+      actor
+    );
 
     let itemName = "";
     let quantity = 1;
@@ -841,10 +914,11 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
       const { rows: saleRows } = await client.query(
         `insert into public.sales (
            store_id, customer_id, payment_method, status,
-           total_amount, total_cost, total_profit, note
+           total_amount, total_cost, total_profit, note,
+           created_by, updated_by
          ) values (
            $1, $2, $3::public.payment_method, 'completed',
-           $4, $5, $6, $7
+           $4, $5, $6, $7, $8, $8
          ) returning id, sold_at`,
         [
           storeUuid,
@@ -854,6 +928,7 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
           unitCostVnd,
           profit,
           input.note ?? "",
+          actor,
         ]
       );
       saleId = String(saleRows[0].id);
@@ -862,19 +937,21 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
       await client.query(
         `insert into public.sale_items (
            sale_id, sale_status, item_type, phone_id, item_name,
-           quantity, unit_cost, unit_price, amount, profit
+           quantity, unit_cost, unit_price, amount, profit,
+           created_by, updated_by
          ) values (
            $1, 'completed', 'phone', $2, $3,
-           1, $4, $5, $6, $7
+           1, $4, $5, $6, $7, $8, $8
          )`,
-        [saleId, phone.id, itemName, unitCostVnd, unitPriceVnd, amount, profit]
+        [saleId, phone.id, itemName, unitCostVnd, unitPriceVnd, amount, profit, actor]
       );
 
       await client.query(
         `update public.phones
-         set status = 'sold', sale_date = $2::date, updated_at = now()
+         set status = 'sold', sale_date = $2::date,
+             updated_by = coalesce($3, updated_by), updated_at = now()
          where id = $1`,
-        [phone.id, soldAt]
+        [phone.id, soldAt, actor]
       );
     } else {
       if (!input.accessoryId) throw new Error("Thiếu phụ kiện cần bán.");
@@ -900,10 +977,11 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
       const { rows: saleRows } = await client.query(
         `insert into public.sales (
            store_id, customer_id, payment_method, status,
-           total_amount, total_cost, total_profit, note
+           total_amount, total_cost, total_profit, note,
+           created_by, updated_by
          ) values (
            $1, $2, $3::public.payment_method, 'completed',
-           $4, $5, $6, $7
+           $4, $5, $6, $7, $8, $8
          ) returning id, sold_at`,
         [
           storeUuid,
@@ -913,6 +991,7 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
           unitCostVnd * quantity,
           profit,
           input.note ?? "",
+          actor,
         ]
       );
       saleId = String(saleRows[0].id);
@@ -921,10 +1000,11 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
       await client.query(
         `insert into public.sale_items (
            sale_id, sale_status, item_type, accessory_id, item_name,
-           quantity, unit_cost, unit_price, amount, profit
+           quantity, unit_cost, unit_price, amount, profit,
+           created_by, updated_by
          ) values (
            $1, 'completed', 'accessory', $2, $3,
-           $4, $5, $6, $7, $8
+           $4, $5, $6, $7, $8, $9, $9
          )`,
         [
           saleId,
@@ -935,6 +1015,7 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
           unitPriceVnd,
           amount,
           profit,
+          actor,
         ]
       );
 
@@ -943,9 +1024,10 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
         `update public.accessories
          set quantity = $2,
              status = case when $2 <= 0 then 'out_of_stock'::public.accessory_status else status end,
+             updated_by = coalesce($3, updated_by),
              updated_at = now()
          where id = $1`,
-        [acc.id, left]
+        [acc.id, left, actor]
       );
     }
 

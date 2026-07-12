@@ -218,10 +218,11 @@ export async function repoUpdateAccount(
         `update public.app_accounts
          set allowed_menus = $2::text[],
              is_active = $3,
-             password_hash = crypt($4, gen_salt('bf'))
+             password_hash = crypt($4, gen_salt('bf')),
+             updated_by = $5
          where id = $1
          returning ${SELECT_PUBLIC}`,
-        [accountId, menus, nextActive, password!.trim()]
+        [accountId, menus, nextActive, password!.trim(), actor.username]
       );
       if (!rows[0]) throw new Error("account_not_found");
       return mapRow(rows[0]);
@@ -230,10 +231,11 @@ export async function repoUpdateAccount(
     const { rows } = await client.query<AccountRow>(
       `update public.app_accounts
        set allowed_menus = $2::text[],
-           is_active = $3
+           is_active = $3,
+           updated_by = $4
        where id = $1
        returning ${SELECT_PUBLIC}`,
-      [accountId, menus, nextActive]
+      [accountId, menus, nextActive, actor.username]
     );
     if (!rows[0]) throw new Error("account_not_found");
     return mapRow(rows[0]);

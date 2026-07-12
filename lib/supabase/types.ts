@@ -44,6 +44,9 @@ export type DbPhone = {
   status: DbPhoneStatus;
   created_at?: string;
   updated_at?: string;
+  /** Username app_accounts */
+  created_by?: string | null;
+  updated_by?: string | null;
 };
 
 export type DbAccessory = {
@@ -57,6 +60,8 @@ export type DbAccessory = {
   status: DbAccessoryStatus;
   created_at?: string;
   updated_at?: string;
+  created_by?: string | null;
+  updated_by?: string | null;
 };
 
 export type DbLookupItem = {

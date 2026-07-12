@@ -92,7 +92,12 @@ export async function POST(
     if (!label) {
       return NextResponse.json({ error: "Thiếu nhãn option." }, { status: 400 });
     }
-    const saved = await repoAddLookupLabel(params.category, label, storeId);
+    const saved = await repoAddLookupLabel(
+      params.category,
+      label,
+      storeId,
+      actorFromBody(body)
+    );
     const labels = await repoListLookupLabels(params.category, storeId);
     return NextResponse.json({ data: { label: saved, labels } });
   } catch (err) {
@@ -134,7 +139,13 @@ export async function PATCH(
     if (!oldLabel || !label) {
       return NextResponse.json({ error: "Thiếu oldLabel hoặc label." }, { status: 400 });
     }
-    const saved = await repoRenameLookupLabel(params.category, oldLabel, label, storeId);
+    const saved = await repoRenameLookupLabel(
+      params.category,
+      oldLabel,
+      label,
+      storeId,
+      actorFromBody(body)
+    );
     const labels = await repoListLookupLabels(params.category, storeId);
     return NextResponse.json({ data: { label: saved, labels } });
   } catch (err) {
@@ -155,7 +166,12 @@ export async function DELETE(
     if (!label) {
       return NextResponse.json({ error: "Thiếu nhãn option." }, { status: 400 });
     }
-    await repoDeactivateLookupLabel(params.category, label, storeId);
+    await repoDeactivateLookupLabel(
+      params.category,
+      label,
+      storeId,
+      actorFromBody(body)
+    );
     const labels = await repoListLookupLabels(params.category, storeId);
     return NextResponse.json({ data: { labels } });
   } catch (err) {

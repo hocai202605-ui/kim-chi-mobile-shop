@@ -25,6 +25,7 @@ export type CreateSaleBody = {
   customerName?: string;
   customerPhone?: string;
   note?: string;
+  actorUsername?: string;
 };
 
 async function parseJson<T>(res: Response): Promise<T> {

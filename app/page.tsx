@@ -1564,7 +1564,11 @@ export default function Home() {
     setInventorySaving(true);
     setInventoryBackendError("");
     try {
-      const saved = await apiUpsertPhone({ ...payload, id: editingPhoneId ?? undefined });
+      const saved = await apiUpsertPhone({
+        ...payload,
+        id: editingPhoneId ?? undefined,
+        actorUsername: currentUser?.username,
+      });
       pushLog(
         isEdit ? "Sửa máy trong kho" : isClone ? "Nhân bản máy vào kho" : "Thêm máy vào kho",
         saved.imei,
@@ -1616,6 +1620,7 @@ export default function Home() {
       const saved = await apiUpsertAccessory({
         ...payload,
         id: editingAccessoryId ?? undefined,
+        actorUsername: currentUser?.username,
       });
       pushLog(
         editingAccessoryId ? "Sửa phụ kiện trong kho" : "Thêm phụ kiện vào kho",
@@ -1674,6 +1679,7 @@ export default function Home() {
         payment,
         customerName: customer?.name,
         customerPhone: customer?.phone,
+        actorUsername: currentUser?.username,
       });
 
       const sale: Sale = {
@@ -3053,6 +3059,7 @@ export default function Home() {
                           rewardPoints: existing?.rewardPoints ?? 0,
                           isPaid: pStatus === "Đã thanh toán",
                           lookupStoreId: lookupStore,
+                          actorUsername: currentUser.username,
                         };
 
                         setSoftwareSaving(true);

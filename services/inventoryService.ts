@@ -92,7 +92,10 @@ export async function listAccessories(filters: AccessoryFilters = {}): Promise<A
   return applyAccessoryFilters(rows, filters);
 }
 
-export type PhoneUpsertInput = Omit<PhoneItem, "id"> & { id?: string };
+export type PhoneUpsertInput = Omit<PhoneItem, "id"> & {
+  id?: string;
+  actorUsername?: string;
+};
 
 export async function upsertPhone(input: PhoneUpsertInput): Promise<PhoneItem> {
   const res = await fetch("/api/inventory/phones", {
@@ -103,7 +106,10 @@ export async function upsertPhone(input: PhoneUpsertInput): Promise<PhoneItem> {
   return parseJson<PhoneItem>(res);
 }
 
-export type AccessoryUpsertInput = Omit<Accessory, "id"> & { id?: string };
+export type AccessoryUpsertInput = Omit<Accessory, "id"> & {
+  id?: string;
+  actorUsername?: string;
+};
 
 export async function upsertAccessory(input: AccessoryUpsertInput): Promise<Accessory> {
   const res = await fetch("/api/inventory/accessories", {
@@ -114,13 +120,24 @@ export async function upsertAccessory(input: AccessoryUpsertInput): Promise<Acce
   return parseJson<Accessory>(res);
 }
 
-export async function cancelPhone(id: string): Promise<PhoneItem> {
-  const res = await fetch(`/api/inventory/phones/${id}/cancel`, { method: "POST" });
+export async function cancelPhone(id: string, actorUsername?: string): Promise<PhoneItem> {
+  const res = await fetch(`/api/inventory/phones/${id}/cancel`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ actorUsername }),
+  });
   return parseJson<PhoneItem>(res);
 }
 
-export async function cancelAccessory(id: string): Promise<Accessory> {
-  const res = await fetch(`/api/inventory/accessories/${id}/cancel`, { method: "POST" });
+export async function cancelAccessory(
+  id: string,
+  actorUsername?: string
+): Promise<Accessory> {
+  const res = await fetch(`/api/inventory/accessories/${id}/cancel`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ actorUsername }),
+  });
   return parseJson<Accessory>(res);
 }
 

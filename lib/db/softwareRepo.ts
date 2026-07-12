@@ -9,7 +9,14 @@ export type SoftwareOrderUpsertInput = Omit<OnlineRepair, "id" | "createdAt" | "
   isPaid?: boolean;
   /** Cửa hàng sở hữu droplist (ensure option khi lưu đơn). */
   lookupStoreId?: string;
+  /** Username app_accounts — ghi created_by / updated_by. */
+  actorUsername?: string;
 };
+
+function normalizeActorUsername(value?: string | null): string | null {
+  const t = String(value ?? "").trim();
+  return t || null;
+}
 
 function moneyLabel(n: number): string {
   const r = Math.round(Number(n) || 0);
@@ -113,6 +120,7 @@ export async function repoUpsertSoftwareOrder(
   const paymentAt =
     toIsoOrNull(input.paymentDate) ??
     (paymentStatus === "paid" ? new Date().toISOString() : null);
+  const actor = normalizeActorUsername(input.actorUsername);
 
   if (input.id) {
     const { rows } = await getPool().query<DbRow>(
@@ -128,8 +136,9 @@ export async function repoUpsertSoftwareOrder(
         payment_at = $9::timestamptz,
         payment_status = $10,
         reward_points = $11,
+        updated_by = coalesce($12, updated_by),
         updated_at = now()
-      where id = $12
+      where id = $13
       returning *`,
       [
         input.customerName.trim(),
@@ -143,6 +152,7 @@ export async function repoUpsertSoftwareOrder(
         paymentAt,
         paymentStatus,
         Math.round(Number(input.rewardPoints) || 0),
+        actor,
         input.id,
       ]
     );
@@ -156,9 +166,10 @@ export async function repoUpsertSoftwareOrder(
     `insert into public.software_orders (
       customer_name, customer_type, device_name, issue,
       quote, deposit, receive_at, complete_at, payment_at,
-      payment_status, reward_points
+      payment_status, reward_points,
+      created_by, updated_by
     ) values (
-      $1,$2,$3,$4,$5,$6,$7::timestamptz,$8::timestamptz,$9::timestamptz,$10,$11
+      $1,$2,$3,$4,$5,$6,$7::timestamptz,$8::timestamptz,$9::timestamptz,$10,$11,$12,$12
     ) returning *`,
     [
       input.customerName.trim(),
@@ -172,6 +183,7 @@ export async function repoUpsertSoftwareOrder(
       paymentAt,
       paymentStatus,
       Math.round(Number(input.rewardPoints) || 0),
+      actor,
     ]
   );
   const created = mapRow(rows[0]);
