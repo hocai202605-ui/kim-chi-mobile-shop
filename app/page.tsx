@@ -2472,7 +2472,7 @@ export default function Home() {
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
                           <ManageableSelect label="Tình trạng pin" name="batteryCondition" options={batteryOptions} setOptions={setFormLookupOptions(PHONE_LOOKUP_CATEGORIES.batteryCondition)} defaultValue={phoneFormDefaults?.batteryCondition} categoryCode={PHONE_LOOKUP_CATEGORIES.batteryCondition} storeId={phoneFormStoreId} onRenameCascade={reloadInventoryFromDb} allowManage actorUsername={currentUser.username} />
-                          <ManageableSelect label="Dung lượng pin" name="batteryCapacity" options={batteryCapacityOptions} setOptions={setFormLookupOptions(PHONE_LOOKUP_CATEGORIES.batteryCapacity)} defaultValue={phoneFormDefaults?.batteryCapacity} required={false} categoryCode={PHONE_LOOKUP_CATEGORIES.batteryCapacity} storeId={phoneFormStoreId} onRenameCascade={reloadInventoryFromDb} allowManage actorUsername={currentUser.username} />
+                          <ManageableSelect label="Dung lượng pin" name="batteryCapacity" options={batteryCapacityOptions} setOptions={setFormLookupOptions(PHONE_LOOKUP_CATEGORIES.batteryCapacity)} defaultValue={phoneFormDefaults?.batteryCapacity} required={false} categoryCode={PHONE_LOOKUP_CATEGORIES.batteryCapacity} storeId={phoneFormStoreId} onRenameCascade={reloadInventoryFromDb} allowManage actorUsername={currentUser.username} sortable />
                         </div>
                         <div className="grid gap-3 sm:grid-cols-1">
                           <Field label="Ghi chú"><input name="note" defaultValue={phoneFormDefaults?.note} className="h-10 rounded-lg border border-line px-3" /></Field>

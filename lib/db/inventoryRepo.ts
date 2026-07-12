@@ -740,6 +740,48 @@ function storageLabelToMb(label: string): number | null {
   return n;
 }
 
+/**
+ * Battery capacity sort key (khớp migration SQL):
+ * group 0 = % sức khỏe pin (cao → thấp), group 1 = mAh (thấp → cao), group 2 = khác.
+ */
+function batteryCapacitySortKey(label: string): { grp: number; rank: number } {
+  const s = label.trim();
+  const isMah = /mah/i.test(s);
+  const isPct = /%|dưới|duoi/i.test(s);
+
+  if (isMah) {
+    const m = s.match(/(\d+(?:[.,]\d+)?)/);
+    const n = m ? Number(m[1].replace(",", ".")) : 0;
+    return { grp: 1, rank: Number.isFinite(n) ? n : 0 };
+  }
+
+  if (isPct) {
+    // "90-100%" → midpoint; "Dưới 80%" → 79.5; "99%" → 99; negate so higher % first
+    const range = s.match(/(\d+(?:[.,]\d+)?)\s*[-–]\s*(\d+(?:[.,]\d+)?)/);
+    if (range) {
+      const a = Number(range[1].replace(",", "."));
+      const b = Number(range[2].replace(",", "."));
+      const mid = (a + b) / 2;
+      return { grp: 0, rank: Number.isFinite(mid) ? -mid : 0 };
+    }
+    const m = s.match(/(\d+(?:[.,]\d+)?)/);
+    let n = m ? Number(m[1].replace(",", ".")) : 0;
+    if (!Number.isFinite(n)) n = 0;
+    if (/dưới|duoi/i.test(s)) n -= 0.5;
+    return { grp: 0, rank: -n };
+  }
+
+  // bare number: treat as mAh if large, else %
+  const bare = s.match(/^(\d+(?:[.,]\d+)?)$/);
+  if (bare) {
+    const n = Number(bare[1].replace(",", "."));
+    if (Number.isFinite(n) && n >= 500) return { grp: 1, rank: n };
+    if (Number.isFinite(n)) return { grp: 0, rank: -n };
+  }
+
+  return { grp: 2, rank: 0 };
+}
+
 function compareLookupLabelsForSort(categoryCode: string, a: string, b: string): number {
   if (categoryCode === "phone_storage") {
     const ka = storageLabelToMb(a);
@@ -748,12 +790,20 @@ function compareLookupLabelsForSort(categoryCode: string, a: string, b: string):
     if (ka != null && kb == null) return -1;
     if (ka == null && kb != null) return 1;
   }
+  if (categoryCode === "phone_battery_capacity") {
+    const ka = batteryCapacitySortKey(a);
+    const kb = batteryCapacitySortKey(b);
+    if (ka.grp !== kb.grp) return ka.grp - kb.grp;
+    if (ka.rank !== kb.rank) return ka.rank - kb.rank;
+  }
   return a.localeCompare(b, "vi", { numeric: true, sensitivity: "base" });
 }
 
 /**
  * Re-rank active lookup_items for a category+store (updates sort_order permanently).
- * phone_storage: 64GB → 128GB → … → 1TB. Other categories: vi numeric alpha.
+ * phone_storage: 64GB → 128GB → … → 1TB.
+ * phone_battery_capacity: % (cao→thấp) rồi mAh (thấp→cao).
+ * Other categories: vi numeric alpha.
  */
 export async function repoSortLookupLabels(
   categoryCode: string,
