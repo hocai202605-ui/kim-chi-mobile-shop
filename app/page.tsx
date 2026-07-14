@@ -69,6 +69,13 @@ import {
   upsertSoftwareOrder as apiUpsertSoftwareOrder,
 } from "@/services/softwareService";
 import {
+  cancelManualDebt as apiCancelManualDebt,
+  listDebts as apiListDebts,
+  markDebtsPaid as apiMarkDebtsPaid,
+  upsertManualDebt as apiUpsertManualDebt,
+  type DebtItem,
+} from "@/services/debtsService";
+import {
   apiListAccounts,
   apiListLoginUsers,
   apiLogin,
@@ -392,7 +399,7 @@ const navItems = [
   { id: "sales", label: "Bán hàng", icon: ReceiptText },
   { id: "software", label: "Sửa chữa", icon: Wrench },
   { id: "customers", label: "Khách hàng", icon: Users },
-  { id: "ledger", label: "Thu chi", icon: CreditCard },
+  { id: "ledger", label: "Công nợ", icon: CreditCard },
   { id: "logs", label: "Nhật ký", icon: ClipboardList },
   { id: "accounts", label: "Tài khoản", icon: UserCog },
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -736,6 +743,23 @@ export default function Home() {
   const [softwareSaving, setSoftwareSaving] = useState(false);
   const [repairs, setRepairs] = useState(repairsSeed);
   const [ledger, setLedger] = useState(ledgerSeed);
+  /** Công nợ (API): PM + nợ tay. */
+  const [debts, setDebts] = useState<DebtItem[]>([]);
+  const [debtsLoading, setDebtsLoading] = useState(false);
+  const [debtsError, setDebtsError] = useState("");
+  const [debtsSaving, setDebtsSaving] = useState(false);
+  /** Tab sổ nợ: Phần mềm | Bán hàng | Sửa chữa | Nợ khác */
+  const [debtTab, setDebtTab] = useState<"software" | "sale" | "repair" | "manual">("software");
+  const [debtStatusFilter, setDebtStatusFilter] = useState<"all" | "open" | "paid" | "cancelled">("open");
+  /** Tìm khách nợ: gõ tay + chọn droplist tên khách. */
+  const [debtCustomerQuery, setDebtCustomerQuery] = useState("");
+  const [selectedDebtIds, setSelectedDebtIds] = useState<string[]>([]);
+  const [isDebtSensitiveHidden, setIsDebtSensitiveHidden] = useState(false);
+  const [editingManualDebtId, setEditingManualDebtId] = useState<string | null>(null);
+  /** Prefill form khi clone nợ tay (mode thêm mới). */
+  const [cloneManualDebtDraft, setCloneManualDebtDraft] = useState<DebtItem | null>(null);
+  const [cloneManualDebtFormKey, setCloneManualDebtFormKey] = useState(0);
+  const [isManualDebtModalOpen, setIsManualDebtModalOpen] = useState(false);
   const [logs, setLogs] = useState(logSeed);
   /** Droplist theo cửa hàng: storeCode → categoryCode → labels */
   const [lookupsByStore, setLookupsByStore] = useState<Record<string, Record<string, string[]>>>({});
@@ -1948,24 +1972,187 @@ export default function Home() {
     }
   }
 
-  function createExpense(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const storeId = String(form.get("storeId")) as Exclude<StoreId, "all">;
-    const entry: Ledger = {
-      id: `l${Date.now()}`,
-      createdAt: vnNowDate(),
-      storeId,
-      type: String(form.get("type")) as "Thu" | "Chi",
-      source: String(form.get("source")),
-      amount: Number(form.get("amount") || 0),
-      payment: String(form.get("payment")) as PaymentMethod,
-      status: "Hiệu lực",
-    };
+  const reloadDebts = useCallback(async () => {
+    if (!currentUser) return;
+    setDebtsLoading(true);
+    setDebtsError("");
+    try {
+      // Load đủ nguồn API (PM + nợ tay); tab sale/repair ghép client-side.
+      const rows = await apiListDebts({
+        storeId: storeFilter,
+        source: "all",
+        status: debtStatusFilter,
+      });
+      setDebts(rows);
+      setSelectedDebtIds((prev) => prev.filter((id) => rows.some((r) => r.id === id && r.status === "open")));
+    } catch (err) {
+      setDebtsError(toUiError(err));
+    } finally {
+      setDebtsLoading(false);
+    }
+  }, [currentUser, storeFilter, debtStatusFilter]);
 
-    setLedger((prev) => [entry, ...prev]);
-    pushLog(`Tạo ${entry.type.toLowerCase()} thủ công`, entry.id, storeId);
-    event.currentTarget.reset();
+  useEffect(() => {
+    if (!currentUser || activePage !== "ledger") return;
+    void reloadDebts();
+  }, [currentUser, activePage, reloadDebts]);
+
+  async function saveManualDebt(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (debtsSaving || !currentUser) return;
+    const form = new FormData(event.currentTarget);
+    const formStoreRaw = String(form.get("storeId") || "").trim();
+    const storeId: Exclude<StoreId, "all"> =
+      currentUser.role === "staff"
+        ? currentUser.storeId
+        : formStoreRaw === "store-1" || formStoreRaw === "store-2" || formStoreRaw === "store-3"
+          ? formStoreRaw
+          : currentUser.storeId;
+
+    setDebtsSaving(true);
+    setDebtsError("");
+    try {
+      const saved = await apiUpsertManualDebt({
+        id: editingManualDebtId ?? undefined,
+        storeId,
+        customerName: String(form.get("customerName") || ""),
+        customerPhone: String(form.get("customerPhone") || ""),
+        title: String(form.get("title") || ""),
+        amount: parseInputMoney(form.get("amount")),
+        debtDate: String(form.get("debtDate") || vnNowDate()),
+        note: String(form.get("note") || ""),
+        actorUsername: currentUser.username,
+      });
+      pushLog(
+        editingManualDebtId
+          ? "Sửa nợ tay"
+          : cloneManualDebtDraft
+            ? "Nhân bản nợ tay"
+            : "Tạo nợ tay",
+        `${saved.customerName} — ${saved.title}`,
+        storeId
+      );
+      const isClone = !editingManualDebtId && Boolean(cloneManualDebtDraft);
+      showUiToast(
+        "success",
+        editingManualDebtId
+          ? "Đã cập nhật nợ tay."
+          : isClone
+            ? "Đã nhân bản nợ tay."
+            : "Đã thêm nợ tay."
+      );
+      setEditingManualDebtId(null);
+      setCloneManualDebtDraft(null);
+      setIsManualDebtModalOpen(false);
+      event.currentTarget.reset();
+      await reloadDebts();
+      await reloadSoftwareFromDb();
+    } catch (err) {
+      const msg = toUiError(err);
+      setDebtsError(msg);
+      showUiToast("error", msg);
+    } finally {
+      setDebtsSaving(false);
+    }
+  }
+
+  function openManualDebtCreateModal() {
+    setEditingManualDebtId(null);
+    setCloneManualDebtDraft(null);
+    setCloneManualDebtFormKey((k) => k + 1);
+    setIsManualDebtModalOpen(true);
+  }
+
+  function openManualDebtEditModal(sourceId: string) {
+    setCloneManualDebtDraft(null);
+    setEditingManualDebtId(sourceId);
+    setCloneManualDebtFormKey((k) => k + 1);
+    setIsManualDebtModalOpen(true);
+  }
+
+  function openManualDebtCloneModal(sourceId: string) {
+    const source = debts.find((d) => d.source === "manual" && d.sourceId === sourceId);
+    if (!source) return;
+    const ok = window.confirm(
+      `Nhân bản nợ tay "${source.title}" — ${source.customerName}?\n\nForm sẽ điền sẵn thông tin. Bạn có thể sửa rồi lưu thành khoản nợ mới.`
+    );
+    if (!ok) return;
+    setEditingManualDebtId(null);
+    setCloneManualDebtDraft(source);
+    setCloneManualDebtFormKey((k) => k + 1);
+    setIsManualDebtModalOpen(true);
+  }
+
+  function closeManualDebtModal() {
+    if (debtsSaving) return;
+    setIsManualDebtModalOpen(false);
+    setEditingManualDebtId(null);
+    setCloneManualDebtDraft(null);
+  }
+
+  async function cancelManualDebtItem(sourceId: string) {
+    if (!currentUser || currentUser.role !== "owner") {
+      showUiToast("error", "Chỉ chủ cửa hàng được hủy nợ tay.");
+      return;
+    }
+    const row = debts.find((d) => d.source === "manual" && d.sourceId === sourceId);
+    if (!row) return;
+    if (!window.confirm(`Hủy nợ tay "${row.title}" — ${row.customerName}?`)) return;
+    setDebtsSaving(true);
+    try {
+      await apiCancelManualDebt(sourceId, currentUser.username);
+      pushLog("Hủy nợ tay", `${row.customerName} — ${row.title}`, row.storeId);
+      showUiToast("success", "Đã hủy nợ tay.");
+      if (editingManualDebtId === sourceId) {
+        setEditingManualDebtId(null);
+        setIsManualDebtModalOpen(false);
+      }
+      await reloadDebts();
+    } catch (err) {
+      showUiToast("error", toUiError(err));
+    } finally {
+      setDebtsSaving(false);
+    }
+  }
+
+  async function markSelectedDebtsPaid() {
+    const openSelected = debts.filter(
+      (d) => selectedDebtIds.includes(d.id) && d.status === "open"
+    );
+    if (!openSelected.length) {
+      showUiToast("error", "Chưa chọn khoản nợ đang mở.");
+      return;
+    }
+    if (
+      !window.confirm(
+        `Thu nợ ${openSelected.length} khoản đã chọn?\n\nNợ PM → Đã thanh toán. Nợ tay → Đã TT.`
+      )
+    ) {
+      return;
+    }
+    setDebtsSaving(true);
+    try {
+      const result = await apiMarkDebtsPaid(
+        openSelected.map((d) => ({ source: d.source, sourceId: d.sourceId })),
+        currentUser?.username
+      );
+      pushLog(
+        "Thu công nợ hàng loạt",
+        `${result.updated} khoản`,
+        storeFilter === "all" ? currentUser?.storeId ?? "store-1" : storeFilter
+      );
+      setSelectedDebtIds([]);
+      showUiToast(
+        "success",
+        result.updated ? `Đã thu ${result.updated} khoản công nợ.` : "Không có khoản nào được cập nhật."
+      );
+      await reloadDebts();
+      await reloadSoftwareFromDb();
+    } catch (err) {
+      showUiToast("error", toUiError(err));
+    } finally {
+      setDebtsSaving(false);
+    }
   }
 
   function cancelSale(id: string) {
@@ -3331,34 +3518,655 @@ export default function Home() {
           </Panel>
         )}
 
-        {activePage === "ledger" && (
-          <section className="grid gap-4 xl:grid-cols-[420px_1fr]">
-            <Panel title="Tạo thu/chi thủ công">
-              <form onSubmit={createExpense} className="grid gap-3">
-                <SelectField label="Loại" name="type" options={[["Thu", "Thu"], ["Chi", "Chi"]]} />
-                <SelectField label="Cửa hàng" name="storeId" options={stores.map((s) => [s.id, s.name])} />
-                <Field label="Nội dung"><input name="source" className="h-10 rounded-lg border border-line px-3" placeholder="Tiền điện, nước, mặt bằng..." /></Field>
-                <Field label="Số tiền"><input name="amount" type="number" min="0" className="h-10 rounded-lg border border-line px-3" /></Field>
-                <SelectField label="Thanh toán" name="payment" options={["Tiền mặt", "Chuyển khoản", "Thẻ", "Khác"].map((p) => [p, p])} />
-                <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white"><Plus size={18} />Ghi sổ</button>
-              </form>
-            </Panel>
-            <Panel title="Sổ thu chi">
-              <DataTable
-                headers={["Ngày", "Loại", "Nguồn", "Cửa hàng", "Số tiền", "Thanh toán", "Trạng thái"]}
-                rows={filteredLedger.map((item) => [
-                  item.createdAt,
-                  item.type,
-                  item.source,
-                  storeName(item.storeId),
-                  formatMoney(item.amount),
-                  item.payment,
-                  <StatusBadge key={item.id} tone={item.status === "Hiệu lực" ? "ok" : "danger"}>{item.status}</StatusBadge>,
-                ])}
-              />
-            </Panel>
-          </section>
-        )}
+        {activePage === "ledger" && (() => {
+          // Sửa chữa (mock): map → dòng công nợ ảo (source repair).
+          const repairDebtRows: DebtItem[] = repairs
+            .filter(
+              (r) =>
+                (storeFilter === "all" || r.storeId === storeFilter) &&
+                r.status !== "Đã trả khách" &&
+                r.status !== "Đã hủy"
+            )
+            .map((r) => {
+              const customer = customers.find((c) => c.id === r.customerId);
+              const amount = Math.max(0, Number(r.quote) - Number(r.deposit));
+              return {
+                id: `repair:${r.id}`,
+                source: "repair" as const,
+                sourceId: r.id,
+                storeId: r.storeId,
+                customerName: customer?.name ?? r.customerId,
+                customerPhone: customer?.phone ?? "",
+                title: r.deviceName,
+                amount,
+                debtDate: r.createdAt?.slice(0, 10) || "",
+                status: "open" as const,
+                note: r.issue || "",
+              };
+            })
+            .filter((r) => {
+              if (debtStatusFilter === "all") return true;
+              if (debtStatusFilter === "open") return r.status === "open" && r.amount > 0;
+              return false; // paid/cancelled: chưa có trên mock sửa chữa
+            });
+
+          // Bán hàng: chưa ghi nợ trên sales → rỗng (tab vẫn hiện).
+          const saleDebtRows: DebtItem[] = [];
+
+          const tabRows: DebtItem[] =
+            debtTab === "software"
+              ? debts.filter((d) => d.source === "software")
+              : debtTab === "manual"
+                ? debts.filter((d) => d.source === "manual")
+                : debtTab === "repair"
+                  ? repairDebtRows
+                  : saleDebtRows;
+
+          const debtCustomerOptions = Array.from(
+            new Set(tabRows.map((d) => d.customerName.trim()).filter(Boolean))
+          ).sort((a, b) => a.localeCompare(b, "vi"));
+
+          const customerQ = debtCustomerQuery.trim().toLowerCase();
+          const displayDebts = !customerQ
+            ? tabRows
+            : tabRows.filter((d) => d.customerName.toLowerCase().includes(customerQ));
+
+          const openDebtsApi = debts.filter((d) => d.status === "open");
+          const openSelected = displayDebts.filter(
+            (d) => selectedDebtIds.includes(d.id) && d.status === "open"
+          );
+          const openIds = displayDebts.filter((d) => d.status === "open").map((d) => d.id);
+          const allOpenSelected =
+            openIds.length > 0 && openIds.every((id) => selectedDebtIds.includes(id));
+          const totalSoftware = openDebtsApi
+            .filter((d) => d.source === "software")
+            .reduce((s, d) => s + d.amount, 0);
+          const totalManual = openDebtsApi
+            .filter((d) => d.source === "manual")
+            .reduce((s, d) => s + d.amount, 0);
+          const totalSale = saleDebtRows
+            .filter((d) => d.status === "open")
+            .reduce((s, d) => s + d.amount, 0);
+          const totalRepair = repairDebtRows
+            .filter((d) => d.status === "open")
+            .reduce((s, d) => s + d.amount, 0);
+          const totalOpen = totalSoftware + totalManual + totalSale + totalRepair;
+
+          /** Tổng nợ đang mở của khách đang lọc (gõ / chọn tên). */
+          const filteredCustomerOpenTotal = displayDebts
+            .filter((d) => d.status === "open")
+            .reduce((s, d) => s + d.amount, 0);
+          const filteredCustomerNames = Array.from(
+            new Set(displayDebts.map((d) => d.customerName.trim()).filter(Boolean))
+          );
+          const showCustomerDebtSummary = customerQ.length > 0 && displayDebts.length > 0;
+
+          const editingManual = editingManualDebtId
+            ? debts.find((d) => d.source === "manual" && d.sourceId === editingManualDebtId)
+            : null;
+          const manualFormDefaults = editingManual ?? cloneManualDebtDraft;
+          const isManualClone = !editingManual && Boolean(cloneManualDebtDraft);
+
+          const sourceBadge = (source: string) => {
+            if (source === "software")
+              return (
+                <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-bold text-sky-700">
+                  Phần mềm
+                </span>
+              );
+            if (source === "sale")
+              return (
+                <span className="rounded-full bg-fuchsia-50 px-2 py-0.5 text-xs font-bold text-fuchsia-800">
+                  Bán hàng
+                </span>
+              );
+            if (source === "repair")
+              return (
+                <span className="rounded-full bg-violet-50 px-2 py-0.5 text-xs font-bold text-violet-800">
+                  Sửa chữa
+                </span>
+              );
+            return (
+              <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-800">
+                Nợ khác
+              </span>
+            );
+          };
+
+          const debtTabs: { id: typeof debtTab; label: string; count: number; tone: string }[] = [
+            {
+              id: "software",
+              label: "Phần mềm",
+              count: debts.filter((d) => d.source === "software" && d.status === "open").length,
+              tone: "sky",
+            },
+            {
+              id: "sale",
+              label: "Bán hàng",
+              count: saleDebtRows.filter((d) => d.status === "open").length,
+              tone: "fuchsia",
+            },
+            {
+              id: "repair",
+              label: "Sửa chữa",
+              count: repairDebtRows.filter((d) => d.status === "open").length,
+              tone: "violet",
+            },
+            {
+              id: "manual",
+              label: "Nợ khác",
+              count: debts.filter((d) => d.source === "manual" && d.status === "open").length,
+              tone: "amber",
+            },
+          ];
+
+          const statusLabel = (st: DebtItem["status"]) =>
+            st === "open" ? "Đang nợ" : st === "paid" ? "Đã TT" : "Đã hủy";
+
+          return (
+            <section className="grid gap-4">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 sm:col-span-2 lg:col-span-1">
+                  <span className="text-sm font-bold text-red-700">Tổng dư nợ</span>
+                  <strong className="mt-1 block text-2xl font-black text-red-700">
+                    {isDebtSensitiveHidden ? "***" : formatMoney(totalOpen)}
+                  </strong>
+                </div>
+                <div className="rounded-lg border border-fuchsia-200 bg-fuchsia-50 px-4 py-3">
+                  <span className="text-sm font-bold text-fuchsia-800">Nợ bán hàng</span>
+                  <strong className="mt-1 block text-2xl font-black text-fuchsia-900">
+                    {isDebtSensitiveHidden ? "***" : formatMoney(totalSale)}
+                  </strong>
+                        </div>
+                <div className="rounded-lg border border-violet-200 bg-violet-50 px-4 py-3">
+                  <span className="text-sm font-bold text-violet-800">Nợ sửa chữa</span>
+                  <strong className="mt-1 block text-2xl font-black text-violet-900">
+                    {isDebtSensitiveHidden ? "***" : formatMoney(totalRepair)}
+                  </strong>
+                </div>
+                <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3">
+                  <span className="text-sm font-bold text-sky-700">Nợ phần mềm</span>
+                  <strong className="mt-1 block text-2xl font-black text-sky-800">
+                    {isDebtSensitiveHidden ? "***" : formatMoney(totalSoftware)}
+                  </strong>
+                </div>
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                  <span className="text-sm font-bold text-amber-800">Nợ khác (tay)</span>
+                  <strong className="mt-1 block text-2xl font-black text-amber-900">
+                    {isDebtSensitiveHidden ? "***" : formatMoney(totalManual)}
+                  </strong>
+                </div>
+              </div>
+
+              <Panel title="Sổ công nợ">
+                  {debtsError ? (
+                    <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-danger">
+                      {debtsError}
+                    </div>
+                  ) : null}
+
+                  <div className="mb-3 inline-flex w-full max-w-full flex-wrap gap-1 rounded-lg border border-line bg-slate-100 p-1">
+                    {debtTabs.map((tab) => {
+                      const active = debtTab === tab.id;
+                      const activeCls =
+                        tab.tone === "sky"
+                          ? "bg-white text-sky-800 shadow-sm"
+                          : tab.tone === "fuchsia"
+                            ? "bg-white text-fuchsia-900 shadow-sm"
+                            : tab.tone === "violet"
+                              ? "bg-white text-violet-900 shadow-sm"
+                              : "bg-white text-amber-900 shadow-sm";
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => {
+                            setDebtTab(tab.id);
+                            setSelectedDebtIds([]);
+                            setDebtCustomerQuery("");
+                          }}
+                          className={`inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-md px-3 text-sm font-bold transition ${
+                            active ? activeCls : "text-muted hover:text-ink"
+                          }`}
+                        >
+                          {tab.label}
+                          <span
+                            className={`rounded-full px-1.5 py-0.5 text-xs font-black ${
+                              active ? "bg-slate-100 text-slate-700" : "bg-white/80 text-slate-500"
+                            }`}
+                          >
+                            {tab.count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <select
+                      value={debtStatusFilter}
+                      onChange={(e) => {
+                        setDebtStatusFilter(e.target.value as typeof debtStatusFilter);
+                        setSelectedDebtIds([]);
+                      }}
+                      className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold"
+                    >
+                      <option value="open">Đang nợ</option>
+                      <option value="paid">Đã TT</option>
+                      <option value="cancelled">Đã hủy</option>
+                      <option value="all">Tất cả TT</option>
+                    </select>
+                    <div className="relative min-w-[14rem] flex-1">
+                      <Search className="pointer-events-none absolute left-3 top-2.5 text-muted" size={16} />
+                      <input
+                        list="debt-customer-datalist"
+                        value={debtCustomerQuery}
+                        onChange={(e) => {
+                          setDebtCustomerQuery(e.target.value);
+                          setSelectedDebtIds([]);
+                        }}
+                        placeholder="Chọn hoặc gõ tên khách nợ…"
+                        className="h-10 w-full rounded-lg border border-line bg-white py-2 pl-9 pr-3 text-sm font-semibold outline-none focus:border-brand"
+                        autoComplete="off"
+                      />
+                      <datalist id="debt-customer-datalist">
+                        {debtCustomerOptions.map((name) => (
+                          <option key={name} value={name} />
+                        ))}
+                      </datalist>
+                    </div>
+                    {debtCustomerQuery.trim() ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDebtCustomerQuery("");
+                          setSelectedDebtIds([]);
+                        }}
+                        className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold text-muted hover:bg-slate-50"
+                      >
+                        Xóa lọc khách
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => setIsDebtSensitiveHidden((v) => !v)}
+                      className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-3 font-bold text-slate-600"
+                    >
+                      {isDebtSensitiveHidden ? <EyeOff size={18} /> : <Eye size={18} />}
+                      {isDebtSensitiveHidden ? "Hiện" : "Ẩn"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={debtsSaving || openSelected.length === 0}
+                      onClick={() => void markSelectedDebtsPaid()}
+                      className="inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-600 px-3 font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      {debtsSaving ? (
+                        <Loader2 size={18} className="animate-spin" />
+                      ) : (
+                        <CheckCircle2 size={18} />
+                      )}
+                      {openSelected.length > 0 ? `Thu nợ (${openSelected.length})` : "Thu nợ"}
+                    </button>
+                    {debtTab === "manual" ? (
+                      <button
+                        type="button"
+                        onClick={openManualDebtCreateModal}
+                        className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark"
+                      >
+                        <Plus size={18} />
+                        Thêm nợ
+                      </button>
+                    ) : null}
+                  </div>
+
+                  {debtTab === "sale" ? (
+                    <p className="mb-3 rounded-lg border border-fuchsia-100 bg-fuchsia-50 px-3 py-2 text-sm font-semibold text-fuchsia-900">
+                      Nợ bán hàng sẽ hiện khi phiếu bán có chế độ “ghi nợ” (đang phát triển).
+                    </p>
+                  ) : null}
+                  {debtTab === "repair" ? (
+                    <p className="mb-3 rounded-lg border border-violet-100 bg-violet-50 px-3 py-2 text-sm font-semibold text-violet-900">
+                      Nợ sửa chữa = báo giá − cọc (phiếu chưa trả khách / chưa hủy).
+                    </p>
+                  ) : null}
+
+                  {showCustomerDebtSummary ? (
+                    <div className="mb-3 flex w-fit max-w-full flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg border border-brand/25 bg-brand-soft px-3 py-2 text-left">
+                      <div className="text-sm font-bold text-brand-dark">
+                        {filteredCustomerNames.length === 1 ? (
+                          <>
+                            Tổng nợ của <span className="font-black">{filteredCustomerNames[0]}</span>
+                            <span className="ml-1 font-semibold text-muted">
+                              ({displayDebts.length} khoản · {openIds.length} đang nợ)
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            Tổng nợ khớp lọc{" "}
+                            <span className="font-black">“{debtCustomerQuery.trim()}”</span>
+                            <span className="ml-1 font-semibold text-muted">
+                              ({filteredCustomerNames.length} khách · {displayDebts.length} khoản ·{" "}
+                              {openIds.length} đang nợ)
+                            </span>
+                          </>
+                        )}
+                      </div>
+                      <strong className="text-lg font-black text-red-600">
+                        {isDebtSensitiveHidden ? "***" : formatMoney(filteredCustomerOpenTotal)}
+                      </strong>
+                    </div>
+                  ) : null}
+
+                  {debtsLoading ? (
+                    <div className="inline-flex items-center gap-2 text-sm font-bold text-muted">
+                      <Loader2 size={16} className="animate-spin" /> Đang tải công nợ…
+                    </div>
+                  ) : (
+                    <DataTable
+                      compact
+                      headers={[
+                        "",
+                        "Ngày",
+                        "Nguồn",
+                        "Khách / nội dung",
+                        "Cửa hàng",
+                        "Số nợ",
+                        "Trạng thái",
+                        "Thao tác",
+                      ]}
+                      rows={displayDebts.map((item) => {
+                        const isOpen = item.status === "open";
+                        const checked = selectedDebtIds.includes(item.id);
+                        return [
+                          <div
+                            key={`chk-${item.id}`}
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                          >
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 accent-brand"
+                              checked={checked}
+                              disabled={
+                                !isOpen ||
+                                debtsSaving ||
+                                item.source === "sale" ||
+                                item.source === "repair"
+                              }
+                              title={
+                                item.source === "sale" || item.source === "repair"
+                                  ? "Thu nợ hàng loạt chưa hỗ trợ nguồn này"
+                                  : isOpen
+                                    ? "Chọn để thu nợ"
+                                    : undefined
+                              }
+                              onChange={(e) => {
+                                const on = e.target.checked;
+                                setSelectedDebtIds((prev) =>
+                                  on
+                                    ? prev.includes(item.id)
+                                      ? prev
+                                      : [...prev, item.id]
+                                    : prev.filter((x) => x !== item.id)
+                                );
+                              }}
+                            />
+                          </div>,
+                          <span key={`dt-${item.id}`} className="text-sm font-semibold">
+                            {item.debtDate || "—"}
+                          </span>,
+                          sourceBadge(item.source),
+                          <div key={`info-${item.id}`} className="text-left">
+                            <div className="font-bold text-brand">{item.customerName}</div>
+                            <div className="text-sm font-semibold text-slate-600">{item.title}</div>
+                            {item.customerPhone ? (
+                              <div className="text-xs font-semibold text-muted">{item.customerPhone}</div>
+                            ) : null}
+                          </div>,
+                          storeName(item.storeId),
+                          <span key={`amt-${item.id}`} className="font-black text-red-600">
+                            {isDebtSensitiveHidden ? "***" : formatMoney(item.amount)}
+                          </span>,
+                          <StatusBadge
+                            key={`st-${item.id}`}
+                            tone={
+                              item.status === "open" ? "danger" : item.status === "paid" ? "ok" : "neutral"
+                            }
+                          >
+                            {statusLabel(item.status)}
+                          </StatusBadge>,
+                          <div key={`act-${item.id}`} className="flex flex-nowrap justify-center gap-1">
+                            {item.source === "manual" && isOpen ? (
+                              <button
+                                type="button"
+                                title="Sửa"
+                                onClick={() => openManualDebtEditModal(item.sourceId)}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-brand-soft text-brand"
+                              >
+                                <Edit3 size={16} />
+                              </button>
+                            ) : null}
+                            {item.source === "manual" ? (
+                              <button
+                                type="button"
+                                title="Nhân bản"
+                                onClick={() => openManualDebtCloneModal(item.sourceId)}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100"
+                              >
+                                <CopyPlus size={16} />
+                              </button>
+                            ) : null}
+                            {item.source === "software" ? (
+                              <button
+                                type="button"
+                                title="Mở phần mềm"
+                                onClick={() => {
+                                  setActivePage("online-repairs");
+                                  setViewingOnlineRepairId(item.sourceId);
+                                }}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-sky-50 text-sky-700"
+                              >
+                                <Eye size={16} />
+                              </button>
+                            ) : null}
+                            {item.source === "repair" ? (
+                              <button
+                                type="button"
+                                title="Mở sửa chữa"
+                                onClick={() => setActivePage("software")}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-violet-50 text-violet-700"
+                              >
+                                <Eye size={16} />
+                              </button>
+                            ) : null}
+                            {item.source === "manual" && isOpen && currentUser.role === "owner" ? (
+                              <button
+                                type="button"
+                                title="Hủy nợ"
+                                onClick={() => void cancelManualDebtItem(item.sourceId)}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-danger"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            ) : null}
+                          </div>,
+                        ];
+                      })}
+                    />
+                  )}
+
+                  {openIds.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-line pt-3">
+                      <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-bold text-slate-700">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-brand"
+                          checked={allOpenSelected}
+                          disabled={debtsSaving}
+                          onChange={(e) => {
+                            const on = e.target.checked;
+                            setSelectedDebtIds((prev) => {
+                              if (on) {
+                                const set = new Set(prev);
+                                openIds.forEach((id) => set.add(id));
+                                return Array.from(set);
+                              }
+                              return prev.filter((id) => !openIds.includes(id));
+                            });
+                          }}
+                        />
+                        Chọn tất cả đang nợ ({openIds.length})
+                      </label>
+                    </div>
+                  ) : null}
+              </Panel>
+
+              {isManualDebtModalOpen ? (
+                <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-md">
+                  <section className="relative max-h-[92vh] w-full max-w-[520px] overflow-auto rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
+                    {debtsSaving ? (
+                      <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-2xl bg-white/55 backdrop-blur-sm">
+                        <Loader2 size={36} className="animate-spin text-brand" />
+                        <p className="text-sm font-black text-ink">Đang lưu…</p>
+                      </div>
+                    ) : null}
+                    <div className="flex items-center justify-between border-b border-slate-200/60 bg-white/80 p-4">
+                      <div>
+                        <h2 className="text-lg font-black text-slate-800">
+                          {editingManual
+                            ? "Sửa nợ tay"
+                            : isManualClone
+                              ? "Thêm nợ (nhân bản)"
+                              : "Thêm nợ khác"}
+                        </h2>
+                        {isManualClone ? (
+                          <p className="mt-1 text-sm font-semibold text-sky-700">
+                            Đã copy thông tin — sửa nếu cần rồi lưu khoản nợ mới.
+                          </p>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={closeManualDebtModal}
+                        disabled={debtsSaving}
+                        className="h-9 shrink-0 rounded-xl border border-slate-200/60 bg-white/50 px-4 text-sm font-black text-slate-600 hover:bg-white disabled:opacity-50"
+                      >
+                        Đóng
+                      </button>
+                    </div>
+                    <form
+                      key={
+                        editingManualDebtId ??
+                        (cloneManualDebtDraft
+                          ? `clone-debt-${cloneManualDebtFormKey}`
+                          : `new-debt-${cloneManualDebtFormKey}`)
+                      }
+                      onSubmit={saveManualDebt}
+                      className={`grid gap-3 p-4 ${debtsSaving ? "pointer-events-none select-none" : ""}`}
+                      autoComplete="off"
+                    >
+                      {currentUser.role === "owner" ? (
+                        <SelectField
+                          label="Cửa hàng"
+                          name="storeId"
+                          options={stores.map((s) => [s.id, s.name])}
+                          defaultValue={
+                            manualFormDefaults?.storeId ??
+                            (storeFilter !== "all" ? storeFilter : currentUser.storeId)
+                          }
+                        />
+                      ) : (
+                        <Field label="Cửa hàng">
+                          <input type="hidden" name="storeId" value={currentUser.storeId} />
+                          <div className="flex h-10 items-center rounded-lg border border-line bg-slate-50 px-3 text-sm font-semibold">
+                            {storeName(currentUser.storeId)}
+                          </div>
+                        </Field>
+                      )}
+                      <Field label="Khách / đối tượng" required>
+                        <input
+                          name="customerName"
+                          required
+                          defaultValue={manualFormDefaults?.customerName ?? ""}
+                          className="h-10 rounded-lg border border-line bg-white px-3"
+                        />
+                      </Field>
+                      <Field label="SĐT">
+                        <input
+                          name="customerPhone"
+                          defaultValue={manualFormDefaults?.customerPhone ?? ""}
+                          className="h-10 rounded-lg border border-line bg-white px-3"
+                        />
+                      </Field>
+                      <Field label="Nội dung nợ" required>
+                        <input
+                          name="title"
+                          required
+                          defaultValue={manualFormDefaults?.title ?? ""}
+                          className="h-10 rounded-lg border border-line bg-white px-3"
+                          placeholder="Nợ máy, ứng tiền, …"
+                        />
+                      </Field>
+                      <Field label="Số tiền" required>
+                        <MoneyInput name="amount" defaultValue={manualFormDefaults?.amount} />
+                      </Field>
+                      <Field label="Ngày phát sinh">
+                        <input
+                          name="debtDate"
+                          type="date"
+                          defaultValue={
+                            isManualClone
+                              ? vnNowDate()
+                              : manualFormDefaults?.debtDate || vnNowDate()
+                          }
+                          className="h-10 rounded-lg border border-line bg-white px-3"
+                        />
+                      </Field>
+                      <Field label="Ghi chú">
+                        <input
+                          name="note"
+                          defaultValue={manualFormDefaults?.note ?? ""}
+                          className="h-10 rounded-lg border border-line bg-white px-3"
+                        />
+                      </Field>
+                      <div className="flex justify-end gap-2 border-t border-line pt-3">
+                        <button
+                          type="button"
+                          onClick={closeManualDebtModal}
+                          disabled={debtsSaving}
+                          className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted disabled:opacity-50"
+                        >
+                          Hủy
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={debtsSaving}
+                          className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark disabled:opacity-60"
+                        >
+                          {debtsSaving ? (
+                            <Loader2 size={18} className="animate-spin" />
+                          ) : editingManual ? (
+                            <Edit3 size={18} />
+                          ) : isManualClone ? (
+                            <CopyPlus size={18} />
+                          ) : (
+                            <Plus size={18} />
+                          )}
+                          {editingManual
+                            ? "Lưu sửa"
+                            : isManualClone
+                              ? "Lưu nợ mới"
+                              : "Thêm nợ"}
+                        </button>
+                      </div>
+                    </form>
+                  </section>
+                </div>
+              ) : null}
+            </section>
+          );
+        })()}
 
         {activePage === "logs" && (
           <Panel title="Nhật ký thao tác">
