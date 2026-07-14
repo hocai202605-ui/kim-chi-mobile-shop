@@ -5531,11 +5531,24 @@ function ManageableSelect({
 }) {
   const [value, setValue] = useState(defaultValue ?? "");
   const [busy, setBusy] = useState(false);
+  /** Inline editor — tránh window.prompt (thường bị chặn / mất focus trong modal). */
+  const [editMode, setEditMode] = useState<null | "add" | "edit">(null);
+  const [draftText, setDraftText] = useState("");
+  const [manageError, setManageError] = useState("");
+  const draftInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editMode && draftInputRef.current) {
+      draftInputRef.current.focus();
+      draftInputRef.current.select();
+    }
+  }, [editMode]);
 
   const handleSort = async () => {
     if (!allowManage) return;
     if (!options.length) return;
     const selected = value;
+    setManageError("");
 
     if (!categoryCode) {
       const sorted = [...options].sort((a, b) =>
@@ -5552,35 +5565,7 @@ function ManageableSelect({
       setOptions(result.labels);
       if (selected) setValue(selected);
     } catch (err) {
-      window.alert(toUiError(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleAdd = async () => {
-    if (!allowManage) return;
-    const val = window.prompt(`Thêm giá trị mới cho ${label}:`);
-    const next = val?.trim();
-    if (!next) return;
-    if (options.some((o) => o.toLowerCase() === next.toLowerCase())) {
-      window.alert(`"${next}" đã có trong danh sách.`);
-      return;
-    }
-
-    if (!categoryCode) {
-      setOptions([...options, next]);
-      setValue(next);
-      return;
-    }
-
-    try {
-      setBusy(true);
-      const result = await apiAddLookupItem(categoryCode, next, actorUsername, storeId);
-      setOptions(result.labels);
-      setValue(result.label ?? next);
-    } catch (err) {
-      window.alert(toUiError(err));
+      setManageError(toUiError(err));
     } finally {
       setBusy(false);
     }
@@ -5591,30 +5576,100 @@ function ManageableSelect({
     value && options.some((o) => o.toLowerCase() === value.toLowerCase())
   );
 
-  const handleEdit = async () => {
-    if (!allowManage) return;
-    if (!value || !valueInOptions) return;
-    const oldVal = value;
-    const val = window.prompt(`Sửa giá trị "${oldVal}" thành:`, oldVal);
-    const next = val?.trim();
-    if (!next || next === oldVal) return;
+  const openAddEditor = () => {
+    if (!allowManage || busy) return;
+    setManageError("");
+    // Ưu tiên text đang gõ trên combobox
+    setDraftText(value.trim());
+    setEditMode("add");
+  };
 
-    if (!categoryCode) {
-      setOptions(options.map((o) => (o === oldVal ? next : o)));
-      setValue(next);
+  const openEditEditor = () => {
+    if (!allowManage || busy || !value || !valueInOptions) return;
+    setManageError("");
+    setDraftText(value);
+    setEditMode("edit");
+  };
+
+  const cancelEditor = () => {
+    setEditMode(null);
+    setDraftText("");
+    setManageError("");
+  };
+
+  const commitEditor = async () => {
+    if (!allowManage || busy) return;
+    const next = draftText.trim();
+    if (!next) {
+      setManageError("Nhập giá trị option.");
       return;
     }
 
-    try {
-      setBusy(true);
-      const result = await apiUpdateLookupItem(categoryCode, oldVal, next, actorUsername, storeId);
-      setOptions(result.labels);
-      setValue(result.label ?? next);
-      if (onRenameCascade) await onRenameCascade();
-    } catch (err) {
-      window.alert(toUiError(err));
-    } finally {
-      setBusy(false);
+    if (editMode === "add") {
+      if (options.some((o) => o.toLowerCase() === next.toLowerCase())) {
+        setManageError(`"${next}" đã có trong danh sách.`);
+        return;
+      }
+      if (!categoryCode) {
+        setOptions([...options, next]);
+        setValue(next);
+        cancelEditor();
+        return;
+      }
+      if (!actorUsername?.trim()) {
+        setManageError("Thiếu tài khoản đăng nhập — không thêm được option.");
+        return;
+      }
+      try {
+        setBusy(true);
+        setManageError("");
+        const result = await apiAddLookupItem(categoryCode, next, actorUsername, storeId);
+        setOptions(result.labels);
+        setValue(result.label ?? next);
+        cancelEditor();
+      } catch (err) {
+        setManageError(toUiError(err));
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
+    if (editMode === "edit") {
+      const oldVal = value;
+      if (!oldVal || next === oldVal) {
+        cancelEditor();
+        return;
+      }
+      if (!categoryCode) {
+        setOptions(options.map((o) => (o === oldVal ? next : o)));
+        setValue(next);
+        cancelEditor();
+        return;
+      }
+      if (!actorUsername?.trim()) {
+        setManageError("Thiếu tài khoản đăng nhập — không sửa được option.");
+        return;
+      }
+      try {
+        setBusy(true);
+        setManageError("");
+        const result = await apiUpdateLookupItem(
+          categoryCode,
+          oldVal,
+          next,
+          actorUsername,
+          storeId
+        );
+        setOptions(result.labels);
+        setValue(result.label ?? next);
+        if (onRenameCascade) await onRenameCascade();
+        cancelEditor();
+      } catch (err) {
+        setManageError(toUiError(err));
+      } finally {
+        setBusy(false);
+      }
     }
   };
 
@@ -5622,6 +5677,7 @@ function ManageableSelect({
     if (!allowManage) return;
     if (!value || !valueInOptions) return;
     if (!window.confirm(`Xóa giá trị "${value}" khỏi danh sách ${label}?`)) return;
+    setManageError("");
 
     const removed = value;
     if (!categoryCode) {
@@ -5629,14 +5685,23 @@ function ManageableSelect({
       setValue("");
       return;
     }
+    if (!actorUsername?.trim()) {
+      setManageError("Thiếu tài khoản đăng nhập — không xóa được option.");
+      return;
+    }
 
     try {
       setBusy(true);
-      const result = await apiDeactivateLookupItem(categoryCode, removed, actorUsername, storeId);
+      const result = await apiDeactivateLookupItem(
+        categoryCode,
+        removed,
+        actorUsername,
+        storeId
+      );
       setOptions(result.labels);
       setValue("");
     } catch (err) {
-      window.alert(toUiError(err));
+      setManageError(toUiError(err));
     } finally {
       setBusy(false);
     }
@@ -5658,60 +5723,127 @@ function ManageableSelect({
 
   return (
     <Field label={label} required={required}>
-      <div className="flex min-w-0 items-center gap-1.5">
-        <ScrollableSelect
-          name={name}
-          options={displayOptions}
-          value={value}
-          onChange={setValue}
-          required={required}
-          disabled={busy}
-          className="min-w-0 flex-1"
-          colorPreview={name === "color"}
-          allowFreeText={allowFreeText}
-          placeholder={allowFreeText ? "Chọn hoặc nhập" : "Chọn"}
-        />
-        {allowManage ? (
-          <div className="flex shrink-0 items-center gap-1">
-            {sortable ? (
+      <div className="grid min-w-0 gap-1.5">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <ScrollableSelect
+            name={name}
+            options={displayOptions}
+            value={value}
+            onChange={setValue}
+            required={required && editMode == null}
+            disabled={busy || editMode != null}
+            className="min-w-0 flex-1"
+            colorPreview={name === "color"}
+            allowFreeText={allowFreeText}
+            placeholder={allowFreeText ? "Chọn hoặc nhập" : "Chọn"}
+          />
+          {allowManage ? (
+            <div
+              className="flex shrink-0 items-center gap-1"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {sortable ? (
+                <button
+                  type="button"
+                  onClick={() => void handleSort()}
+                  disabled={busy || options.length < 2 || editMode != null}
+                  title="Sắp xếp (nhỏ → lớn)"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 disabled:opacity-50"
+                >
+                  <ArrowUpDown size={16} />
+                </button>
+              ) : null}
               <button
                 type="button"
-                onClick={() => void handleSort()}
-                disabled={busy || options.length < 2}
-                title="Sắp xếp (nhỏ → lớn)"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 disabled:opacity-50"
+                onClick={openAddEditor}
+                disabled={busy || editMode != null}
+                title={
+                  value.trim() && !valueInOptions
+                    ? `Thêm "${value.trim()}" vào droplist`
+                    : "Thêm option vào droplist"
+                }
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 disabled:opacity-50"
               >
-                <ArrowUpDown size={14} />
+                <Plus size={16} />
               </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={handleAdd}
-              disabled={busy}
-              title="Thêm"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 disabled:opacity-50"
-            >
-              <Plus size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={handleEdit}
-              disabled={busy || !valueInOptions}
-              title={valueInOptions ? "Sửa" : "Chỉ sửa option đã có trong droplist (bấm + để thêm)"}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 disabled:opacity-50"
-            >
-              <Edit3 size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={handleDelete}
-              disabled={busy || !valueInOptions}
-              title={valueInOptions ? "Xóa" : "Chỉ xóa option đã có trong droplist"}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger hover:bg-red-100 disabled:opacity-50"
-            >
-              <Trash2 size={14} />
-            </button>
+              <button
+                type="button"
+                onClick={openEditEditor}
+                disabled={busy || !valueInOptions || editMode != null}
+                title={
+                  valueInOptions
+                    ? "Sửa option trong droplist"
+                    : "Chỉ sửa option đã có trong droplist (bấm + để thêm text đang gõ)"
+                }
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 disabled:opacity-50"
+              >
+                <Edit3 size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDelete()}
+                disabled={busy || !valueInOptions || editMode != null}
+                title={
+                  valueInOptions
+                    ? "Xóa option khỏi droplist"
+                    : "Chỉ xóa option đã có trong droplist"
+                }
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger hover:bg-red-100 disabled:opacity-50"
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          ) : null}
+        </div>
+
+        {editMode ? (
+          <div className="flex min-w-0 flex-col gap-1.5 rounded-lg border border-brand/30 bg-brand-soft/40 p-2">
+            <span className="text-xs font-bold text-brand-dark">
+              {editMode === "add" ? `Thêm option — ${label}` : `Sửa option — ${label}`}
+            </span>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <input
+                ref={draftInputRef}
+                type="text"
+                value={draftText}
+                disabled={busy}
+                onChange={(e) => setDraftText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void commitEditor();
+                  }
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    cancelEditor();
+                  }
+                }}
+                className="h-10 min-w-0 flex-1 rounded-lg border border-line bg-white px-3 text-sm font-semibold outline-none focus:border-brand"
+                placeholder="Nhập giá trị…"
+              />
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void commitEditor()}
+                className="inline-flex h-10 shrink-0 items-center rounded-lg bg-brand px-3 text-sm font-bold text-white hover:bg-brand-dark disabled:opacity-50"
+              >
+                {busy ? <Loader2 size={16} className="animate-spin" /> : "Lưu"}
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={cancelEditor}
+                className="h-10 shrink-0 rounded-lg border border-line bg-white px-3 text-sm font-bold text-muted disabled:opacity-50"
+              >
+                Hủy
+              </button>
+            </div>
           </div>
+        ) : null}
+
+        {manageError ? (
+          <p className="text-xs font-semibold text-danger">{manageError}</p>
         ) : null}
       </div>
     </Field>
