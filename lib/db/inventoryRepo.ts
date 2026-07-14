@@ -232,8 +232,7 @@ export async function repoUpsertPhone(
       saved = mapPhone(rows[0], idToCode);
     }
 
-    // Persist dropdown values into lookup_items so options survive reload
-    await repoSyncPhoneLookupsFromValues(saved, client);
+    // Droplist chỉ cập nhật khi bấm nút + (ManageableSelect), không auto-ensure khi lưu máy.
     return saved;
   });
 }
@@ -479,6 +478,7 @@ async function getLookupCategory(
 /**
  * Ensure label exists (active) in category for a store.
  * Reactivates inactive same code, or inserts. Scoped by store_id.
+ * Chỉ dùng cho thao tác quản lý droplist (nút + / addLookup) — không gọi khi lưu máy/đơn.
  */
 export async function repoEnsureLookupLabel(
   categoryCode: string,
@@ -527,7 +527,7 @@ export async function repoEnsureLookupLabel(
       [cat.id, storeUuid, code]
     );
     if (activeByCode.rows[0]) {
-      // Same slug, different label — keep existing option; still OK for phone free-text.
+      // Same slug, different label — keep existing option (explicit + only).
       return activeByCode.rows[0].label;
     }
 
@@ -549,24 +549,6 @@ export async function repoEnsureLookupLabel(
     return rows[0]?.label ?? trimmed;
   };
 
-  if (client) return run(client);
-  return withTransaction(run);
-}
-
-/** Ensure many labels for a store (skip empties). */
-export async function repoEnsureLookupLabels(
-  pairs: { categoryCode: string; label: string }[],
-  storeCode: string,
-  client?: PoolClient
-): Promise<void> {
-  const filtered = pairs.filter((p) => p.label?.trim());
-  if (!filtered.length) return;
-
-  const run = async (c: PoolClient) => {
-    for (const p of filtered) {
-      await repoEnsureLookupLabel(p.categoryCode, p.label, storeCode, c);
-    }
-  };
   if (client) return run(client);
   return withTransaction(run);
 }
@@ -835,38 +817,6 @@ export async function repoSortLookupLabels(
 
     return sorted.map((r) => r.label);
   });
-}
-
-/** Phone field values → ensure present in that store's lookup tables. */
-export async function repoSyncPhoneLookupsFromValues(
-  phone: Pick<
-    PhoneItem,
-    | "storeId"
-    | "brand"
-    | "name"
-    | "color"
-    | "storage"
-    | "madeIn"
-    | "condition"
-    | "batteryCondition"
-    | "batteryCapacity"
-  >,
-  client?: PoolClient
-): Promise<void> {
-  await repoEnsureLookupLabels(
-    [
-      { categoryCode: "phone_brand", label: phone.brand },
-      { categoryCode: "phone_model_name", label: phone.name },
-      { categoryCode: "phone_color", label: phone.color },
-      { categoryCode: "phone_storage", label: phone.storage },
-      { categoryCode: "phone_made_in", label: phone.madeIn },
-      { categoryCode: "phone_condition", label: phone.condition },
-      { categoryCode: "phone_battery_condition", label: phone.batteryCondition },
-      { categoryCode: "phone_battery_capacity", label: phone.batteryCapacity ?? "" },
-    ],
-    phone.storeId,
-    client
-  );
 }
 
 /** Single round-trip bundle for inventory page bootstrap. */

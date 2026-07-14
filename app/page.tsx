@@ -1574,7 +1574,7 @@ export default function Home() {
         saved.imei,
         storeId
       );
-      // Reload grid + droplist từ DB để khớp dữ liệu server (sort, status, lookup…).
+      // Reload grid từ DB. Droplist chỉ đổi khi bấm + (không auto-ensure khi lưu máy).
       await reloadInventoryFromDb();
       const successMsg = isEdit
         ? `Đã sửa máy ${saved.brand} ${saved.name} (IMEI …${saved.imei.slice(-5)}) thành công.`
@@ -3027,7 +3027,6 @@ export default function Home() {
                           : null;
                         const draft = isClone ? cloneOnlineRepairDraft : null;
 
-                        const lookupStore = softwareLookupStoreId;
                         const payload = {
                           id: editingOnlineRepairId ?? undefined,
                           customerName: String(form.get("customerName")),
@@ -3058,7 +3057,6 @@ export default function Home() {
                           paymentStatus: pStatus,
                           rewardPoints: existing?.rewardPoints ?? 0,
                           isPaid: pStatus === "Đã thanh toán",
-                          lookupStoreId: lookupStore,
                           actorUsername: currentUser.username,
                         };
 
@@ -3066,26 +3064,7 @@ export default function Home() {
                         setSoftwareBackendError("");
                         try {
                           const saved = await apiUpsertSoftwareOrder(payload);
-                          // Đồng bộ option local store (server đã ensure DB)
-                          const pushSw = (cat: string, val: string) => {
-                            const v = val?.trim();
-                            if (!v) return;
-                            setLookupsByStore((prev) => {
-                              const cur = prev[lookupStore]?.[cat] ?? [];
-                              if (cur.some((o) => o.toLowerCase() === v.toLowerCase())) return prev;
-                              return {
-                                ...prev,
-                                [lookupStore]: {
-                                  ...(prev[lookupStore] ?? {}),
-                                  [cat]: [...cur, v],
-                                },
-                              };
-                            });
-                          };
-                          pushSw(SOFTWARE_LOOKUP_CATEGORIES.customer, saved.customerName);
-                          pushSw(SOFTWARE_LOOKUP_CATEGORIES.device, saved.deviceName);
-                          pushSw(SOFTWARE_LOOKUP_CATEGORIES.quote, String(Math.round(saved.quote || 0)));
-                          pushSw(SOFTWARE_LOOKUP_CATEGORIES.fee, String(Math.round(saved.deposit || 0)));
+                          // Droplist chỉ cập nhật khi bấm nút + (ManageableSelect), không auto-ensure khi lưu đơn.
                           pushLog(
                             isEdit
                               ? "Sửa đơn phần mềm"
@@ -3093,7 +3072,7 @@ export default function Home() {
                                 ? "Nhân bản đơn phần mềm"
                                 : "Tạo đơn phần mềm",
                             `${saved.customerName} — ${saved.deviceName}`,
-                            lookupStore
+                            softwareLookupStoreId
                           );
                           // Reload grid từ DB để danh sách đơn khớp server.
                           await reloadSoftwareFromDb();
@@ -3991,9 +3970,14 @@ function ManageableSelect({
     }
   };
 
+  /** Chỉ sửa/xóa option đã có trong droplist — text gõ tay (chưa +) không phải option. */
+  const valueInOptions = Boolean(
+    value && options.some((o) => o.toLowerCase() === value.toLowerCase())
+  );
+
   const handleEdit = async () => {
     if (!allowManage) return;
-    if (!value) return;
+    if (!value || !valueInOptions) return;
     const oldVal = value;
     const val = window.prompt(`Sửa giá trị "${oldVal}" thành:`, oldVal);
     const next = val?.trim();
@@ -4020,7 +4004,7 @@ function ManageableSelect({
 
   const handleDelete = async () => {
     if (!allowManage) return;
-    if (!value) return;
+    if (!value || !valueInOptions) return;
     if (!window.confirm(`Xóa giá trị "${value}" khỏi danh sách ${label}?`)) return;
 
     const removed = value;
@@ -4043,11 +4027,18 @@ function ManageableSelect({
   };
 
   const displayOptions = useMemo(() => {
+    // Rule droplist toàn project: gõ tay / giá trị form KHÔNG được inject vào list.
+    // Chỉ option đã có (seed DB hoặc bấm +) mới hiện trong droplist.
+    // Text free-text vẫn nằm trên input (allowFreeText), không thành option.
+    if (allowFreeText) {
+      return options.map((o) => ({ value: o, label: o }));
+    }
+    // Chế độ chỉ-chọn: giữ value/default nếu bị xóa khỏi list để không mất hiển thị.
     let list = options;
     if (defaultValue && !list.includes(defaultValue)) list = [defaultValue, ...list];
     if (value && !list.includes(value)) list = [value, ...list];
     return list.map((o) => ({ value: o, label: o }));
-  }, [options, defaultValue, value]);
+  }, [options, defaultValue, value, allowFreeText]);
 
   return (
     <Field label={label} required={required}>
@@ -4089,8 +4080,8 @@ function ManageableSelect({
             <button
               type="button"
               onClick={handleEdit}
-              disabled={busy}
-              title="Sửa"
+              disabled={busy || !valueInOptions}
+              title={valueInOptions ? "Sửa" : "Chỉ sửa option đã có trong droplist (bấm + để thêm)"}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 disabled:opacity-50"
             >
               <Edit3 size={18} />
@@ -4098,8 +4089,8 @@ function ManageableSelect({
             <button
               type="button"
               onClick={handleDelete}
-              disabled={busy}
-              title="Xóa"
+              disabled={busy || !valueInOptions}
+              title={valueInOptions ? "Xóa" : "Chỉ xóa option đã có trong droplist"}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger hover:bg-red-100 disabled:opacity-50"
             >
               <Trash2 size={18} />

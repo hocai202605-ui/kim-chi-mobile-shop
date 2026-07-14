@@ -1,14 +1,11 @@
 import type { OnlineRepair } from "@/types";
 import { toVnDateTimeLocal, vnDateTimeLocalToIso } from "@/lib/datetime";
 import { getPool } from "./pool";
-import { repoEnsureLookupLabels } from "./inventoryRepo";
 
 export type SoftwareOrderUpsertInput = Omit<OnlineRepair, "id" | "createdAt" | "isPaid"> & {
   id?: string;
   createdAt?: string;
   isPaid?: boolean;
-  /** Cửa hàng sở hữu droplist (ensure option khi lưu đơn). */
-  lookupStoreId?: string;
   /** Username app_accounts — ghi created_by / updated_by. */
   actorUsername?: string;
 };
@@ -16,30 +13,6 @@ export type SoftwareOrderUpsertInput = Omit<OnlineRepair, "id" | "createdAt" | "
 function normalizeActorUsername(value?: string | null): string | null {
   const t = String(value ?? "").trim();
   return t || null;
-}
-
-function moneyLabel(n: number): string {
-  const r = Math.round(Number(n) || 0);
-  return String(r);
-}
-
-async function ensureSoftwareLookups(
-  saved: OnlineRepair,
-  lookupStoreId?: string
-): Promise<void> {
-  const storeCode =
-    lookupStoreId === "store-1" || lookupStoreId === "store-2" || lookupStoreId === "store-3"
-      ? lookupStoreId
-      : "store-1";
-  await repoEnsureLookupLabels(
-    [
-      { categoryCode: "software_customer", label: saved.customerName },
-      { categoryCode: "software_device", label: saved.deviceName },
-      { categoryCode: "software_quote", label: moneyLabel(saved.quote) },
-      { categoryCode: "software_fee", label: moneyLabel(saved.deposit) },
-    ],
-    storeCode
-  );
 }
 
 type DbRow = {
@@ -157,9 +130,7 @@ export async function repoUpsertSoftwareOrder(
       ]
     );
     if (!rows[0]) throw new Error("Không tìm thấy đơn phần mềm để cập nhật.");
-    const updated = mapRow(rows[0]);
-    await ensureSoftwareLookups(updated, input.lookupStoreId);
-    return updated;
+    return mapRow(rows[0]);
   }
 
   const { rows } = await getPool().query<DbRow>(
@@ -186,9 +157,7 @@ export async function repoUpsertSoftwareOrder(
       actor,
     ]
   );
-  const created = mapRow(rows[0]);
-  await ensureSoftwareLookups(created, input.lookupStoreId);
-  return created;
+  return mapRow(rows[0]);
 }
 
 /** Xóa cứng đơn phần mềm theo id (UUID). */
