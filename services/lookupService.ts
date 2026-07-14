@@ -34,6 +34,12 @@ export type SoftwareLookupCategoryCode =
 export const ACCESSORY_LOOKUP_CATEGORIES = {
   category: "accessory_category",
   brand: "accessory_brand",
+  code: "accessory_code",
+  name: "accessory_name",
+  /** Giá bán — label digits (short money), sort bé → lớn. */
+  price: "accessory_price",
+  /** Giá nhập — label digits (short money), sort bé → lớn. */
+  cost: "accessory_cost",
 } as const;
 
 export type AccessoryLookupCategoryCode =

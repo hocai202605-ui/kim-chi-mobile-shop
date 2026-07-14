@@ -160,6 +160,38 @@ export async function repoUpsertSoftwareOrder(
   return mapRow(rows[0]);
 }
 
+/**
+ * Đánh dấu hàng loạt đơn NỢ DAI → Đã thanh toán.
+ * Chỉ cập nhật id có payment_status = debt; bỏ qua đơn đã TT.
+ */
+export async function repoMarkSoftwareOrdersPaid(
+  ids: string[],
+  actorUsername?: string
+): Promise<OnlineRepair[]> {
+  const clean = [
+    ...new Set(
+      ids
+        .map((id) => String(id || "").trim())
+        .filter(Boolean)
+    ),
+  ];
+  if (!clean.length) return [];
+
+  const actor = normalizeActorUsername(actorUsername);
+  const { rows } = await getPool().query<DbRow>(
+    `update public.software_orders
+     set payment_status = 'paid',
+         payment_at = now(),
+         updated_by = coalesce($2, updated_by),
+         updated_at = now()
+     where id = any($1::uuid[])
+       and payment_status = 'debt'
+     returning *`,
+    [clean, actor]
+  );
+  return rows.map(mapRow);
+}
+
 /** Xóa cứng đơn phần mềm theo id (UUID). */
 export async function repoDeleteSoftwareOrder(id: string): Promise<OnlineRepair> {
   const orderId = String(id || "").trim();

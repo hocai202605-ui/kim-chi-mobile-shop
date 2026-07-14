@@ -33,6 +33,19 @@ export async function upsertSoftwareOrder(
   return parseJson<OnlineRepair>(res);
 }
 
+/** Đánh dấu hàng loạt NỢ DAI → Đã thanh toán. */
+export async function markSoftwareOrdersPaid(
+  ids: string[],
+  actorUsername?: string
+): Promise<OnlineRepair[]> {
+  const res = await fetch("/api/software", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "mark-paid", ids, actorUsername }),
+  });
+  return parseJson<OnlineRepair[]>(res);
+}
+
 export async function deleteSoftwareOrder(id: string): Promise<OnlineRepair> {
   const res = await fetch("/api/software", {
     method: "DELETE",

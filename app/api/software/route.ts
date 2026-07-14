@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   repoDeleteSoftwareOrder,
   repoListSoftwareOrders,
+  repoMarkSoftwareOrdersPaid,
   repoUpsertSoftwareOrder,
 } from "@/lib/db/softwareRepo";
 
@@ -20,6 +21,19 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+    // Bulk: { action: "mark-paid", ids: string[], actorUsername? }
+    if (body?.action === "mark-paid") {
+      const ids = Array.isArray(body.ids)
+        ? body.ids.map((x: unknown) => String(x ?? "").trim()).filter(Boolean)
+        : [];
+      if (!ids.length) {
+        return NextResponse.json({ error: "Chưa chọn đơn để thanh toán." }, { status: 400 });
+      }
+      const actorUsername =
+        typeof body.actorUsername === "string" ? body.actorUsername : undefined;
+      const updated = await repoMarkSoftwareOrdersPaid(ids, actorUsername);
+      return NextResponse.json({ data: updated });
+    }
     const saved = await repoUpsertSoftwareOrder(body);
     return NextResponse.json({ data: saved });
   } catch (err) {
