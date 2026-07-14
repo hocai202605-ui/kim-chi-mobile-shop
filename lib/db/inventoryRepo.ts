@@ -115,6 +115,8 @@ function mapAccessory(
 ): Accessory {
   return {
     id: String(row.id),
+    category: String(row.category ?? ""),
+    brand: String(row.brand ?? ""),
     code: String(row.code),
     name: String(row.name),
     storeId: idToCode.get(String(row.store_id)) ?? "store-1",
@@ -122,6 +124,7 @@ function mapAccessory(
     cost: toShopMoney(Number(row.cost)),
     price: toShopMoney(Number(row.price)),
     status: accessoryStatusToUi(row.status as "in_stock" | "out_of_stock" | "cancelled"),
+    note: row.note ? String(row.note) : undefined,
   };
 }
 
@@ -260,9 +263,10 @@ export async function repoUpsertAccessory(
           store_id = $1, code = $2, name = $3, quantity = $4,
           cost = $5, price = $6,
           status = case when $7 = 'cancelled' then status else $7::public.accessory_status end,
-          updated_by = coalesce($8, updated_by),
+          category = $8, brand = $9, note = $10,
+          updated_by = coalesce($11, updated_by),
           updated_at = now()
-        where id = $9
+        where id = $12
         returning *`,
         [
           storeId,
@@ -272,23 +276,29 @@ export async function repoUpsertAccessory(
           toShopMoney(Number(input.cost)),
           toShopMoney(Number(input.price)),
           status,
+          input.category ?? "",
+          input.brand ?? "",
+          input.note ?? "",
           actor,
           input.id,
         ]
       );
       if (!rows[0]) throw new Error("Không tìm thấy phụ kiện để cập nhật.");
+      // Droplist chỉ cập nhật khi bấm nút + (ManageableSelect), không auto-ensure khi lưu phụ kiện.
       return mapAccessory(rows[0], idToCode);
     }
 
     const { rows } = await client.query(
       `insert into public.accessories (
          store_id, code, name, quantity, cost, price, status,
+         category, brand, note,
          created_by, updated_by
        )
        values (
          $1,$2,$3,$4,$5,$6,
          case when $4 > 0 then 'in_stock'::public.accessory_status else 'out_of_stock'::public.accessory_status end,
-         $7, $7
+         $7,$8,$9,
+         $10, $10
        )
        returning *`,
       [
@@ -298,9 +308,13 @@ export async function repoUpsertAccessory(
         qty,
         toShopMoney(Number(input.cost)),
         toShopMoney(Number(input.price)),
+        input.category ?? "",
+        input.brand ?? "",
+        input.note ?? "",
         actor,
       ]
     );
+    // Droplist chỉ cập nhật khi bấm nút + (ManageableSelect), không auto-ensure khi lưu phụ kiện.
     return mapAccessory(rows[0], idToCode);
   });
 }
@@ -433,6 +447,12 @@ const LOOKUP_PHONE_COLUMN: Record<string, string> = {
   phone_condition: "condition",
   phone_battery_condition: "battery_condition",
   phone_battery_capacity: "battery_capacity",
+};
+
+/** Map lookup category → accessories column (for rename cascade). */
+const LOOKUP_ACCESSORY_COLUMN: Record<string, string> = {
+  accessory_category: "category",
+  accessory_brand: "brand",
 };
 
 /** Software order text columns (global table — no store filter). */
@@ -650,6 +670,16 @@ export async function repoRenameLookupLabel(
           `update public.phones set ${phoneCol} = $1,
              updated_by = coalesce($4, updated_by), updated_at = now()
            where ${phoneCol} = $2 and store_id = $3`,
+          [to, from, storeUuid, actor]
+        );
+      }
+
+      const accessoryCol = LOOKUP_ACCESSORY_COLUMN[categoryCode];
+      if (accessoryCol) {
+        await client.query(
+          `update public.accessories set ${accessoryCol} = $1,
+             updated_by = coalesce($4, updated_by), updated_at = now()
+           where ${accessoryCol} = $2 and store_id = $3`,
           [to, from, storeUuid, actor]
         );
       }

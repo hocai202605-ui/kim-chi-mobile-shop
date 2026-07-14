@@ -54,6 +54,9 @@ export type DbAccessory = {
   store_id: string;
   code: string;
   name: string;
+  category?: string;
+  brand?: string;
+  note?: string;
   quantity: number;
   cost: number;
   price: number;
@@ -101,6 +104,9 @@ export type DbAccessoryInsert = {
   store_id: string;
   code: string;
   name: string;
+  category?: string;
+  brand?: string;
+  note?: string;
   quantity: number;
   cost: number;
   price: number;

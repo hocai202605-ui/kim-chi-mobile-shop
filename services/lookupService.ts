@@ -30,6 +30,15 @@ export const SOFTWARE_LOOKUP_CATEGORIES = {
 export type SoftwareLookupCategoryCode =
   (typeof SOFTWARE_LOOKUP_CATEGORIES)[keyof typeof SOFTWARE_LOOKUP_CATEGORIES];
 
+/** Droplist form phụ kiện (per-store lookup_items). */
+export const ACCESSORY_LOOKUP_CATEGORIES = {
+  category: "accessory_category",
+  brand: "accessory_brand",
+} as const;
+
+export type AccessoryLookupCategoryCode =
+  (typeof ACCESSORY_LOOKUP_CATEGORIES)[keyof typeof ACCESSORY_LOOKUP_CATEGORIES];
+
 async function parseJson<T>(res: Response): Promise<T> {
   const body = await res.json();
   if (!res.ok) {

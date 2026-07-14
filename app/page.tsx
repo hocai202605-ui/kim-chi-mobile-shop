@@ -49,6 +49,7 @@ import {
   type DashboardSummary,
 } from "@/services/inventoryReportService";
 import {
+  ACCESSORY_LOOKUP_CATEGORIES,
   PHONE_LOOKUP_CATEGORIES,
   SOFTWARE_LOOKUP_CATEGORIES,
   addLookupItem as apiAddLookupItem,
@@ -148,6 +149,8 @@ type PhoneItem = {
 
 type Accessory = {
   id: string;
+  category: string;
+  brand: string;
   code: string;
   name: string;
   storeId: Exclude<StoreId, "all">;
@@ -155,6 +158,7 @@ type Accessory = {
   cost: number;
   price: number;
   status: AccessoryStatus;
+  note?: string;
 };
 
 type Sale = {
@@ -726,6 +730,8 @@ export default function Home() {
   const [lookupsByStore, setLookupsByStore] = useState<Record<string, Record<string, string[]>>>({});
   /** Cửa hàng đang gắn form máy (quyết định droplist +/sửa/xóa). */
   const [phoneFormStoreId, setPhoneFormStoreId] = useState<Exclude<StoreId, "all">>("store-1");
+  /** Cửa hàng đang gắn form phụ kiện (droplist +/sửa/xóa theo store). */
+  const [accessoryFormStoreId, setAccessoryFormStoreId] = useState<Exclude<StoreId, "all">>("store-1");
   const [inventoryBackendError, setInventoryBackendError] = useState("");
   /** Toast sau lưu/sửa (hiện cả khi popup đã đóng) — dùng chung kho hàng + phần mềm. */
   const [uiToast, setUiToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -891,7 +897,11 @@ export default function Home() {
       const matchesStore = storeFilter === "all" || item.storeId === storeFilter;
       const q = query.toLowerCase();
       const name = inventoryNameFilter.toLowerCase();
-      const matchesQuickSearch = [item.name, item.code].join(" ").toLowerCase().includes(q);
+      const matchesQuickSearch = [item.name, item.code, item.category, item.brand, item.note]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(q);
       const matchesName = item.name.toLowerCase().includes(name);
       const matchesType = inventoryTypeFilter === "all" || item.code.toLowerCase().startsWith(inventoryTypeFilter.toLowerCase());
       const matchesPrice = priceMatchesInventoryRange(shopMoneyToVnd(item.price), inventoryPriceRange);
@@ -926,6 +936,11 @@ export default function Home() {
   const conditionOptions = formLookups[PHONE_LOOKUP_CATEGORIES.condition] ?? [];
   const batteryOptions = formLookups[PHONE_LOOKUP_CATEGORIES.batteryCondition] ?? [];
   const batteryCapacityOptions = formLookups[PHONE_LOOKUP_CATEGORIES.batteryCapacity] ?? [];
+
+  /** Options form phụ kiện theo cửa hàng đang chọn trên form. */
+  const accessoryFormLookups = lookupsByStore[accessoryFormStoreId] ?? {};
+  const accessoryCategoryOptions = accessoryFormLookups[ACCESSORY_LOOKUP_CATEGORIES.category] ?? [];
+  const accessoryBrandOptions = accessoryFormLookups[ACCESSORY_LOOKUP_CATEGORIES.brand] ?? [];
 
   /** Droplist phần mềm theo cửa hàng (staff = store gán; owner = filter / store-1). */
   const softwareLookupStoreId: Exclude<StoreId, "all"> =
@@ -1384,7 +1399,9 @@ export default function Home() {
     setEditingPhoneId(null);
     setClonePhoneDraft(null);
     setEditingAccessoryId(null);
-    setPhoneFormStoreId(resolvePhoneFormStore());
+    const sid = resolvePhoneFormStore();
+    setPhoneFormStoreId(sid);
+    setAccessoryFormStoreId(sid);
     setIsInventoryModalOpen(true);
   }
 
@@ -1424,10 +1441,12 @@ export default function Home() {
   }
 
   function openAccessoryEditModal(id: string) {
+    const accessory = accessories.find((item) => item.id === id);
     setInventoryTab("accessories");
     setEditingAccessoryId(id);
     setEditingPhoneId(null);
     setClonePhoneDraft(null);
+    setAccessoryFormStoreId(resolvePhoneFormStore(accessory?.storeId));
     setIsInventoryModalOpen(true);
   }
 
@@ -1600,11 +1619,26 @@ export default function Home() {
     event.preventDefault();
     if (inventorySaving) return;
     const form = new FormData(event.currentTarget);
-    const storeId = String(form.get("storeId")) as Exclude<StoreId, "all">;
+    // Staff: luôn ghi cửa hàng gắn tài khoản. Owner: form storeId / phụ kiện đang sửa / filter.
+    const formStoreRaw = String(form.get("storeId") || "").trim();
+    const formStore =
+      formStoreRaw === "store-1" || formStoreRaw === "store-2" || formStoreRaw === "store-3"
+        ? (formStoreRaw as Exclude<StoreId, "all">)
+        : undefined;
+    const storeId: Exclude<StoreId, "all"> =
+      currentUser?.role === "staff"
+        ? currentUser.storeId
+        : formStore ||
+          (editingAccessory?.storeId as Exclude<StoreId, "all"> | undefined) ||
+          (storeFilter !== "all" ? storeFilter : undefined) ||
+          currentUser?.storeId ||
+          "store-1";
     const isEdit = Boolean(editingAccessoryId);
     const quantity = Number(form.get("quantity") || 0);
     const payload: Accessory = {
       id: editingAccessoryId ?? `a${Date.now()}`,
+      category: String(form.get("category") || ""),
+      brand: String(form.get("brand") || ""),
       code: String(form.get("code")),
       name: String(form.get("name")),
       storeId,
@@ -1612,6 +1646,7 @@ export default function Home() {
       cost: parseShopMoney(form.get("cost")),
       price: parseShopMoney(form.get("price")),
       status: String(form.get("status") || (quantity > 0 ? "Còn hàng" : "Hết hàng")) as AccessoryStatus,
+      note: String(form.get("note") || ""),
     };
 
     setInventorySaving(true);
@@ -1627,7 +1662,7 @@ export default function Home() {
         saved.code,
         storeId
       );
-      // Reload grid từ DB để danh sách phụ kiện khớp server.
+      // Reload grid từ DB. Droplist chỉ đổi khi bấm + (không auto-ensure khi lưu phụ kiện).
       await reloadInventoryFromDb();
       showUiToast(
         "success",
@@ -2333,10 +2368,19 @@ export default function Home() {
               ) : (
                 <DataTable
                   compact
-                  headers={["Mã", "Tên phụ kiện", "SL", "Giá nhập", "Giá bán", "Lợi nhuận", "Thao tác"]}
+                  headers={["Mã", "Tên phụ kiện", "Danh mục", "Hãng", "SL", "Giá nhập", "Giá bán", "Lợi nhuận", "Thao tác"]}
                   rows={paginatedAccessories.map((item) => [
                     <span className="font-mono text-sm font-medium text-slate-500" key={`code-${item.id}`}>{item.code}</span>,
-                    <span className="text-lg font-black text-brand" key={`name-${item.id}`}>{item.name}</span>,
+                    <div key={`name-${item.id}`} className="flex flex-col items-center gap-0.5">
+                      <span className="text-lg font-black text-brand">{item.name}</span>
+                      {item.note ? (
+                        <span className="max-w-[12rem] truncate text-xs font-semibold text-muted" title={item.note}>
+                          {item.note}
+                        </span>
+                      ) : null}
+                    </div>,
+                    <span className="text-sm font-semibold text-slate-700" key={`cat-${item.id}`}>{item.category || "—"}</span>,
+                    <span className="text-sm font-semibold text-slate-700" key={`brand-${item.id}`}>{item.brand || "—"}</span>,
                     <span className="text-base font-bold text-slate-800" key={`qty-${item.id}`}>{item.quantity}</span>,
                     <span className="text-base font-medium text-slate-600" key={`cost-${item.id}`}>{formatMoney(item.cost)}</span>,
                     <span className="text-lg font-black text-emerald-600" key={`price-${item.id}`}>{formatMoney(item.price)}</span>,
@@ -2495,19 +2539,87 @@ export default function Home() {
                       </form>
                     ) : (
                       <form key={editingAccessory?.id ?? "new-accessory"} onSubmit={saveAccessory} className="grid gap-3" autoComplete="off" spellCheck={false}>
-                        <Field label="Mã hàng" required><input name="code" required defaultValue={editingAccessory?.code} className="h-10 rounded-lg border border-line px-3" placeholder="PK-CAP20" /></Field>
-                        <Field label="Tên phụ kiện" required><input name="name" required defaultValue={editingAccessory?.name} className="h-10 rounded-lg border border-line px-3" placeholder="Cáp sạc nhanh 20W" /></Field>
-                        <SelectField label="Cửa hàng" name="storeId" options={stores.map((s) => [s.id, s.name])} defaultValue={editingAccessory?.storeId} />
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <Field label="Số lượng"><input name="quantity" type="number" min="0" defaultValue={editingAccessory?.quantity ?? 1} className="h-10 rounded-lg border border-line px-3" /></Field>
+                          {currentUser.role === "owner" ? (
+                            <SelectField
+                              label="Cửa hàng"
+                              name="storeId"
+                              options={stores.map((s) => [s.id, s.name])}
+                              defaultValue={accessoryFormStoreId}
+                              onValueChange={(v) => {
+                                if (v === "store-1" || v === "store-2" || v === "store-3") {
+                                  setAccessoryFormStoreId(v);
+                                }
+                              }}
+                            />
+                          ) : (
+                            <Field label="Cửa hàng">
+                              <input type="hidden" name="storeId" value={currentUser.storeId} />
+                              <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-sm font-semibold text-slate-700">
+                                {storeName(currentUser.storeId)}
+                              </div>
+                            </Field>
+                          )}
+                          <div className="hidden sm:block" aria-hidden />
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <ManageableSelect
+                            label="Danh mục"
+                            name="category"
+                            options={accessoryCategoryOptions}
+                            setOptions={setFormLookupOptions(ACCESSORY_LOOKUP_CATEGORIES.category, accessoryFormStoreId)}
+                            defaultValue={editingAccessory?.category}
+                            categoryCode={ACCESSORY_LOOKUP_CATEGORIES.category}
+                            storeId={accessoryFormStoreId}
+                            onRenameCascade={reloadInventoryFromDb}
+                            allowManage
+                            actorUsername={currentUser.username}
+                          />
+                          <ManageableSelect
+                            label="Hãng"
+                            name="brand"
+                            options={accessoryBrandOptions}
+                            setOptions={setFormLookupOptions(ACCESSORY_LOOKUP_CATEGORIES.brand, accessoryFormStoreId)}
+                            defaultValue={editingAccessory?.brand}
+                            categoryCode={ACCESSORY_LOOKUP_CATEGORIES.brand}
+                            storeId={accessoryFormStoreId}
+                            onRenameCascade={reloadInventoryFromDb}
+                            allowManage
+                            actorUsername={currentUser.username}
+                          />
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <Field label="Mã hàng" required>
+                            <input name="code" required defaultValue={editingAccessory?.code} className="h-10 rounded-lg border border-line px-3" placeholder="PK-CAP20" />
+                          </Field>
+                          <Field label="Tên hàng" required>
+                            <input name="name" required defaultValue={editingAccessory?.name} className="h-10 rounded-lg border border-line px-3" placeholder="Cáp sạc nhanh 20W" />
+                          </Field>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <Field label="Số lượng">
+                            <input name="quantity" type="number" min="0" defaultValue={editingAccessory?.quantity ?? 1} className="h-10 rounded-lg border border-line px-3" />
+                          </Field>
+                          <SelectField
+                            label="Trạng thái"
+                            name="status"
+                            options={["Còn hàng", "Hết hàng", "Đã hủy"].map((status) => [status, status])}
+                            defaultValue={editingAccessory?.status ?? "Còn hàng"}
+                          />
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <Field label="Giá bán"><MoneyInput name="price" defaultValue={editingAccessory?.price} /></Field>
                           <Field label="Giá nhập"><MoneyInput name="cost" defaultValue={editingAccessory?.cost} /></Field>
                         </div>
-                        <Field label="Giá bán"><MoneyInput name="price" defaultValue={editingAccessory?.price} /></Field>
-                        <SelectField label="Trạng thái" name="status" options={["Còn hàng", "Hết hàng", "Đã hủy"].map((status) => [status, status])} defaultValue={editingAccessory?.status ?? "Còn hàng"} />
+                        <div className="grid gap-3 sm:grid-cols-1">
+                          <Field label="Ghi chú">
+                            <input name="note" defaultValue={editingAccessory?.note} className="h-10 rounded-lg border border-line px-3" />
+                          </Field>
+                        </div>
                         <div className="flex justify-end gap-2 border-t border-line pt-4">
                           <button type="button" onClick={closeInventoryModal} disabled={inventorySaving} className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted disabled:opacity-50">Hủy</button>
                           <button type="submit" disabled={inventorySaving} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-70">
-                            {inventorySaving ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
+                            {inventorySaving ? <Loader2 size={18} className="animate-spin" /> : editingAccessory ? <Edit3 size={18} /> : <Plus size={18} />}
                             {inventorySaving ? "Đang lưu…" : editingAccessory ? "Lưu sửa" : "Thêm phụ kiện"}
                           </button>
                         </div>

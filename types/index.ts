@@ -65,6 +65,8 @@ export type PhoneItem = {
 
 export type Accessory = {
   id: string;
+  category: string;
+  brand: string;
   code: string;
   name: string;
   storeId: Exclude<StoreId, "all">;
@@ -72,6 +74,7 @@ export type Accessory = {
   cost: number;
   price: number;
   status: AccessoryStatus;
+  note?: string;
 };
 
 export type Sale = {

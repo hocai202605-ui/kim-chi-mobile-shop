@@ -4,7 +4,7 @@ import { isMaxConnSessionError } from "@/lib/db/pool";
 
 export const dynamic = "force-dynamic";
 
-/** Phone + software droplist categories (per store). */
+/** Phone + accessory + software droplist categories (per store). */
 const BOOTSTRAP_LOOKUP_CODES = [
   "phone_brand",
   "phone_model_name",
@@ -14,6 +14,8 @@ const BOOTSTRAP_LOOKUP_CODES = [
   "phone_condition",
   "phone_battery_condition",
   "phone_battery_capacity",
+  "accessory_category",
+  "accessory_brand",
   "software_customer",
   "software_device",
   "software_quote",

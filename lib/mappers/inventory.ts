@@ -79,6 +79,8 @@ export function mapAccessoryFromDb(
   const storeId = storeCodeById.get(row.store_id) ?? "store-1";
   return {
     id: row.id,
+    category: row.category ?? "",
+    brand: row.brand ?? "",
     code: row.code,
     name: row.name,
     storeId,
@@ -86,5 +88,6 @@ export function mapAccessoryFromDb(
     cost: toShopMoney(Number(row.cost)),
     price: toShopMoney(Number(row.price)),
     status: accessoryStatusToUi(row.status),
+    note: row.note || undefined,
   };
 }
