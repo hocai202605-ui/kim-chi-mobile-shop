@@ -150,6 +150,15 @@ export async function cancelAccessory(
   return parseJson<Accessory>(res);
 }
 
+/** Xóa cứng phụ kiện khỏi DB / grid. */
+export async function deleteAccessory(id: string): Promise<Accessory> {
+  const res = await fetch(`/api/inventory/accessories/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+  });
+  return parseJson<Accessory>(res);
+}
+
 export async function restorePhone(_id: string): Promise<PhoneItem> {
   throw new Error("restorePhone chưa expose API — dùng SQL/RPC owner.");
 }

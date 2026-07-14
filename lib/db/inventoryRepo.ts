@@ -384,6 +384,25 @@ export async function repoCancelAccessory(
   });
 }
 
+/** Xóa cứng phụ kiện khỏi DB (và sale_items gắn accessory nếu có). */
+export async function repoDeleteAccessory(id: string): Promise<Accessory> {
+  const accessoryId = String(id || "").trim();
+  if (!accessoryId) throw new Error("Thiếu mã phụ kiện.");
+  const { idToCode } = await loadStoreMaps();
+
+  return withTransaction(async (client) => {
+    await skipStatusGuard(client);
+    // Gỡ dòng bán gắn PK (FK sale_items.accessory_id → accessories)
+    await client.query(`delete from public.sale_items where accessory_id = $1`, [accessoryId]);
+    const { rows } = await client.query(
+      `delete from public.accessories where id = $1 returning *`,
+      [accessoryId]
+    );
+    if (!rows[0]) throw new Error("Không tìm thấy phụ kiện để xóa.");
+    return mapAccessory(rows[0], idToCode);
+  });
+}
+
 async function resolveStoreUuid(
   storeCode: string,
   client?: PoolClient

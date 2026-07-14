@@ -37,7 +37,7 @@ import {
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import {
-  cancelAccessory as apiCancelAccessory,
+  deleteAccessory as apiDeleteAccessory,
   loadInventoryBootstrap as apiLoadInventoryBootstrap,
   upsertAccessory as apiUpsertAccessory,
   upsertPhone as apiUpsertPhone,
@@ -1542,34 +1542,29 @@ export default function Home() {
     setIsInventoryModalOpen(true);
   }
 
-  /** Hủy mềm phụ kiện (status Đã hủy) — owner only. */
-  async function cancelAccessoryItem(id: string) {
-    if (currentUser?.role !== "owner") {
-      showUiToast("error", "Chỉ chủ cửa hàng được hủy phụ kiện.");
-      return;
-    }
+  /** Xóa cứng phụ kiện khỏi DB/grid — confirm trước. */
+  async function deleteAccessoryItem(id: string) {
     const source = accessories.find((item) => item.id === id);
     if (!source) return;
-    if (source.status === "Đã hủy") {
-      showUiToast("error", "Phụ kiện đã hủy trước đó.");
-      return;
-    }
     const ok = window.confirm(
-      `Hủy phụ kiện "${source.name}" (${source.code})?\n\nThao tác hủy mềm — không xóa vĩnh viễn khỏi hệ thống.`
+      `Xóa phụ kiện "${source.name}" (${source.code})?\n\nThao tác này xóa hẳn khỏi danh sách / hệ thống, không hoàn tác.`
     );
     if (!ok) return;
     try {
-      await apiCancelAccessory(id, currentUser.username);
-      pushLog("Hủy phụ kiện", `${source.code} — ${source.name}`, source.storeId);
+      await apiDeleteAccessory(id);
+      pushLog("Xóa phụ kiện", `${source.code} — ${source.name}`, source.storeId);
+      // Cập nhật grid ngay (và reload DB)
+      setAccessories((prev) => prev.filter((a) => a.id !== id));
       if (viewingAccessoryId === id) setViewingAccessoryId(null);
       if (editingAccessoryId === id) {
         setIsInventoryModalOpen(false);
         setEditingAccessoryId(null);
+        setCloneAccessoryDraft(null);
       }
       await reloadInventoryFromDb();
-      showUiToast("success", `Đã hủy phụ kiện ${source.name}.`);
+      showUiToast("success", `Đã xóa phụ kiện ${source.name}.`);
     } catch (err) {
-      showUiToast("error", `Hủy phụ kiện thất bại: ${toUiError(err)}`);
+      showUiToast("error", `Xóa phụ kiện thất bại: ${toUiError(err)}`);
     }
   }
 
@@ -2874,16 +2869,14 @@ export default function Home() {
                       >
                         <CopyPlus size={18} />
                       </button>
-                      {currentUser.role === "owner" && item.status !== "Đã hủy" ? (
-                        <button
-                          type="button"
-                          onClick={() => void cancelAccessoryItem(item.id)}
-                          title="Hủy phụ kiện"
-                          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => void deleteAccessoryItem(item.id)}
+                        title="Xóa phụ kiện"
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100"
+                      >
+                        <Trash2 size={18} />
+                      </button>
                     </div>,
                   ])}
                 />
@@ -3451,16 +3444,14 @@ export default function Home() {
                         <CopyPlus size={16} />
                         Nhân bản
                       </button>
-                      {currentUser.role === "owner" && viewingAccessory.status !== "Đã hủy" ? (
-                        <button
-                          type="button"
-                          onClick={() => void cancelAccessoryItem(viewingAccessory.id)}
-                          className="inline-flex h-10 items-center gap-2 rounded-lg bg-red-50 px-4 font-bold text-danger hover:bg-red-100"
-                        >
-                          <Trash2 size={16} />
-                          Hủy
-                        </button>
-                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => void deleteAccessoryItem(viewingAccessory.id)}
+                        className="inline-flex h-10 items-center gap-2 rounded-lg bg-red-50 px-4 font-bold text-danger hover:bg-red-100"
+                      >
+                        <Trash2 size={16} />
+                        Xóa
+                      </button>
                     </div>
                   </div>
                 </section>
