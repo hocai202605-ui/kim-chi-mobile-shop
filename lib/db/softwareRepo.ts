@@ -168,13 +168,13 @@ export async function repoMarkSoftwareOrdersPaid(
   ids: string[],
   actorUsername?: string
 ): Promise<OnlineRepair[]> {
-  const clean = [
-    ...new Set(
+  const clean = Array.from(
+    new Set(
       ids
         .map((id) => String(id || "").trim())
         .filter(Boolean)
-    ),
-  ];
+    )
+  );
   if (!clean.length) return [];
 
   const actor = normalizeActorUsername(actorUsername);

@@ -59,7 +59,16 @@ function applyAccessoryFilters(rows: Accessory[], filters: AccessoryFilters = {}
     if (filters.minPrice != null && item.price < filters.minPrice) return false;
     if (filters.maxPrice != null && item.price > filters.maxPrice) return false;
     const q = filters.query?.trim().toLowerCase();
-    if (q && ![item.name, item.code].join(" ").toLowerCase().includes(q)) return false;
+    if (
+      q &&
+      ![item.name, item.code, item.category, item.brand, item.note]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(q)
+    ) {
+      return false;
+    }
     const name = filters.name?.trim().toLowerCase();
     if (name && !item.name.toLowerCase().includes(name)) return false;
     return true;

@@ -247,12 +247,29 @@ export async function repoUpsertAccessory(
   const storeId = codeToId.get(input.storeId);
   if (!storeId) throw new Error(`Không tìm thấy cửa hàng ${input.storeId}`);
 
-  const qty = Math.max(0, Math.round(input.quantity));
+  const code = String(input.code ?? "").trim();
+  const name = String(input.name ?? "").trim();
+  if (!code) throw new Error("Mã hàng không được để trống.");
+  if (!name) throw new Error("Tên hàng không được để trống.");
+
+  const qty = Math.max(0, Math.round(Number(input.quantity) || 0));
   let status = accessoryStatusToDb(input.status);
-  if (status === "cancelled" && !input.id) {
+  // Tạo mới: không cho ghi "Đã hủy"; auto theo SL nếu status rỗng/không hợp lệ.
+  if (!input.id) {
+    if (status === "cancelled") {
+      status = qty > 0 ? "in_stock" : "out_of_stock";
+    }
+  }
+  // Còn hàng / hết hàng tự khớp SL khi không phải hủy
+  if (status !== "cancelled") {
     status = qty > 0 ? "in_stock" : "out_of_stock";
   }
   const actor = normalizeActorUsername(input.actorUsername);
+  const category = String(input.category ?? "").trim();
+  const brand = String(input.brand ?? "").trim();
+  const note = String(input.note ?? "").trim();
+  const cost = toShopMoney(Number(input.cost));
+  const price = toShopMoney(Number(input.price));
 
   return withTransaction(async (client) => {
     await skipStatusGuard(client);
@@ -270,15 +287,15 @@ export async function repoUpsertAccessory(
         returning *`,
         [
           storeId,
-          input.code.trim(),
-          input.name,
+          code,
+          name,
           qty,
-          toShopMoney(Number(input.cost)),
-          toShopMoney(Number(input.price)),
+          cost,
+          price,
           status,
-          input.category ?? "",
-          input.brand ?? "",
-          input.note ?? "",
+          category,
+          brand,
+          note,
           actor,
           input.id,
         ]
@@ -295,22 +312,22 @@ export async function repoUpsertAccessory(
          created_by, updated_by
        )
        values (
-         $1,$2,$3,$4,$5,$6,
-         case when $4 > 0 then 'in_stock'::public.accessory_status else 'out_of_stock'::public.accessory_status end,
-         $7,$8,$9,
-         $10, $10
+         $1,$2,$3,$4,$5,$6,$7::public.accessory_status,
+         $8,$9,$10,
+         $11, $11
        )
        returning *`,
       [
         storeId,
-        input.code.trim(),
-        input.name,
+        code,
+        name,
         qty,
-        toShopMoney(Number(input.cost)),
-        toShopMoney(Number(input.price)),
-        input.category ?? "",
-        input.brand ?? "",
-        input.note ?? "",
+        cost,
+        price,
+        status,
+        category,
+        brand,
+        note,
         actor,
       ]
     );
