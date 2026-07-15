@@ -15,6 +15,26 @@ function mapPayment(raw: string): CreateSaleInput["payment"] {
   if (t === "tiền mặt" || t === "tien mat" || t === "cash") return "cash";
   if (t === "chuyển khoản" || t === "chuyen khoan" || t === "transfer") return "transfer";
   if (t === "thẻ" || t === "the" || t === "card") return "card";
+  if (
+    t === "nợ" ||
+    t === "no" ||
+    t === "nợ dai" ||
+    t === "no dai" ||
+    t === "debt"
+  ) {
+    return "debt";
+  }
+  if (
+    t === "thanh toán 1 phần" ||
+    t === "thanh toan 1 phan" ||
+    t === "partial" ||
+    t === "1 phần" ||
+    t === "1 phan"
+  ) {
+    return "partial";
+  }
+  // "Đã thanh toán" + hình thức → cash/transfer handled by raw method strings above
+  if (t === "đã thanh toán" || t === "da thanh toan") return "cash";
   return "other";
 }
 
@@ -27,8 +47,10 @@ function mapLine(raw: Record<string, unknown>): CreateSaleLineInput {
     return {
       itemType: "accessory",
       itemName: String(raw.itemName ?? raw.name ?? "").trim(),
+      category: raw.category != null ? String(raw.category).trim() : undefined,
       quantity: Number(raw.quantity ?? 1),
       unitPrice: Number(raw.unitPrice ?? raw.amount ?? 0),
+      unitCost: raw.unitCost != null ? Number(raw.unitCost) : undefined,
       accessoryId: raw.accessoryId ? String(raw.accessoryId) : undefined,
     };
   }
@@ -42,7 +64,7 @@ function mapLine(raw: Record<string, unknown>): CreateSaleLineInput {
 
 export async function GET() {
   try {
-    const data = await repoListRecentSales(80);
+    const data = await repoListRecentSales(100);
     return NextResponse.json({ data });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Lỗi tải phiếu bán";
@@ -89,17 +111,19 @@ export async function POST(req: NextRequest) {
       payment: mapPayment(String(body?.payment ?? "cash")),
       customerName: body?.customerName != null ? String(body.customerName) : undefined,
       customerPhone: body?.customerPhone != null ? String(body.customerPhone) : undefined,
+      customerAddress: body?.customerAddress != null ? String(body.customerAddress) : undefined,
+      soldAt: body?.soldAt != null ? String(body.soldAt) : undefined,
       note: body?.note ? String(body.note) : undefined,
       actorUsername: body?.actorUsername ? String(body.actorUsername) : undefined,
       lines,
-      // Legacy single-line
       itemType: lines ? undefined : legacyItemType,
       phoneId: body?.phoneId ? String(body.phoneId) : undefined,
       accessoryId: body?.accessoryId ? String(body.accessoryId) : undefined,
       quantity: body?.quantity != null ? Number(body.quantity) : undefined,
-      unitPrice: body?.unitPrice != null || body?.amount != null
-        ? Number(body?.unitPrice ?? body?.amount ?? 0)
-        : undefined,
+      unitPrice:
+        body?.unitPrice != null || body?.amount != null
+          ? Number(body?.unitPrice ?? body?.amount ?? 0)
+          : undefined,
     };
 
     if (!lines) {

@@ -2,6 +2,7 @@ export type CustomerDto = {
   id: string;
   name: string;
   phone: string;
+  address: string;
   note: string;
 };
 
@@ -20,6 +21,7 @@ export async function saveCustomer(input: {
   id?: string;
   name: string;
   phone?: string;
+  address?: string;
   note?: string;
   actorUsername?: string;
 }): Promise<CustomerDto> {

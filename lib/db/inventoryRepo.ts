@@ -1,5 +1,6 @@
 import type { Accessory, PhoneItem, StoreId } from "@/types";
 import { shopMoneyToVnd, toShopMoney } from "@/lib/format";
+import { toVnDate, toVnDateTimeLocal, vnDateTimeLocalToIso } from "@/lib/datetime";
 import {
   accessoryStatusToDb,
   accessoryStatusToUi,
@@ -21,19 +22,29 @@ export type CreateSaleLineInput =
       itemType: "accessory";
       /** Free-text: tên PK gõ tay (không trừ tồn nếu không có accessoryId). */
       itemName: string;
+      /** Loại PK (Ốp, củ sạc…) — ghép vào item_name khi lưu. */
+      category?: string;
       quantity: number;
       /** Đơn giá 1 cái (short shop OK). Thành tiền = unitPrice × quantity. */
       unitPrice: number;
+      /** Giá nhập short 1 cái (free-text); PK kho lấy cost từ DB. */
+      unitCost?: number;
       /** Tuỳ chọn — nếu có thì trừ tồn kho PK. */
       accessoryId?: string;
     };
 
 export type CreateSaleInput = {
   storeId: Exclude<StoreId, "all">;
-  payment: "cash" | "transfer" | "card" | "other";
+  payment: "cash" | "transfer" | "card" | "other" | "debt" | "partial";
   customerName?: string;
   customerPhone?: string;
+  customerAddress?: string;
   note?: string;
+  /**
+   * Ngày giờ bán — `YYYY-MM-DDTHH:mm` (giờ VN) hoặc ISO.
+   * Mặc định: now VN.
+   */
+  soldAt?: string;
   /** Username app_accounts — created_by / updated_by. */
   actorUsername?: string;
   /** Nhiều dòng / phiếu. Ưu tiên hơn single-item legacy. */
@@ -60,8 +71,10 @@ export type CreatedSale = {
   amount: number;
   profit: number;
   payment: string;
-  status: "Hoàn tất";
+  status: "Hoàn tất" | "Đã hủy";
   customerName?: string;
+  customerPhone?: string;
+  customerAddress?: string;
   lineCount?: number;
 };
 
@@ -929,10 +942,12 @@ async function ensureCustomerId(
   client: PoolClient,
   name?: string,
   phone?: string,
+  address?: string,
   actor?: string | null
 ): Promise<string> {
   const n = (name || "Khách lẻ").trim() || "Khách lẻ";
   const p = (phone || "").trim();
+  const addr = (address || "").trim();
 
   if (p) {
     const existing = await client.query<{ id: string }>(
@@ -941,7 +956,18 @@ async function ensureCustomerId(
        limit 1`,
       [p]
     );
-    if (existing.rows[0]?.id) return existing.rows[0].id;
+    if (existing.rows[0]?.id) {
+      await client.query(
+        `update public.customers
+         set name = $2,
+             address = case when $3 = '' then address else $3 end,
+             updated_by = coalesce($4, updated_by),
+             updated_at = now()
+         where id = $1`,
+        [existing.rows[0].id, n, addr, actor ?? null]
+      );
+      return existing.rows[0].id;
+    }
   } else if (n.toLowerCase() === "khách lẻ" || n.toLowerCase() === "khach le") {
     const walkIn = await client.query<{ id: string }>(
       `select id from public.customers
@@ -955,10 +981,10 @@ async function ensureCustomerId(
   }
 
   const { rows } = await client.query<{ id: string }>(
-    `insert into public.customers (name, phone, note, created_by, updated_by)
-     values ($1, $2, '', $3, $3)
+    `insert into public.customers (name, phone, address, note, created_by, updated_by)
+     values ($1, $2, $3, '', $4, $4)
      returning id`,
-    [n, p, actor ?? null]
+    [n, p, addr, actor ?? null]
   );
   if (!rows[0]?.id) throw new Error("Không tạo được khách hàng.");
   return rows[0].id;
@@ -1002,6 +1028,8 @@ function paymentToUi(p: string): string {
   if (p === "cash") return "Tiền mặt";
   if (p === "transfer") return "Chuyển khoản";
   if (p === "card") return "Thẻ";
+  if (p === "debt") return "NỢ DAI";
+  if (p === "partial") return "Thanh toán 1 phần";
   return "Khác";
 }
 
@@ -1027,22 +1055,30 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
       client,
       customerName,
       input.customerPhone,
+      input.customerAddress,
       actor
     );
+
+    const soldAtIso = vnDateTimeLocalToIso(input.soldAt) ?? new Date().toISOString();
+    const soldAtDate =
+      toVnDate(input.soldAt || soldAtIso) || toDateOnly(soldAtIso) || toDateOnly(new Date()) || "";
 
     const { rows: saleRows } = await client.query(
       `insert into public.sales (
          store_id, customer_id, payment_method, status,
          total_amount, total_cost, total_profit, note,
+         sold_at, sold_at_ts,
          created_by, updated_by
        ) values (
          $1, $2, $3::public.payment_method, 'completed',
-         0, 0, 0, $4, $5, $5
+         0, 0, 0, $4,
+         $5::date, $6::timestamptz,
+         $7, $7
        ) returning id, sold_at`,
-      [storeUuid, customerId, input.payment, input.note ?? "", actor]
+      [storeUuid, customerId, input.payment, input.note ?? "", soldAtDate, soldAtIso, actor]
     );
     const saleId = String(saleRows[0].id);
-    const soldAt = toDateOnly(saleRows[0].sold_at) ?? "";
+    const soldAt = toDateOnly(saleRows[0].sold_at) ?? soldAtDate;
 
     let totalAmount = 0;
     let totalCost = 0;
@@ -1141,10 +1177,14 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
             [accessoryId, left, actor]
           );
         } else {
-          // Free-text: không trừ kho, vốn 0
+          // Free-text: không trừ kho; vốn từ unitCost short (tuỳ chọn)
           if (!itemName) throw new Error("Nhập tên phụ kiện.");
           accessoryId = null;
-          unitCostVnd = 0;
+          const cat = String(line.category || "").trim();
+          if (cat && !itemName.toLowerCase().startsWith(`${cat.toLowerCase()}:`)) {
+            itemName = `${cat}: ${itemName}`;
+          }
+          unitCostVnd = shopMoneyToVnd(toShopMoney(Number(line.unitCost) || 0));
         }
 
         const amount = unitPriceVnd * quantity;
@@ -1225,12 +1265,155 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
   });
 }
 
-/** Recent completed sales for UI list. */
-export async function repoListRecentSales(limit = 50): Promise<CreatedSale[]> {
+export type SaleDetailLine =
+  | {
+      kind: "phone";
+      phoneId?: string;
+      name: string;
+      imei?: string;
+      brand?: string;
+      color?: string;
+      storage?: string;
+      condition?: string;
+      /** short shop */
+      unitPrice: number;
+      cost: number;
+    }
+  | {
+      kind: "accessory";
+      category?: string;
+      name: string;
+      quantity: number;
+      unitPrice: number;
+      cost: number;
+      accessoryId?: string;
+    };
+
+export type SaleDetail = CreatedSale & {
+  /** YYYY-MM-DDTHH:mm VN */
+  soldAtLocal: string;
+  customerId?: string;
+  lines: SaleDetailLine[];
+};
+
+/** Chi tiết 1 phiếu + dòng hàng (để sửa / xem). */
+export async function repoGetSale(saleId: string): Promise<SaleDetail> {
+  const { idToCode } = await loadStoreMaps();
+  const { rows: saleRows } = await getPool().query(
+    `select s.*,
+            coalesce(c.name, 'Khách lẻ') as customer_name,
+            coalesce(c.phone, '') as customer_phone,
+            coalesce(c.address, '') as customer_address
+     from public.sales s
+     left join public.customers c on c.id = s.customer_id
+     where s.id = $1`,
+    [saleId]
+  );
+  const sale = saleRows[0];
+  if (!sale) throw new Error("Không tìm thấy phiếu bán.");
+
+  const { rows: itemRows } = await getPool().query(
+    `select si.*,
+            p.imei as phone_imei,
+            p.brand as phone_brand,
+            p.model_name as phone_model,
+            p.color as phone_color,
+            p.storage as phone_storage,
+            p.condition as phone_condition,
+            p.cost as phone_cost
+     from public.sale_items si
+     left join public.phones p on p.id = si.phone_id
+     where si.sale_id = $1
+     order by si.created_at asc`,
+    [saleId]
+  );
+
+  const lines: SaleDetailLine[] = itemRows.map((si) => {
+    if (si.item_type === "phone") {
+      const name =
+        String(si.item_name || "").trim() ||
+        `${si.phone_brand || ""} ${si.phone_model || ""}`.trim() ||
+        "Máy";
+      return {
+        kind: "phone" as const,
+        phoneId: si.phone_id ? String(si.phone_id) : undefined,
+        name,
+        imei: si.phone_imei ? String(si.phone_imei) : "",
+        brand: si.phone_brand ? String(si.phone_brand) : undefined,
+        color: si.phone_color ? String(si.phone_color) : undefined,
+        storage: si.phone_storage ? String(si.phone_storage) : undefined,
+        condition: si.phone_condition ? String(si.phone_condition) : undefined,
+        unitPrice: toShopMoney(Number(si.unit_price) || 0),
+        cost: toShopMoney(Number(si.unit_cost ?? si.phone_cost) || 0),
+      };
+    }
+    const rawName = String(si.item_name || "").trim() || "Phụ kiện";
+    const colon = rawName.indexOf(":");
+    let category = "";
+    let name = rawName;
+    if (colon > 0) {
+      category = rawName.slice(0, colon).trim();
+      name = rawName.slice(colon + 1).trim() || rawName;
+    }
+    return {
+      kind: "accessory" as const,
+      category: category || "Khác",
+      name,
+      quantity: Math.max(1, Number(si.quantity) || 1),
+      unitPrice: toShopMoney(Number(si.unit_price) || 0),
+      cost: toShopMoney(Number(si.unit_cost) || 0),
+      accessoryId: si.accessory_id ? String(si.accessory_id) : undefined,
+    };
+  });
+
+  const phoneLines = lines.filter((l) => l.kind === "phone").length;
+  const accLines = lines.filter((l) => l.kind === "accessory").length;
+  const itemType: "Máy" | "Phụ kiện" =
+    phoneLines > 0 && accLines === 0 ? "Máy" : phoneLines === 0 ? "Phụ kiện" : "Máy";
+  const itemNames = lines.map((l) =>
+    l.kind === "phone"
+      ? l.name
+      : l.quantity > 1
+        ? `${l.category ? `${l.category}: ` : ""}${l.name} ×${l.quantity}`
+        : `${l.category ? `${l.category}: ` : ""}${l.name}`
+  );
+
+  const soldAtLocal =
+    toVnDateTimeLocal(sale.sold_at_ts || sale.sold_at) ||
+    `${toDateOnly(sale.sold_at) ?? ""}T00:00`;
+
+  return {
+    id: String(sale.id),
+    soldAt: toDateOnly(sale.sold_at) ?? "",
+    soldAtLocal,
+    storeId: idToCode.get(String(sale.store_id)) ?? "store-1",
+    itemName:
+      itemNames.length <= 2
+        ? itemNames.join(" + ")
+        : `${itemNames[0]} + ${itemNames.length - 1} dòng khác`,
+    itemType,
+    quantity: lines.reduce((s, l) => s + (l.kind === "phone" ? 1 : l.quantity), 0),
+    amount: Number(sale.total_amount) || 0,
+    profit: Number(sale.total_profit) || 0,
+    payment: paymentToUi(String(sale.payment_method)),
+    status: sale.status === "cancelled" ? ("Đã hủy" as const) : ("Hoàn tất" as const),
+    customerId: sale.customer_id ? String(sale.customer_id) : undefined,
+    customerName: String(sale.customer_name || "Khách lẻ"),
+    customerPhone: String(sale.customer_phone || ""),
+    customerAddress: String(sale.customer_address || ""),
+    lineCount: lines.length,
+    lines,
+  };
+}
+
+/** Recent sales (completed + cancelled) for UI list. */
+export async function repoListRecentSales(limit = 80): Promise<CreatedSale[]> {
   const { idToCode } = await loadStoreMaps();
   const { rows } = await getPool().query(
     `select s.id, s.sold_at, s.store_id, s.total_amount, s.total_profit, s.payment_method, s.status,
             coalesce(c.name, 'Khách lẻ') as customer_name,
+            coalesce(c.phone, '') as customer_phone,
+            coalesce(c.address, '') as customer_address,
             coalesce(
               (
                 select string_agg(
@@ -1239,42 +1422,39 @@ export async function repoListRecentSales(limit = 50): Promise<CreatedSale[]> {
                   order by si.created_at
                 )
                 from public.sale_items si
-                where si.sale_id = s.id and si.sale_status = 'completed'
+                where si.sale_id = s.id
               ),
               'Hàng'
             ) as item_name,
             case
               when exists (
                 select 1 from public.sale_items si
-                where si.sale_id = s.id and si.item_type = 'phone' and si.sale_status = 'completed'
+                where si.sale_id = s.id and si.item_type = 'phone'
               )
               and not exists (
                 select 1 from public.sale_items si
-                where si.sale_id = s.id and si.item_type = 'accessory' and si.sale_status = 'completed'
+                where si.sale_id = s.id and si.item_type = 'accessory'
               ) then 'phone'
               when exists (
                 select 1 from public.sale_items si
-                where si.sale_id = s.id and si.item_type = 'accessory' and si.sale_status = 'completed'
+                where si.sale_id = s.id and si.item_type = 'accessory'
               )
               and not exists (
                 select 1 from public.sale_items si
-                where si.sale_id = s.id and si.item_type = 'phone' and si.sale_status = 'completed'
+                where si.sale_id = s.id and si.item_type = 'phone'
               ) then 'accessory'
               else 'phone'
             end as item_type,
             coalesce(
-              (select sum(si.quantity)::int from public.sale_items si
-               where si.sale_id = s.id and si.sale_status = 'completed'),
+              (select sum(si.quantity)::int from public.sale_items si where si.sale_id = s.id),
               1
             ) as quantity,
             coalesce(
-              (select count(*)::int from public.sale_items si
-               where si.sale_id = s.id and si.sale_status = 'completed'),
+              (select count(*)::int from public.sale_items si where si.sale_id = s.id),
               1
             ) as line_count
      from public.sales s
      left join public.customers c on c.id = s.customer_id
-     where s.status = 'completed'
      order by s.sold_at_ts desc
      limit $1`,
     [limit]
@@ -1290,10 +1470,100 @@ export async function repoListRecentSales(limit = 50): Promise<CreatedSale[]> {
     amount: Number(row.total_amount) || 0,
     profit: Number(row.total_profit) || 0,
     payment: paymentToUi(String(row.payment_method)),
-    status: "Hoàn tất" as const,
+    status: row.status === "cancelled" ? ("Đã hủy" as const) : ("Hoàn tất" as const),
     customerName: String(row.customer_name || "Khách lẻ"),
+    customerPhone: String(row.customer_phone || ""),
+    customerAddress: String(row.customer_address || ""),
     lineCount: Number(row.line_count) || 1,
   }));
+}
+
+/**
+ * Hủy mềm phiếu bán: completed → cancelled, hoàn máy in_stock, hoàn SL PK (nếu có accessory_id).
+ * Free-text PK (accessory_id null) không chạm tồn kho.
+ */
+export async function repoCancelSale(
+  saleId: string,
+  actorUsername?: string
+): Promise<CreatedSale> {
+  const actor = normalizeActorUsername(actorUsername);
+  const { idToCode } = await loadStoreMaps();
+
+  return withTransaction(async (client) => {
+    await skipStatusGuard(client);
+    const { rows: saleRows } = await client.query(
+      `select * from public.sales where id = $1 for update`,
+      [saleId]
+    );
+    const sale = saleRows[0];
+    if (!sale) throw new Error("Không tìm thấy phiếu bán.");
+    if (sale.status === "cancelled") throw new Error("Phiếu đã hủy.");
+
+    const { rows: items } = await client.query(
+      `select * from public.sale_items where sale_id = $1 and sale_status = 'completed' for update`,
+      [saleId]
+    );
+
+    for (const item of items) {
+      if (item.item_type === "phone" && item.phone_id) {
+        await client.query(
+          `update public.phones
+           set status = 'in_stock', sale_date = null,
+               updated_by = coalesce($2, updated_by), updated_at = now()
+           where id = $1 and status = 'sold'`,
+          [item.phone_id, actor]
+        );
+      } else if (item.item_type === "accessory" && item.accessory_id) {
+        const qty = Number(item.quantity) || 0;
+        await client.query(
+          `update public.accessories
+           set quantity = quantity + $2,
+               status = case
+                 when quantity + $2 > 0 then 'in_stock'::public.accessory_status
+                 else status
+               end,
+               updated_by = coalesce($3, updated_by),
+               updated_at = now()
+           where id = $1 and status <> 'cancelled'`,
+          [item.accessory_id, qty, actor]
+        );
+      }
+      await client.query(
+        `update public.sale_items
+         set sale_status = 'cancelled',
+             updated_by = coalesce($2, updated_by),
+             updated_at = now()
+         where id = $1`,
+        [item.id, actor]
+      );
+    }
+
+    await client.query(
+      `update public.sales
+       set status = 'cancelled',
+           cancelled_at = now(),
+           updated_by = coalesce($2, updated_by),
+           updated_at = now()
+       where id = $1`,
+      [saleId, actor]
+    );
+
+    const storeId = idToCode.get(String(sale.store_id)) ?? "store-1";
+    return {
+      id: saleId,
+      soldAt: toDateOnly(sale.sold_at) ?? "",
+      storeId,
+      itemName: "Hàng",
+      itemType: "Máy" as const,
+      quantity: 0,
+      amount: Number(sale.total_amount) || 0,
+      profit: Number(sale.total_profit) || 0,
+      payment: paymentToUi(String(sale.payment_method)),
+      status: "Đã hủy" as const,
+      customerName: "",
+      lineCount: items.length,
+    };
+  });
 }
 
 /** Dashboard KPIs: stock from phones/accessories + lifetime sales profit/revenue. */

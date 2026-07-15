@@ -24,6 +24,7 @@ export async function POST(req: NextRequest) {
       id: body?.id ? String(body.id) : undefined,
       name: String(body?.name ?? ""),
       phone: body?.phone != null ? String(body.phone) : "",
+      address: body?.address != null ? String(body.address) : "",
       note: body?.note != null ? String(body.note) : "",
       actorUsername: body?.actorUsername ? String(body.actorUsername) : undefined,
     });

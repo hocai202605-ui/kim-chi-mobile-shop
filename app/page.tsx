@@ -73,6 +73,16 @@ import {
   type DebtItem,
 } from "@/services/debtsService";
 import {
+  cancelSale as apiCancelSale,
+  createSale as apiCreateSale,
+  getSale as apiGetSale,
+  listRecentSales as apiListRecentSales,
+} from "@/services/salesService";
+import {
+  listCustomers as apiListCustomers,
+  saveCustomer as apiSaveCustomer,
+} from "@/services/customersService";
+import {
   apiListAccounts,
   apiListLoginUsers,
   apiLogin,
@@ -103,10 +113,63 @@ let lastSessionTouchAt = 0;
 
 type Role = "owner" | "staff";
 type StoreId = "all" | "store-1" | "store-2" | "store-3";
-type PaymentMethod = "Tiền mặt" | "Chuyển khoản" | "Thẻ" | "Khác" | "Nợ";
-/** Phương thức TT trên phiếu bán. */
-type SalePaymentMethod = "Tiền mặt" | "Chuyển khoản" | "Nợ";
-const SALE_PAYMENT_OPTIONS: SalePaymentMethod[] = ["Tiền mặt", "Chuyển khoản", "Nợ"];
+type PaymentMethod =
+  | "Tiền mặt"
+  | "Chuyển khoản"
+  | "Thẻ"
+  | "Khác"
+  | "NỢ DAI"
+  | "Nợ"
+  | "Thanh toán 1 phần";
+/** Hình thức thanh toán (kênh thu). */
+type SalePayMethod = "Tiền mặt" | "Chuyển khoản";
+const SALE_PAY_METHOD_OPTIONS: SalePayMethod[] = ["Tiền mặt", "Chuyển khoản"];
+/** Trạng thái TT (mặc định NỢ DAI) — copy giống phần mềm. */
+type SalePayStatus = "NỢ DAI" | "Đã thanh toán" | "Thanh toán 1 phần";
+const SALE_PAY_STATUS_OPTIONS: SalePayStatus[] = ["NỢ DAI", "Đã thanh toán", "Thanh toán 1 phần"];
+
+/** Ghép status + method → giá trị payment lưu grid / map API. */
+function resolveSalePaymentValue(status: SalePayStatus, method: SalePayMethod): PaymentMethod {
+  if (status === "NỢ DAI") return "NỢ DAI";
+  if (status === "Thanh toán 1 phần") return "Thanh toán 1 phần";
+  return method;
+}
+
+function parseSalePaymentFields(pay: string): { status: SalePayStatus; method: SalePayMethod } {
+  const p = pay.trim();
+  if (p === "NỢ DAI" || p === "Nợ" || p.toLowerCase() === "nợ") {
+    return { status: "NỢ DAI", method: "Tiền mặt" };
+  }
+  if (p === "Thanh toán 1 phần") return { status: "Thanh toán 1 phần", method: "Tiền mặt" };
+  if (p === "Chuyển khoản") return { status: "Đã thanh toán", method: "Chuyển khoản" };
+  return { status: "Đã thanh toán", method: "Tiền mặt" };
+}
+
+/** Badge TT grid/form — icon giống phần mềm. */
+function salePayStatusLabel(payment: string, saleStatus?: string): { text: string; className: string } {
+  if (saleStatus === "Đã hủy") {
+    return {
+      text: "Đã hủy",
+      className: "bg-slate-50 text-slate-600 border border-line",
+    };
+  }
+  if (payment === "NỢ DAI" || payment === "Nợ") {
+    return {
+      text: "❌ NỢ DAI",
+      className: "bg-red-50 text-red-600 border border-line",
+    };
+  }
+  if (payment === "Thanh toán 1 phần") {
+    return {
+      text: "⚠️ Thanh toán 1 phần",
+      className: "bg-amber-50 text-amber-800 border border-line",
+    };
+  }
+  return {
+    text: "✅ Đã thanh toán",
+    className: "bg-emerald-50 text-emerald-600 border border-line",
+  };
+}
 type ProductStatus = "Còn hàng" | "Đã bán" | "Đã hủy" | "Chưa xử lý";
 type AccessoryStatus = "Còn hàng" | "Hết hàng" | "Đã hủy";
 type RepairStatus = "Đang chờ" | "Đang sửa" | "Đã xong" | "Đã trả khách" | "Đã hủy";
@@ -156,8 +219,6 @@ type SaleCartLine =
   | {
       key: string;
       kind: "accessory";
-      /** Loại PK: Ốp, củ sạc, … */
-      category: string;
       name: string;
       quantity: number;
       /** Giá bán short shop (1 cái) */
@@ -166,17 +227,16 @@ type SaleCartLine =
       cost: number;
     };
 
-/** Seed droplist loại PK khi store chưa có lookup. */
-const SALE_ACC_CATEGORY_SEED = [
-  "Ốp",
-  "Củ sạc",
-  "Dây sạc",
-  "Bộ sạc",
-  "Tai nghe",
-  "Sạc dự phòng",
-  "Cáp",
+const SALE_ACC_NAME_SEED = [
+  "Ốp trong suốt",
+  "Ốp chống sốc",
+  "Cáp sạc Type-C",
+  "Cáp Lightning",
+  "Củ sạc 20W",
+  "Củ sạc 65W",
+  "Tai nghe Bluetooth",
   "Kính cường lực",
-  "Khác",
+  "Sạc dự phòng 10000mAh",
 ];
 
 type PhoneItem = {
@@ -231,7 +291,6 @@ type SaleLineSnapshot =
     }
   | {
       kind: "accessory";
-      category?: string;
       name: string;
       quantity: number;
       unitPrice: number;
@@ -812,7 +871,10 @@ export default function Home() {
   const [sales, setSales] = useState(salesSeed);
   /** Form bán hàng */
   const [saleStoreId, setSaleStoreId] = useState<Exclude<StoreId, "all">>("store-1");
-  const [salePayment, setSalePayment] = useState<SalePaymentMethod>("Tiền mặt");
+  const [salePayMethod, setSalePayMethod] = useState<SalePayMethod>("Tiền mặt");
+  const [salePayStatus, setSalePayStatus] = useState<SalePayStatus>("NỢ DAI");
+  /** Ngày giờ bán — mặc định VN now (datetime-local). */
+  const [saleSoldAt, setSaleSoldAt] = useState(() => vnNowDateTimeLocal());
   const [saleCustomerId, setSaleCustomerId] = useState<string | null>(null);
   const [saleCustomerName, setSaleCustomerName] = useState("Khách lẻ");
   const [saleCustomerPhone, setSaleCustomerPhone] = useState("");
@@ -822,14 +884,17 @@ export default function Home() {
   const [salePhoneSearch, setSalePhoneSearch] = useState("");
   /** Chỉ hiện list máy khi bấm «Thêm máy» — mặc định chỉ bán PK. */
   const [salePhonePickerOpen, setSalePhonePickerOpen] = useState(false);
-  const [saleAccName, setSaleAccName] = useState("");
   const [saleAccQty, setSaleAccQty] = useState(1);
   const [saleAccCost, setSaleAccCost] = useState("");
   const [saleAccPrice, setSaleAccPrice] = useState("");
-  /** Key remount ManageableSelect loại PK khi mở phiếu mới. */
-  const [saleAccCategoryKey, setSaleAccCategoryKey] = useState(0);
+  /** Key remount ManageableSelect khi mở phiếu mới. */
+  const [saleAccFormKey, setSaleAccFormKey] = useState(0);
+  /** Chỉ remount tên PK sau khi Thêm PK (giữ loại đã chọn). */
+  const [saleAccNameKey, setSaleAccNameKey] = useState(0);
+  /** Prefill droplist tên khi sửa phiếu. */
+  const [saleAccDefaultName, setSaleAccDefaultName] = useState("");
   /** Options local fallback khi lookup store trống. */
-  const [saleAccCategoryLocal, setSaleAccCategoryLocal] = useState<string[]>(SALE_ACC_CATEGORY_SEED);
+  const [saleAccNameLocal, setSaleAccNameLocal] = useState<string[]>(SALE_ACC_NAME_SEED);
   const [saleSaving, setSaleSaving] = useState(false);
   /** Popup tạo/sửa phiếu bán — màn sales mặc định chỉ grid. */
   const [isSaleModalOpen, setIsSaleModalOpen] = useState(false);
@@ -839,7 +904,10 @@ export default function Home() {
   const [saleMonth, setSaleMonth] = useState(() => vnNowMonth());
   const [saleDate, setSaleDate] = useState(() => vnNowDate());
   const [saleStatusFilter, setSaleStatusFilter] = useState<"all" | "Hoàn tất" | "Đã hủy">("all");
-  const [salePaymentFilter, setSalePaymentFilter] = useState<"all" | SalePaymentMethod>("all");
+  /** Lọc TT: đã thu | 1 phần | nợ */
+  const [salePaymentFilter, setSalePaymentFilter] = useState<
+    "all" | "paid" | "partial" | "debt"
+  >("all");
   const [saleTypeFilter, setSaleTypeFilter] = useState<"all" | "Máy" | "Phụ kiện">("all");
   const [saleSearch, setSaleSearch] = useState("");
   const [isSaleSensitiveHidden, setIsSaleSensitiveHidden] = useState(false);
@@ -934,15 +1002,67 @@ export default function Home() {
     }
   }, []);
 
+  const reloadSalesFromDb = useCallback(async () => {
+    try {
+      const rows = await apiListRecentSales();
+      setSales(
+        rows.map((r) => ({
+          id: r.id,
+          createdAt: r.soldAt,
+          customerId: "db",
+          customerName: r.customerName || "Khách lẻ",
+          customerPhone: r.customerPhone || "",
+          customerAddress: r.customerAddress || "",
+          storeId: r.storeId,
+          itemName: r.itemName,
+          itemType: r.itemType,
+          quantity: r.quantity,
+          amount: r.amount,
+          profit: r.profit,
+          payment: ((r.payment === "Nợ" ? "NỢ DAI" : r.payment) as PaymentMethod) || "Tiền mặt",
+          status: r.status,
+        }))
+      );
+    } catch (err) {
+      console.warn("load sales", err);
+    }
+  }, []);
+
+  const reloadCustomersFromDb = useCallback(async () => {
+    try {
+      const rows = await apiListCustomers();
+      if (rows.length) {
+        setCustomers(
+          rows.map((c) => ({
+            id: c.id,
+            name: c.name,
+            phone: c.phone,
+            address: c.address || "",
+            note: c.note || "",
+          }))
+        );
+      }
+    } catch (err) {
+      console.warn("load customers", err);
+    }
+  }, []);
+
   useEffect(() => {
     if (!currentUser) return;
     // Sequential: inventory first, then software — fewer concurrent DB slots
-    // Bán hàng / khách: UI mock local (seed) — chốt UX xong mới thiết kế server/DB.
     void (async () => {
       await reloadInventoryFromDb();
       await reloadSoftwareFromDb();
+      await reloadSalesFromDb();
+      await reloadCustomersFromDb();
     })();
-  }, [currentUser, reloadInventoryFromDb, reloadSoftwareFromDb]);
+  }, [
+    currentUser,
+    reloadInventoryFromDb,
+    reloadSoftwareFromDb,
+    reloadSalesFromDb,
+    reloadCustomersFromDb,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -1057,7 +1177,22 @@ export default function Home() {
     return sales.filter((item) => {
       if (storeFilter !== "all" && item.storeId !== storeFilter) return false;
       if (saleStatusFilter !== "all" && item.status !== saleStatusFilter) return false;
-      if (salePaymentFilter !== "all" && item.payment !== salePaymentFilter) return false;
+      if (
+        salePaymentFilter === "debt" &&
+        item.payment !== "NỢ DAI" &&
+        item.payment !== "Nợ"
+      ) {
+        return false;
+      }
+      if (salePaymentFilter === "partial" && item.payment !== "Thanh toán 1 phần") return false;
+      if (
+        salePaymentFilter === "paid" &&
+        (item.payment === "NỢ DAI" ||
+          item.payment === "Nợ" ||
+          item.payment === "Thanh toán 1 phần")
+      ) {
+        return false;
+      }
       if (saleTypeFilter !== "all" && item.itemType !== saleTypeFilter) return false;
       const day = (item.createdAt || "").slice(0, 10);
       if (saleDate) {
@@ -1109,6 +1244,41 @@ export default function Home() {
       dailyProfit: sum(daily, "profit"),
     };
   }, [sales, storeFilter, saleMonth, saleDate]);
+
+  /** Tổng tiền ngoài grid — TM / CK / Nợ (không hiện TT 1 phần). */
+  const salePayTotals = useMemo(() => {
+    const buckets = {
+      cash: { count: 0, amount: 0, profit: 0 },
+      transfer: { count: 0, amount: 0, profit: 0 },
+      debt: { count: 0, amount: 0, profit: 0 },
+    };
+    let totalCount = 0;
+    let totalAmount = 0;
+    let totalProfit = 0;
+    for (const s of filteredSales) {
+      if (s.status === "Đã hủy") continue;
+      const amt = Number(s.amount) || 0;
+      const prof = Number(s.profit) || 0;
+      totalCount += 1;
+      totalAmount += amt;
+      totalProfit += prof;
+      if (s.payment === "NỢ DAI" || s.payment === "Nợ") {
+        buckets.debt.count += 1;
+        buckets.debt.amount += amt;
+        buckets.debt.profit += prof;
+      } else if (s.payment === "Chuyển khoản") {
+        buckets.transfer.count += 1;
+        buckets.transfer.amount += amt;
+        buckets.transfer.profit += prof;
+      } else if (s.payment === "Tiền mặt") {
+        buckets.cash.count += 1;
+        buckets.cash.amount += amt;
+        buckets.cash.profit += prof;
+      }
+      // Thanh toán 1 phần: chỉ cộng vào tổng, không tách ô
+    }
+    return { ...buckets, totalCount, totalAmount, totalProfit };
+  }, [filteredSales]);
 
   const viewingSale = viewingSaleId ? sales.find((s) => s.id === viewingSaleId) ?? null : null;
 
@@ -1273,20 +1443,20 @@ export default function Home() {
     [phoneFormStoreId]
   );
 
-  /** Loại PK form bán: lookup store phiếu, fallback seed local (Ốp, củ sạc…). */
-  const saleAccCategoryOptions = useMemo(() => {
-    const fromDb = lookupsByStore[saleStoreId]?.[ACCESSORY_LOOKUP_CATEGORIES.category] ?? [];
+  /** Tên PK form bán: lookup store, fallback seed local. */
+  const saleAccNameOptions = useMemo(() => {
+    const fromDb = lookupsByStore[saleStoreId]?.[ACCESSORY_LOOKUP_CATEGORIES.name] ?? [];
     if (fromDb.length > 0) return fromDb;
-    return saleAccCategoryLocal;
-  }, [lookupsByStore, saleStoreId, saleAccCategoryLocal]);
+    return saleAccNameLocal;
+  }, [lookupsByStore, saleStoreId, saleAccNameLocal]);
 
-  const setSaleAccCategoryOptions = useCallback(
+  const setSaleAccNameOptions = useCallback(
     (next: string[]) => {
-      const fromDb = lookupsByStore[saleStoreId]?.[ACCESSORY_LOOKUP_CATEGORIES.category] ?? [];
+      const fromDb = lookupsByStore[saleStoreId]?.[ACCESSORY_LOOKUP_CATEGORIES.name] ?? [];
       if (fromDb.length > 0) {
-        setFormLookupOptions(ACCESSORY_LOOKUP_CATEGORIES.category, saleStoreId)(next);
+        setFormLookupOptions(ACCESSORY_LOOKUP_CATEGORIES.name, saleStoreId)(next);
       } else {
-        setSaleAccCategoryLocal(next);
+        setSaleAccNameLocal(next);
       }
     },
     [lookupsByStore, saleStoreId, setFormLookupOptions]
@@ -2149,12 +2319,15 @@ export default function Home() {
     setSaleCart([]);
     setSalePhoneSearch("");
     setSalePhonePickerOpen(false);
-    setSaleAccName("");
     setSaleAccQty(1);
     setSaleAccCost("");
     setSaleAccPrice("");
-    setSaleAccCategoryKey((k) => k + 1);
-    setSalePayment("Tiền mặt");
+    setSaleAccFormKey((k) => k + 1);
+    setSaleAccNameKey((k) => k + 1);
+    setSaleAccDefaultName("");
+    setSalePayMethod("Tiền mặt");
+    setSalePayStatus("NỢ DAI");
+    setSaleSoldAt(vnNowDateTimeLocal());
     setEditingSaleId(null);
     if (currentUser?.storeId) setSaleStoreId(currentUser.storeId);
   }
@@ -2174,82 +2347,133 @@ export default function Home() {
     setViewingSaleId(id);
   }
 
-  function openSaleEditModal(id: string) {
-    const sale = sales.find((s) => s.id === id);
-    if (!sale) return;
-    if (sale.status === "Đã hủy") {
+  async function openSaleEditModal(id: string) {
+    const local = sales.find((s) => s.id === id);
+    if (local?.status === "Đã hủy") {
       window.alert("Không sửa phiếu đã hủy.");
       return;
     }
-    setEditingSaleId(sale.id);
-    setSaleCustomerId(sale.customerId.startsWith("c") ? sale.customerId : null);
-    const cust = customers.find((c) => c.id === sale.customerId);
-    setSaleCustomerName(sale.customerName || cust?.name || "Khách lẻ");
-    setSaleCustomerPhone(sale.customerPhone ?? cust?.phone ?? "");
-    setSaleCustomerAddress(sale.customerAddress ?? cust?.address ?? "");
-    setSaleCustomerSuggestOpen(false);
-    setSaleStoreId(sale.storeId);
-    const pay = sale.payment;
-    setSalePayment(
-      pay === "Chuyển khoản" || pay === "Nợ" ? pay : "Tiền mặt"
-    );
-    setSalePhoneSearch("");
-    setSalePhonePickerOpen(
-      Boolean(sale.lines?.some((l) => l.kind === "phone") || sale.itemType === "Máy")
-    );
-    setSaleAccName("");
-    setSaleAccQty(1);
-    setSaleAccCost("");
-    setSaleAccPrice("");
-    setSaleAccCategoryKey((k) => k + 1);
 
-    if (sale.lines && sale.lines.length > 0) {
-      setSaleCart(
-        sale.lines.map((line, idx) =>
-          line.kind === "phone"
-            ? {
-                key: `phone-${line.phoneId || idx}-${sale.id}`,
-                kind: "phone" as const,
-                phoneId: line.phoneId || `legacy-phone-${idx}`,
-                name: line.name,
-                imei: line.imei || "",
-                brand: line.brand,
-                color: line.color,
-                storage: line.storage,
-                condition: line.condition,
-                unitPrice: line.unitPrice,
-                cost: line.cost,
-              }
-            : {
-                key: `acc-${idx}-${sale.id}`,
-                kind: "accessory" as const,
-                category: line.category || "Khác",
-                name: line.name,
-                quantity: line.quantity,
-                unitPrice: line.unitPrice,
-                cost: line.cost || 0,
-              }
-        )
-      );
-    } else {
-      // Seed / phiếu cũ không có lines → 1 dòng free-text để vẫn sửa được tổng quan
-      // amount seed/UI là VND thật → short ≈ /1000
-      const amountShort = Math.round((Number(sale.amount) || 0) / 1000);
-      const unitShort = Math.max(1, Math.round(amountShort / Math.max(1, sale.quantity)));
-      setSaleCart([
-        {
-          key: `legacy-${sale.id}`,
-          kind: "accessory",
-          category: "Khác",
-          name: sale.itemName,
-          quantity: Math.max(1, sale.quantity),
-          unitPrice: unitShort,
-          cost: 0,
-        },
-      ]);
-    }
+    setSaleSaving(true);
     setViewingSaleId(null);
-    setIsSaleModalOpen(true);
+    try {
+      // Load chi tiết DB (lines + khách + sold_at) — list grid không có lines.
+      let detail: Awaited<ReturnType<typeof apiGetSale>> | null = null;
+      try {
+        detail = await apiGetSale(id);
+      } catch {
+        detail = null;
+      }
+
+      if (detail?.status === "Đã hủy") {
+        window.alert("Không sửa phiếu đã hủy.");
+        return;
+      }
+
+      const sale = detail ?? local;
+      if (!sale) {
+        window.alert("Không tìm thấy phiếu bán.");
+        return;
+      }
+
+      setEditingSaleId(sale.id);
+      setSaleCustomerId(
+        detail?.customerId ||
+          (local?.customerId && !local.customerId.startsWith("db") ? local.customerId : null)
+      );
+      setSaleCustomerName(sale.customerName || "Khách lẻ");
+      setSaleCustomerPhone(sale.customerPhone || "");
+      setSaleCustomerAddress(sale.customerAddress || "");
+      setSaleCustomerSuggestOpen(false);
+      setSaleStoreId(sale.storeId);
+      const parsedPay = parseSalePaymentFields(sale.payment);
+      setSalePayStatus(parsedPay.status);
+      setSalePayMethod(parsedPay.method);
+
+      const soldLocal =
+        detail?.soldAtLocal ||
+        (() => {
+          const rawAt = String(
+            detail?.soldAt || local?.createdAt || ""
+          ).trim();
+          if (rawAt.length >= 16) return rawAt.slice(0, 16).replace(" ", "T");
+          if (rawAt) return `${rawAt.slice(0, 10)}T${vnNowDateTimeLocal().slice(11, 16)}`;
+          return vnNowDateTimeLocal();
+        })();
+      setSaleSoldAt(soldLocal);
+
+      setSalePhoneSearch("");
+      setSaleAccQty(1);
+      setSaleAccCost("");
+      setSaleAccPrice("");
+
+      const lines = detail?.lines?.length
+        ? detail.lines
+        : local?.lines?.length
+          ? local.lines
+          : null;
+
+      if (lines && lines.length > 0) {
+        const hasPhone = lines.some((l) => l.kind === "phone");
+        setSalePhonePickerOpen(hasPhone);
+        setSaleCart(
+          lines.map((line, idx) =>
+            line.kind === "phone"
+              ? {
+                  key: `phone-${line.phoneId || idx}-${sale.id}`,
+                  kind: "phone" as const,
+                  phoneId: line.phoneId || `legacy-phone-${idx}`,
+                  name: line.name,
+                  imei: line.imei || "",
+                  brand: line.brand,
+                  color: line.color,
+                  storage: line.storage,
+                  condition: line.condition,
+                  unitPrice: line.unitPrice,
+                  cost: line.cost,
+                }
+              : {
+                  key: `acc-${idx}-${sale.id}`,
+                  kind: "accessory" as const,
+                  name: line.name,
+                  quantity: line.quantity,
+                  unitPrice: line.unitPrice,
+                  cost: line.cost || 0,
+                }
+          )
+        );
+        const firstAcc = lines.find((l) => l.kind === "accessory");
+        if (firstAcc && firstAcc.kind === "accessory") {
+          setSaleAccDefaultName(firstAcc.name || "");
+        } else {
+          setSaleAccDefaultName("");
+        }
+      } else {
+        // Fallback seed / thiếu lines
+        const amountShort = Math.round((Number(sale.amount) || 0) / 1000);
+        const unitShort = Math.max(1, Math.round(amountShort / Math.max(1, sale.quantity)));
+        setSalePhonePickerOpen(sale.itemType === "Máy");
+        setSaleCart([
+          {
+            key: `legacy-${sale.id}`,
+            kind: "accessory",
+            name: sale.itemName,
+            quantity: Math.max(1, sale.quantity),
+            unitPrice: unitShort,
+            cost: 0,
+          },
+        ]);
+        setSaleAccDefaultName(sale.itemName);
+      }
+
+      setSaleAccFormKey((k) => k + 1);
+      setSaleAccNameKey((k) => k + 1);
+      setIsSaleModalOpen(true);
+    } catch (err) {
+      window.alert(toUiError(err));
+    } finally {
+      setSaleSaving(false);
+    }
   }
 
   function selectSaleCustomer(c: Customer) {
@@ -2260,7 +2484,7 @@ export default function Home() {
     setSaleCustomerSuggestOpen(false);
   }
 
-  function handleSaveSaleCustomer() {
+  async function handleSaveSaleCustomer() {
     const name = saleCustomerName.trim();
     if (!name) {
       window.alert("Tên khách bắt buộc.");
@@ -2268,32 +2492,37 @@ export default function Home() {
     }
     const phone = saleCustomerPhone.trim();
     const address = saleCustomerAddress.trim();
-
-    // UI mock: lưu local. Trùng SĐT (nếu có) → cập nhật; không SĐT → tạo mới / cập nhật theo id.
-    let savedId = saleCustomerId;
-    if (phone) {
-      const byPhone = customers.find((c) => c.phone.replace(/\s/g, "") === phone.replace(/\s/g, ""));
-      if (byPhone) savedId = byPhone.id;
+    try {
+      const saved = await apiSaveCustomer({
+        id: saleCustomerId || undefined,
+        name,
+        phone,
+        address,
+        actorUsername: currentUser?.username,
+      });
+      setCustomers((prev) => {
+        const next = prev.filter((c) => c.id !== saved.id);
+        return [
+          {
+            id: saved.id,
+            name: saved.name,
+            phone: saved.phone,
+            address: saved.address || "",
+            note: saved.note || "",
+          },
+          ...next,
+        ];
+      });
+      setSaleCustomerId(saved.id);
+      setSaleCustomerName(saved.name);
+      setSaleCustomerPhone(saved.phone);
+      setSaleCustomerAddress(saved.address || "");
+      setSaleCustomerSuggestOpen(false);
+      showUiToast("success", `Đã lưu khách: ${saved.name}`);
+      pushLog("Lưu khách hàng", saved.id, saleStoreId);
+    } catch (err) {
+      window.alert(toUiError(err));
     }
-
-    if (savedId) {
-      setCustomers((prev) =>
-        prev.map((c) =>
-          c.id === savedId ? { ...c, name, phone, address, note: c.note || "" } : c
-        )
-      );
-    } else {
-      savedId = `c${Date.now()}`;
-      setCustomers((prev) => [{ id: savedId!, name, phone, address, note: "" }, ...prev]);
-    }
-
-    setSaleCustomerId(savedId);
-    setSaleCustomerName(name);
-    setSaleCustomerPhone(phone);
-    setSaleCustomerAddress(address);
-    setSaleCustomerSuggestOpen(false);
-    showUiToast("success", `Đã lưu khách (UI): ${name}`);
-    pushLog("Lưu khách hàng (UI mock)", savedId, saleStoreId);
   }
 
   function addPhoneToSaleCart(phone: PhoneItem) {
@@ -2325,14 +2554,10 @@ export default function Home() {
 
   function addAccessoryToSaleCart() {
     const formEl = document.getElementById("sale-create-form") as HTMLFormElement | null;
-    const category = String(formEl ? new FormData(formEl).get("saleAccCategory") : "").trim();
-    if (!category) {
-      window.alert("Chọn hoặc nhập loại phụ kiện (Ốp, củ sạc, …).");
-      return;
-    }
-    const name = saleAccName.trim();
+    const fd = formEl ? new FormData(formEl) : null;
+    const name = String(fd?.get("saleAccName") ?? "").trim();
     if (!name) {
-      window.alert("Nhập tên phụ kiện.");
+      window.alert("Chọn hoặc nhập tên phụ kiện.");
       return;
     }
     const quantity = Math.max(1, Math.round(Number(saleAccQty) || 1));
@@ -2347,17 +2572,18 @@ export default function Home() {
       {
         key: `acc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         kind: "accessory",
-        category,
         name,
         quantity,
         unitPrice,
         cost,
       },
     ]);
-    setSaleAccName("");
     setSaleAccQty(1);
     setSaleAccCost("");
     setSaleAccPrice("");
+    setSaleAccDefaultName("");
+    // Remount droplist tên (xóa giá trị đã chọn)
+    setSaleAccNameKey((k) => k + 1);
   }
 
   function removeSaleCartLine(key: string) {
@@ -2370,11 +2596,12 @@ export default function Home() {
     );
   }
 
-  function createSale(event: FormEvent<HTMLFormElement>) {
+  async function createSale(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const customerName = saleCustomerName.trim();
-    if (!customerName) {
-      window.alert("Tên khách bắt buộc.");
+    const hasPhone = saleCart.some((l) => l.kind === "phone");
+    const customerName = (saleCustomerName.trim() || (hasPhone ? "" : "Khách lẻ")).trim();
+    if (hasPhone && !customerName) {
+      window.alert("Tên khách bắt buộc khi bán máy.");
       return;
     }
     if (saleCart.length === 0) {
@@ -2392,185 +2619,104 @@ export default function Home() {
       }
     }
 
-    // UI mock — chưa ghi server/DB. Chỉ cập nhật state client để chốt UX.
     setSaleSaving(true);
     try {
-      const isEdit = Boolean(editingSaleId);
-      const existing = isEdit ? sales.find((s) => s.id === editingSaleId) : null;
-      let customerId = saleCustomerId;
-      if (!customerId) {
-        if (customerName.toLowerCase() === "khách lẻ" || customerName.toLowerCase() === "khach le") {
-          const walkIn = customers.find(
-            (c) =>
-              (c.name.toLowerCase() === "khách lẻ" || c.name.toLowerCase() === "khach le") &&
-              !c.phone.trim()
-          );
-          if (walkIn) {
-            customerId = walkIn.id;
-          } else {
-            customerId = `c-walkin`;
-            if (!customers.some((c) => c.id === customerId)) {
-              setCustomers((prev) => [
-                {
-                  id: customerId!,
-                  name: "Khách lẻ",
-                  phone: "",
-                  address: "",
-                  note: "Vãng lai (UI)",
-                },
-                ...prev,
-              ]);
-            }
+      const paymentValue = resolveSalePaymentValue(salePayStatus, salePayMethod);
+      // Sửa = hủy mềm phiếu cũ + tạo phiếu mới (đồng bộ tồn kho).
+      if (editingSaleId) {
+        try {
+          await apiCancelSale(editingSaleId, currentUser?.username);
+        } catch (cancelErr) {
+          // Phiếu seed mock không có trên DB — bỏ qua
+          const msg = toUiError(cancelErr);
+          if (!msg.includes("Không tìm thấy") && !msg.includes("đã hủy")) {
+            throw cancelErr;
           }
-        } else {
-          customerId = `c${Date.now()}`;
-          setCustomers((prev) => [
-            {
-              id: customerId!,
-              name: customerName,
-              phone: saleCustomerPhone.trim(),
-              address: saleCustomerAddress.trim(),
-              note: "",
-            },
-            ...prev,
-          ]);
         }
       }
 
-      let amountShort = 0;
-      let costShort = 0;
-      let totalQty = 0;
-      let phoneLines = 0;
-      let accLines = 0;
-      const names: string[] = [];
-      const soldPhoneIds: string[] = [];
-      const lineSnapshots: SaleLineSnapshot[] = [];
-
-      for (const line of saleCart) {
-        if (line.kind === "phone") {
-          amountShort += line.unitPrice;
-          costShort += line.cost;
-          totalQty += 1;
-          phoneLines += 1;
-          names.push(line.name);
-          soldPhoneIds.push(line.phoneId);
-          lineSnapshots.push({
-            kind: "phone",
-            phoneId: line.phoneId,
-            name: line.name,
-            imei: line.imei,
-            brand: line.brand,
-            color: line.color,
-            storage: line.storage,
-            condition: line.condition,
-            unitPrice: line.unitPrice,
-            cost: line.cost,
-          });
-        } else {
-          amountShort += line.unitPrice * line.quantity;
-          costShort += (line.cost || 0) * line.quantity;
-          totalQty += line.quantity;
-          accLines += 1;
-          const accLabel = line.category
-            ? `${line.category}: ${line.name}`
-            : line.name;
-          names.push(line.quantity > 1 ? `${accLabel} ×${line.quantity}` : accLabel);
-          lineSnapshots.push({
-            kind: "accessory",
-            category: line.category,
-            name: line.name,
-            quantity: line.quantity,
-            unitPrice: line.unitPrice,
-            cost: line.cost || 0,
-          });
-        }
-      }
-
-      const amount = shopMoneyToVnd(amountShort);
-      const profit = shopMoneyToVnd(amountShort) - shopMoneyToVnd(costShort);
-      const itemName =
-        names.length <= 2 ? names.join(" + ") : `${names[0]} + ${names.length - 1} dòng khác`;
-      const itemType: "Máy" | "Phụ kiện" =
-        phoneLines > 0 && accLines === 0 ? "Máy" : phoneLines === 0 ? "Phụ kiện" : "Máy";
-
-      const saleId = existing?.id ?? `s${Date.now()}`;
-      const sale: Sale = {
-        id: saleId,
-        createdAt: existing?.createdAt ?? vnNowDate(),
-        customerId: customerId || "c-walkin",
-        customerName,
+      const saved = await apiCreateSale({
+        storeId: saleStoreId,
+        payment: paymentValue,
+        customerName: customerName || "Khách lẻ",
         customerPhone: saleCustomerPhone.trim(),
         customerAddress: saleCustomerAddress.trim(),
-        storeId: saleStoreId,
-        itemName,
-        itemType,
-        quantity: totalQty,
-        amount,
-        profit,
-        payment: salePayment,
+        soldAt: saleSoldAt || vnNowDateTimeLocal(),
+        actorUsername: currentUser?.username,
+        lines: saleCart.map((line) =>
+          line.kind === "phone"
+            ? {
+                itemType: "Máy" as const,
+                phoneId: line.phoneId,
+                unitPrice: line.unitPrice,
+              }
+            : {
+                itemType: "Phụ kiện" as const,
+                itemName: line.name,
+                quantity: line.quantity,
+                unitPrice: line.unitPrice,
+                unitCost: line.cost || 0,
+              }
+        ),
+      });
+
+      const sale: Sale = {
+        id: saved.id,
+        createdAt: saved.soldAt,
+        customerId: saleCustomerId || "db",
+        customerName: saved.customerName || customerName || "Khách lẻ",
+        customerPhone: saleCustomerPhone.trim(),
+        customerAddress: saleCustomerAddress.trim(),
+        storeId: saved.storeId,
+        itemName: saved.itemName,
+        itemType: saved.itemType,
+        quantity: saved.quantity,
+        amount: saved.amount,
+        profit: saved.profit,
+        payment: (saved.payment as PaymentMethod) || paymentValue,
         status: "Hoàn tất",
-        lines: lineSnapshots,
       };
 
-      // Đồng bộ trạng thái máy local: bỏ máy cũ khỏi phiếu → Còn hàng; máy mới → Đã bán
-      const prevPhoneIds = new Set(
-        (existing?.lines ?? [])
-          .filter((l): l is Extract<SaleLineSnapshot, { kind: "phone" }> => l.kind === "phone")
-          .map((l) => l.phoneId)
-          .filter((id): id is string => typeof id === "string" && !id.startsWith("legacy-"))
-      );
-      const nextPhoneIds = new Set(soldPhoneIds.filter((id) => !id.startsWith("legacy-")));
-      setPhones((prev) =>
-        prev.map((p) => {
-          if (nextPhoneIds.has(p.id)) {
-            return { ...p, status: "Đã bán" as ProductStatus, saleDate: sale.createdAt };
-          }
-          if (prevPhoneIds.has(p.id) && !nextPhoneIds.has(p.id)) {
-            return { ...p, status: "Còn hàng" as ProductStatus, saleDate: undefined };
-          }
-          return p;
-        })
-      );
+      setSales((prev) => [sale, ...prev.filter((s) => s.id !== sale.id)]);
+      setLedger((prev) => [
+        {
+          id: `l${Date.now()}`,
+          createdAt: sale.createdAt,
+          storeId: saleStoreId,
+          type: "Thu",
+          source: `Phiếu bán ${sale.id}`,
+          amount: sale.amount,
+          payment: paymentValue,
+          status: "Hiệu lực",
+        },
+        ...prev,
+      ]);
+      pushLog(editingSaleId ? "Sửa phiếu bán" : "Tạo phiếu bán", sale.id, saleStoreId);
 
-      setSales((prev) =>
-        isEdit ? prev.map((s) => (s.id === saleId ? sale : s)) : [sale, ...prev]
-      );
-
-      if (!isEdit) {
-        setLedger((prev) => [
-          {
-            id: `l${Date.now()}`,
-            createdAt: sale.createdAt,
-            storeId: saleStoreId,
-            type: "Thu",
-            source: `Phiếu bán ${sale.id}`,
-            amount: sale.amount,
-            payment: salePayment,
-            status: "Hiệu lực",
-          },
-          ...prev,
-        ]);
-      } else {
-        setLedger((prev) =>
-          prev.map((item) =>
-            item.source.includes(saleId)
-              ? { ...item, amount: sale.amount, payment: salePayment, storeId: saleStoreId }
-              : item
-          )
-        );
+      await reloadInventoryFromDb();
+      await reloadSalesFromDb();
+      void reloadCustomersFromDb();
+      try {
+        const monthly = await reportInventoryMonthly(inventoryReportMonth, storeFilter);
+        setSupabaseReportMonthly(monthly);
+        const yearly = await reportInventoryYearly(Number(reportYear), storeFilter);
+        setSupabaseYearlyChart(toYearlyChartRows(yearly));
+      } catch {
+        /* report best-effort */
       }
+      void refreshDashboardSummary();
 
-      pushLog(isEdit ? "Sửa phiếu bán (UI mock)" : "Tạo phiếu bán (UI mock)", sale.id, saleStoreId);
-
+      const wasEdit = Boolean(editingSaleId);
       resetSaleFormDraft();
       setIsSaleModalOpen(false);
-
       showUiToast(
         "success",
-        isEdit
-          ? `Đã sửa phiếu: ${sale.itemName} · ${formatMoney(sale.amount)} ₫`
-          : `Đã tạo phiếu (UI): ${sale.itemName} · ${formatMoney(sale.amount)} ₫ · lãi ${formatMoney(sale.profit)} ₫`
+        wasEdit
+          ? `Đã cập nhật phiếu: ${sale.itemName} · ${formatMoney(sale.amount)} ₫`
+          : `Đã tạo phiếu: ${sale.itemName} · ${formatMoney(sale.amount)} ₫ · lãi ${formatMoney(sale.profit)} ₫`
       );
+    } catch (err) {
+      window.alert(toUiError(err));
     } finally {
       setSaleSaving(false);
     }
@@ -2759,29 +2905,27 @@ export default function Home() {
     }
   }
 
-  function cancelSale(id: string) {
+  async function cancelSale(id: string) {
     const sale = sales.find((item) => item.id === id);
     if (!sale || !canCancel) return;
-    setSales((prev) => prev.map((item) => (item.id === id ? { ...item, status: "Đã hủy" } : item)));
-    setLedger((prev) =>
-      prev.map((item) => (item.source.includes(id) ? { ...item, status: "Đã hủy" } : item))
-    );
-    // Hoàn máy về còn hàng (UI mock) nếu phiếu có lines phone
-    const phoneIds = (sale.lines ?? [])
-      .filter((l): l is Extract<SaleLineSnapshot, { kind: "phone" }> => l.kind === "phone")
-      .map((l) => l.phoneId)
-      .filter((pid): pid is string => typeof pid === "string" && !pid.startsWith("legacy-"));
-    if (phoneIds.length) {
-      const set = new Set(phoneIds);
-      setPhones((prev) =>
-        prev.map((p) =>
-          set.has(p.id) ? { ...p, status: "Còn hàng" as ProductStatus, saleDate: undefined } : p
-        )
+    if (!window.confirm(`Hủy mềm phiếu bán «${sale.itemName}»?`)) return;
+    try {
+      await apiCancelSale(id, currentUser?.username);
+      setSales((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, status: "Đã hủy" as const } : item))
       );
+      setLedger((prev) =>
+        prev.map((item) => (item.source.includes(id) ? { ...item, status: "Đã hủy" } : item))
+      );
+      if (viewingSaleId === id) setViewingSaleId(null);
+      pushLog("Hủy mềm phiếu bán", id, sale.storeId);
+      await reloadInventoryFromDb();
+      await reloadSalesFromDb();
+      void refreshDashboardSummary();
+      showUiToast("success", "Đã hủy mềm phiếu bán.");
+    } catch (err) {
+      window.alert(toUiError(err));
     }
-    if (viewingSaleId === id) setViewingSaleId(null);
-    pushLog("Hủy mềm phiếu bán (UI mock)", id, sale.storeId);
-    showUiToast("success", "Đã hủy mềm phiếu bán.");
   }
 
   if (!sessionReady) {
@@ -4164,11 +4308,9 @@ export default function Home() {
                     className="h-10 rounded-lg border border-line px-3 text-sm font-bold"
                   >
                     <option value="all">Tất cả TT</option>
-                    {SALE_PAYMENT_OPTIONS.map((p) => (
-                      <option key={p} value={p}>
-                        {p}
-                      </option>
-                    ))}
+                    <option value="paid">✅ Đã thanh toán</option>
+                    <option value="partial">⚠️ Thanh toán 1 phần</option>
+                    <option value="debt">❌ NỢ DAI</option>
                   </select>
                   <div className="flex items-center gap-2 rounded-lg border border-line bg-slate-50 px-2">
                     <span className="text-sm font-semibold text-slate-500">Lọc ngày:</span>
@@ -4220,12 +4362,13 @@ export default function Home() {
 
               <div className="overflow-x-auto pb-2">
                 <DataTable
-                  headers={["Ngày", "Khách", "Hàng", "Cửa hàng", "Tiền", "Lãi", "TT", "Thao tác"]}
+                  headers={["Ngày", "Khách", "Hàng", "Cửa hàng", "Tiền", "Lãi", "Thanh toán", "Thao tác"]}
                   rows={filteredSales.map((item) => {
                     const custName =
                       item.customerName ||
                       customers.find((c) => c.id === item.customerId)?.name ||
                       "Khách lẻ";
+                    const payUi = salePayStatusLabel(item.payment, item.status);
                     return [
                       item.createdAt,
                       <span key={`c-${item.id}`} className="font-bold text-brand whitespace-nowrap">
@@ -4242,12 +4385,12 @@ export default function Home() {
                       <span key={`p-${item.id}`} className="font-black text-emerald-700">
                         {isSaleSensitiveHidden ? "***" : formatMoney(item.profit)}
                       </span>,
-                      <StatusBadge
+                      <span
                         key={`st-${item.id}`}
-                        tone={item.status === "Hoàn tất" ? "ok" : "danger"}
+                        className={`inline-flex h-8 items-center rounded px-2 text-xs font-bold shadow-sm ${payUi.className}`}
                       >
-                        {item.status}
-                      </StatusBadge>,
+                        {payUi.text}
+                      </span>,
                       <div
                         key={`act-${item.id}`}
                         className="flex flex-nowrap items-center justify-center gap-1.5"
@@ -4262,9 +4405,9 @@ export default function Home() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => openSaleEditModal(item.id)}
+                          onClick={() => void openSaleEditModal(item.id)}
                           title="Sửa"
-                          disabled={item.status === "Đã hủy"}
+                          disabled={item.status === "Đã hủy" || saleSaving}
                           className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           <Edit3 size={16} />
@@ -4290,9 +4433,47 @@ export default function Home() {
                 </p>
               ) : (
                 <p className="mt-2 text-xs font-semibold text-muted">
-                  Hiển thị {filteredSales.length} phiếu · UI mock (chưa ghi DB).
+                  Hiển thị {filteredSales.length} phiếu (DB).
                 </p>
               )}
+
+              {/* Tổng theo hình thức TT — gọn, 1 hàng ngoài grid */}
+              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-lg border border-line bg-slate-50/80 px-3 py-2 text-xs font-semibold">
+                <span className="font-black text-ink">Theo TT:</span>
+                <span className="text-emerald-700">
+                  TM{" "}
+                  <strong className="tabular-nums">
+                    {isSaleSensitiveHidden ? "***" : formatMoney(salePayTotals.cash.amount)}
+                  </strong>
+                  <span className="ml-1 text-muted">({salePayTotals.cash.count})</span>
+                </span>
+                <span className="text-sky-700">
+                  CK{" "}
+                  <strong className="tabular-nums">
+                    {isSaleSensitiveHidden ? "***" : formatMoney(salePayTotals.transfer.amount)}
+                  </strong>
+                  <span className="ml-1 text-muted">({salePayTotals.transfer.count})</span>
+                </span>
+                <span className="text-red-700">
+                  Nợ{" "}
+                  <strong className="tabular-nums">
+                    {isSaleSensitiveHidden ? "***" : formatMoney(salePayTotals.debt.amount)}
+                  </strong>
+                  <span className="ml-1 text-muted">({salePayTotals.debt.count})</span>
+                </span>
+                <span className="ml-auto text-muted">
+                  Tổng{" "}
+                  <strong className="tabular-nums text-ink">
+                    {isSaleSensitiveHidden ? "***" : formatMoney(salePayTotals.totalAmount)}
+                  </strong>
+                  <span className="ml-1">({salePayTotals.totalCount})</span>
+                  <span className="mx-1.5 text-line">·</span>
+                  Lãi{" "}
+                  <strong className="tabular-nums text-emerald-700">
+                    {isSaleSensitiveHidden ? "***" : formatMoney(salePayTotals.totalProfit)}
+                  </strong>
+                </span>
+              </div>
             </Panel>
 
             {/* Chi tiết phiếu */}
@@ -4348,16 +4529,27 @@ export default function Home() {
                             "—"}
                         </div>
                       </Field>
-                      <Field label="Thanh toán">
-                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-semibold">
-                          {viewingSale.payment}
+                      <Field label="Trạng thái thanh toán">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3">
+                          {(() => {
+                            const payUi = salePayStatusLabel(viewingSale.payment, viewingSale.status);
+                            return (
+                              <span
+                                className={`inline-flex h-8 items-center rounded px-2 text-xs font-bold shadow-sm ${payUi.className}`}
+                              >
+                                {payUi.text}
+                              </span>
+                            );
+                          })()}
                         </div>
                       </Field>
-                      <Field label="Trạng thái">
-                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3">
-                          <StatusBadge tone={viewingSale.status === "Hoàn tất" ? "ok" : "danger"}>
-                            {viewingSale.status}
-                          </StatusBadge>
+                      <Field label="Hình thức">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-semibold">
+                          {viewingSale.payment === "NỢ DAI" || viewingSale.payment === "Nợ"
+                            ? "—"
+                            : viewingSale.payment === "Thanh toán 1 phần"
+                              ? "—"
+                              : viewingSale.payment}
                         </div>
                       </Field>
                       <Field label="Tổng tiền">
@@ -4399,17 +4591,13 @@ export default function Home() {
                                     </p>
                                   </>
                                 ) : (
-                                  <>
-                                    <p className="font-bold text-ink">
-                                      <span className="mr-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase text-amber-800">
-                                        {line.category || "PK"}
-                                      </span>
-                                      {line.name} ×{line.quantity}
-                                    </p>
-                                    <p className="text-xs font-semibold text-muted">
-                                      Loại: {line.category || "—"}
-                                    </p>
-                                  </>
+                                  <p className="font-bold text-ink">
+                                    <span className="mr-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase text-amber-800">
+                                      PK
+                                    </span>
+                                    {line.name}
+                                    <span className="ml-1 font-semibold text-muted">×{line.quantity}</span>
+                                  </p>
                                 )}
                               </div>
                               <span className="shrink-0 font-black text-emerald-700">
@@ -4439,7 +4627,7 @@ export default function Home() {
                       {viewingSale.status === "Hoàn tất" ? (
                         <button
                           type="button"
-                          onClick={() => openSaleEditModal(viewingSale.id)}
+                          onClick={() => void openSaleEditModal(viewingSale.id)}
                           className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark"
                         >
                           <Edit3 size={16} /> Sửa phiếu
@@ -4452,37 +4640,34 @@ export default function Home() {
             )}
 
             {isSaleModalOpen && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/60 p-4 backdrop-blur-md">
-                <section className="relative my-4 max-h-[92vh] w-full max-w-3xl overflow-auto rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
+              <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/60 p-3 backdrop-blur-md">
+                <section className="relative my-2 max-h-[94vh] w-full max-w-xl overflow-auto rounded-xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl sm:max-w-2xl">
                   {saleSaving ? (
-                    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 rounded-2xl bg-white/55 backdrop-blur-sm">
-                      <Loader2 size={40} className="animate-spin text-brand" />
-                      <p className="text-base font-black text-ink">
+                    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 rounded-xl bg-white/55 backdrop-blur-sm">
+                      <Loader2 size={32} className="animate-spin text-brand" />
+                      <p className="text-sm font-black text-ink">
                         {editingSaleId ? "Đang lưu…" : "Đang tạo phiếu…"}
                       </p>
                     </div>
                   ) : null}
-                  <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-slate-200/60 bg-white/90 p-4 backdrop-blur-md sm:p-5">
+                  <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-slate-200/60 bg-white/90 px-3 py-2.5 backdrop-blur-md">
                     <div className="min-w-0">
-                      <h2 className="text-xl font-black text-slate-800 sm:text-2xl">
+                      <h2 className="text-base font-black text-slate-800 sm:text-lg">
                         {editingSaleId ? "Sửa phiếu bán" : "Tạo phiếu bán"}
                       </h2>
-                      <p className="mt-1 text-xs font-semibold text-amber-800">
-                        UI mock — lưu trên trình duyệt, chưa ghi server/DB.
-                      </p>
                     </div>
                     <button
                       type="button"
                       onClick={closeSaleModal}
                       disabled={saleSaving}
-                      className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-line bg-white text-muted hover:bg-slate-50 disabled:opacity-50"
+                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-line bg-white text-muted hover:bg-slate-50 disabled:opacity-50"
                       title="Đóng"
                     >
-                      <X size={18} />
+                      <X size={16} />
                     </button>
                   </div>
 
-                  <form id="sale-create-form" onSubmit={createSale} className="grid gap-3 p-4 sm:p-5">
+                  <form id="sale-create-form" onSubmit={createSale} className="grid gap-2 p-3">
                     {/* Khách hàng — chỉ hiện khi thêm máy / giỏ có máy */}
                     {(salePhonePickerOpen ||
                       saleCart.some((l) => l.kind === "phone")) && (
@@ -4591,275 +4776,278 @@ export default function Home() {
                     </div>
                     )}
 
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <label className="grid gap-0.5">
-                        <span className="text-xs font-bold text-slate-700">Cửa hàng</span>
-                        {currentUser?.role === "staff" ? (
-                          <>
-                            <input type="hidden" value={saleStoreId} readOnly />
-                            <div className="flex h-9 items-center rounded-md border border-line bg-slate-50 px-2.5 text-sm font-bold text-ink">
-                              {storeName(saleStoreId)}
-                            </div>
-                          </>
-                        ) : (
+                    <div className="grid gap-2">
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <label className="grid gap-0.5">
+                          <span className="text-xs font-bold text-slate-700">Cửa hàng</span>
+                          {currentUser?.role === "staff" ? (
+                            <>
+                              <input type="hidden" value={saleStoreId} readOnly />
+                              <div className="flex h-9 items-center rounded-md border border-line bg-slate-50 px-2.5 text-sm font-bold text-ink">
+                                {storeName(saleStoreId)}
+                              </div>
+                            </>
+                          ) : (
+                            <select
+                              value={saleStoreId}
+                              onChange={(e) => {
+                                const next = e.target.value as Exclude<StoreId, "all">;
+                                setSaleStoreId(next);
+                                setSaleCart((prev) =>
+                                  prev.filter((l) => {
+                                    if (l.kind !== "phone") return true;
+                                    const ph = phones.find((p) => p.id === l.phoneId);
+                                    return ph?.storeId === next;
+                                  })
+                                );
+                              }}
+                              className="h-9 rounded-md border border-line bg-white px-2.5 text-sm font-semibold"
+                            >
+                              {stores.map((s) => (
+                                <option key={s.id} value={s.id}>
+                                  {s.name}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </label>
+                        <label className="grid gap-0.5">
+                          <span className="text-xs font-bold text-slate-700">
+                            Ngày bán <span className="text-red-500">*</span>
+                          </span>
+                          <input
+                            type="datetime-local"
+                            required
+                            value={saleSoldAt}
+                            onChange={(e) => setSaleSoldAt(e.target.value)}
+                            className="h-9 rounded-md border border-line bg-white px-2 text-sm font-semibold outline-none focus:border-brand"
+                          />
+                        </label>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <label className="grid gap-0.5">
+                          <span className="text-xs font-bold text-slate-700">Hình thức thanh toán</span>
                           <select
-                            value={saleStoreId}
-                            onChange={(e) => {
-                              const next = e.target.value as Exclude<StoreId, "all">;
-                              setSaleStoreId(next);
-                              setSaleCart((prev) =>
-                                prev.filter((l) => {
-                                  if (l.kind !== "phone") return true;
-                                  const ph = phones.find((p) => p.id === l.phoneId);
-                                  return ph?.storeId === next;
-                                })
-                              );
-                            }}
+                            value={salePayMethod}
+                            onChange={(e) => setSalePayMethod(e.target.value as SalePayMethod)}
                             className="h-9 rounded-md border border-line bg-white px-2.5 text-sm font-semibold"
                           >
-                            {stores.map((s) => (
-                              <option key={s.id} value={s.id}>
-                                {s.name}
+                            {SALE_PAY_METHOD_OPTIONS.map((p) => (
+                              <option key={p} value={p}>
+                                {p}
                               </option>
                             ))}
                           </select>
-                        )}
-                      </label>
-                      <label className="grid gap-0.5">
-                        <span className="text-xs font-bold text-slate-700">Thanh toán</span>
-                        <select
-                          value={salePayment}
-                          onChange={(e) => setSalePayment(e.target.value as SalePaymentMethod)}
-                          className="h-9 rounded-md border border-line bg-white px-2.5 text-sm font-semibold"
-                        >
-                          {SALE_PAYMENT_OPTIONS.map((p) => (
-                            <option key={p} value={p}>
-                              {p}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                        </label>
+                        <label className="grid gap-0.5">
+                          <span className="text-xs font-bold text-slate-700">Trạng thái thanh toán</span>
+                          <select
+                            value={salePayStatus}
+                            onChange={(e) => setSalePayStatus(e.target.value as SalePayStatus)}
+                            className="h-9 rounded-md border border-line bg-white px-2.5 text-sm font-semibold"
+                          >
+                            {SALE_PAY_STATUS_OPTIONS.map((p) => (
+                              <option key={p} value={p}>
+                                {p}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
                     </div>
 
-                    {/* Phụ kiện — highlight amber */}
-                    <div className="relative overflow-hidden rounded-xl border border-amber-200/80 bg-gradient-to-br from-amber-50 via-orange-50/40 to-white p-3 shadow-sm ring-1 ring-amber-100/80">
-                      <div className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full bg-amber-200/30 blur-2xl" />
-                      <div className="relative mb-2.5 flex flex-wrap items-center justify-between gap-2">
-                        <div className="inline-flex items-center gap-2">
-                          <span className="grid h-8 w-8 place-items-center rounded-lg bg-amber-100 text-amber-700 shadow-sm ring-1 ring-amber-200/80">
-                            <PackagePlus size={16} />
+                    {/* Phụ kiện — 3 dòng; Thêm máy góc phải cùng mé trên */}
+                    <div className="relative overflow-hidden rounded-xl border border-amber-200/80 bg-gradient-to-br from-amber-50 via-orange-50/40 to-white p-2.5 shadow-sm ring-1 ring-amber-100/80">
+                      <div className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-amber-200/30 blur-2xl" />
+                      <div className="relative mb-1.5 flex items-center justify-between gap-2">
+                        <div className="inline-flex items-center gap-1.5">
+                          <span className="grid h-7 w-7 place-items-center rounded-md bg-amber-100 text-amber-700 ring-1 ring-amber-200/80">
+                            <PackagePlus size={14} />
                           </span>
                           <p className="text-sm font-black text-amber-950">Phụ kiện</p>
                         </div>
+                        <button
+                          type="button"
+                          title={salePhonePickerOpen ? "Ẩn danh sách máy" : "Thêm máy"}
+                          onClick={() => {
+                            if (salePhonePickerOpen) {
+                              setSalePhonePickerOpen(false);
+                              setSalePhoneSearch("");
+                            } else {
+                              setSalePhonePickerOpen(true);
+                            }
+                          }}
+                          className={`inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg px-2.5 text-xs font-bold shadow-sm transition ${
+                            salePhonePickerOpen
+                              ? "bg-red-700 text-white ring-2 ring-red-300"
+                              : "bg-red-600 text-white hover:bg-red-700"
+                          }`}
+                        >
+                          {salePhonePickerOpen ? <X size={14} /> : <Smartphone size={14} />}
+                          {salePhonePickerOpen ? "Ẩn máy" : "Thêm máy"}
+                        </button>
                       </div>
-                      <div className="relative mb-2 rounded-lg border border-amber-100/80 bg-white/90 p-2 shadow-sm">
-                        <ManageableSelect
-                          key={`sale-acc-cat-${saleAccCategoryKey}-${saleStoreId}`}
-                          label="Loại phụ kiện"
-                          name="saleAccCategory"
-                          options={saleAccCategoryOptions}
-                          setOptions={setSaleAccCategoryOptions}
-                          defaultValue=""
-                          required
-                          categoryCode={
-                            (lookupsByStore[saleStoreId]?.[ACCESSORY_LOOKUP_CATEGORIES.category] ?? [])
-                              .length > 0
-                              ? ACCESSORY_LOOKUP_CATEGORIES.category
-                              : undefined
-                          }
-                          storeId={saleStoreId}
-                          onRenameCascade={reloadInventoryFromDb}
-                          allowManage
-                          allowFreeText
-                          actorUsername={currentUser?.username ?? ""}
-                        />
-                      </div>
-                      <div className="relative grid gap-2">
-                        <div className="grid gap-2 sm:grid-cols-[1fr_5.5rem_auto]">
-                          <label className="flex min-w-0 items-center gap-2">
-                            <span className="shrink-0 text-xs font-bold text-amber-900">Tên</span>
-                            <input
-                              value={saleAccName}
-                              onChange={(e) => setSaleAccName(e.target.value)}
-                              placeholder="Tên phụ kiện"
-                              className="h-10 min-w-0 flex-1 rounded-lg border border-amber-200/70 bg-white px-3 text-sm font-semibold outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
-                            />
-                          </label>
-                          <label className="flex items-center gap-1.5">
-                            <span className="shrink-0 text-xs font-bold text-amber-900">SL</span>
+                      <div className="relative grid gap-3">
+                        {/* Dòng 1: Tên phụ kiện · Số lượng · Thêm PK */}
+                        <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_6.5rem_auto] sm:items-end">
+                          <div className="grid min-w-0 gap-1.5">
+                            <span className="text-sm font-bold text-amber-950">Tên phụ kiện</span>
+                            <div className="min-w-0 [&_label>span]:hidden">
+                              <ManageableSelect
+                                key={`sale-acc-name-${saleAccFormKey}-${saleAccNameKey}-${saleStoreId}`}
+                                label="Tên phụ kiện"
+                                name="saleAccName"
+                                options={saleAccNameOptions}
+                                setOptions={setSaleAccNameOptions}
+                                defaultValue={saleAccDefaultName}
+                                required={false}
+                                categoryCode={
+                                  (lookupsByStore[saleStoreId]?.[ACCESSORY_LOOKUP_CATEGORIES.name] ?? [])
+                                    .length > 0
+                                    ? ACCESSORY_LOOKUP_CATEGORIES.name
+                                    : undefined
+                                }
+                                storeId={saleStoreId}
+                                onRenameCascade={reloadInventoryFromDb}
+                                allowManage
+                                allowFreeText
+                                actorUsername={currentUser?.username ?? ""}
+                              />
+                            </div>
+                          </div>
+                          <div className="grid gap-1.5">
+                            <span className="text-sm font-bold text-amber-950">Số lượng</span>
                             <input
                               type="number"
                               min={1}
                               value={saleAccQty}
                               onChange={(e) => setSaleAccQty(Math.max(1, Number(e.target.value) || 1))}
-                              className="h-10 w-full min-w-0 rounded-lg border border-amber-200/70 bg-white px-2 text-sm font-semibold outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+                              className="h-10 w-full rounded-lg border border-amber-200/70 bg-white px-2 text-center text-sm font-semibold outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
                               title="Số lượng"
                             />
-                          </label>
+                          </div>
                           <button
                             type="button"
                             onClick={addAccessoryToSaleCart}
-                            className="inline-flex h-10 items-center justify-center gap-1 rounded-lg bg-amber-500 px-3 font-bold text-white shadow-sm hover:bg-amber-600"
+                            className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-amber-500 px-4 text-sm font-bold text-white shadow-sm hover:bg-amber-600"
                           >
                             <Plus size={16} />
-                            Thêm
+                            Thêm PK
                           </button>
                         </div>
-                        <div className="grid gap-2 sm:grid-cols-2">
-                          <label className="flex min-w-0 items-center gap-2">
-                            <span className="shrink-0 text-xs font-bold text-amber-900">Giá nhập</span>
-                            <input
-                              inputMode="numeric"
-                              value={saleAccCost}
-                              onChange={(e) => setSaleAccCost(formatInputMoney(e.target.value))}
-                              className="h-10 min-w-0 flex-1 rounded-lg border border-amber-200/70 bg-white px-3 text-sm font-semibold outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
-                              title="Giá nhập short ×1.000"
-                            />
-                          </label>
-                          <label className="flex min-w-0 items-center gap-2">
-                            <span className="shrink-0 text-xs font-bold text-amber-900">
+                        {/* Dòng 2: Giá bán | Giá nhập */}
+                        <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+                          <div className="grid min-w-0 gap-1.5">
+                            <span className="text-sm font-bold text-amber-950">
                               Giá bán <span className="text-red-500">*</span>
                             </span>
                             <input
                               inputMode="numeric"
                               value={saleAccPrice}
                               onChange={(e) => setSaleAccPrice(formatInputMoney(e.target.value))}
-                              className="h-10 min-w-0 flex-1 rounded-lg border border-amber-300 bg-white px-3 text-sm font-bold text-amber-950 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+                              className="h-10 min-w-0 w-full rounded-lg border border-amber-300 bg-white px-2.5 text-sm font-bold text-amber-950 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
                               title="Giá bán short ×1.000"
                             />
-                          </label>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Máy — highlight trung tính (ít xanh) */}
-                    <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-gradient-to-br from-slate-100/90 via-white to-indigo-50/40 p-3 shadow-sm ring-1 ring-slate-100">
-                      <div className="pointer-events-none absolute -left-8 -top-8 h-28 w-28 rounded-full bg-slate-300/30 blur-2xl" />
-                      <div className="relative mb-2.5 flex flex-wrap items-center justify-between gap-2">
-                        <div className="inline-flex items-center gap-2">
-                          <span className="grid h-8 w-8 place-items-center rounded-lg bg-slate-800 text-white shadow-sm">
-                            <Smartphone size={16} />
-                          </span>
-                          <div>
-                            <p className="text-sm font-black text-ink">Máy</p>
-                            <p className="text-[11px] font-semibold text-muted">
-                              Chọn từ kho còn hàng · IMEI
-                            </p>
                           </div>
-                        </div>
-                        {!salePhonePickerOpen ? (
-                          <button
-                            type="button"
-                            onClick={() => setSalePhonePickerOpen(true)}
-                            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-slate-800 px-3 text-sm font-bold text-white shadow-sm hover:bg-slate-900"
-                          >
-                            <Smartphone size={16} />
-                            Thêm máy
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSalePhonePickerOpen(false);
-                              setSalePhoneSearch("");
-                            }}
-                            className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-600 hover:bg-slate-50"
-                          >
-                            Ẩn danh sách
-                          </button>
-                        )}
-                      </div>
-                      {salePhonePickerOpen ? (
-                        <div className="relative space-y-2">
-                          <div className="relative">
-                            <Search className="pointer-events-none absolute left-3 top-2.5 text-slate-400" size={16} />
+                          <div className="grid min-w-0 gap-1.5">
+                            <span className="text-sm font-bold text-amber-950">Giá nhập</span>
                             <input
-                              value={salePhoneSearch}
-                              onChange={(e) => setSalePhoneSearch(e.target.value)}
-                              placeholder="Tìm tên / IMEI / màu…"
-                              className="h-10 w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm font-semibold outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                              inputMode="numeric"
+                              value={saleAccCost}
+                              onChange={(e) => setSaleAccCost(formatInputMoney(e.target.value))}
+                              className="h-10 min-w-0 w-full rounded-lg border border-amber-200/70 bg-white px-2.5 text-sm font-semibold outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+                              title="Giá nhập short ×1.000"
                             />
                           </div>
-                          <div className="max-h-48 space-y-1 overflow-auto rounded-lg border border-slate-200 bg-white p-1 shadow-inner">
-                            {saleAvailablePhones.length === 0 ? (
-                              <p className="px-3 py-4 text-center text-sm font-semibold text-muted">
-                                Không còn máy tại cửa hàng này
-                              </p>
-                            ) : (
-                              saleAvailablePhones.map((p) => {
-                                const colorHex = p.color ? getColorCode(p.color) : "";
-                                const colorIsLight =
-                                  !colorHex ||
-                                  ["#ffffff", "#cbd5e1", "#e2e8f0", "#f8fafc", "#94a3b8", "#a8a29e"].includes(
-                                    colorHex.toLowerCase()
-                                  );
-                                return (
-                                  <div
-                                    key={p.id}
-                                    className="flex items-center gap-2 rounded-lg border border-transparent px-2.5 py-2 transition hover:border-slate-200 hover:bg-slate-50"
-                                  >
-                                    {/* Tên · màu (theo mã màu) · GB · IMEI — một hàng */}
-                                    <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-                                      <span className="shrink-0 text-sm font-black text-indigo-700">
-                                        {p.brand} {p.name}
-                                      </span>
-                                      {p.color ? (
-                                        <span
-                                          className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-black ring-1"
-                                          style={{
-                                            color: colorIsLight ? "#334155" : colorHex,
-                                            backgroundColor: colorIsLight
-                                              ? "#f1f5f9"
-                                              : `${colorHex}22`,
-                                            borderColor: colorIsLight ? "#cbd5e1" : `${colorHex}55`,
-                                          }}
-                                          title={p.color}
-                                        >
-                                          <ColorDot color={p.color} size="sm" />
-                                          {p.color}
-                                        </span>
-                                      ) : null}
-                                      {p.storage ? (
-                                        <span className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-xs font-black text-slate-700 ring-1 ring-slate-200">
-                                          {p.storage}
-                                        </span>
-                                      ) : null}
-                                      <span className="min-w-0 truncate font-mono text-[11px] font-medium text-slate-400">
-                                        {p.imei}
-                                      </span>
-                                    </div>
-                                    <span className="shrink-0 rounded-md bg-amber-50 px-2 py-0.5 text-sm font-black text-amber-800 ring-1 ring-amber-100">
-                                      {formatMoney(p.expectedPrice)}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      title="Thêm vào giỏ"
-                                      onClick={() => addPhoneToSaleCart(p)}
-                                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-800 hover:text-white"
-                                    >
-                                      <Plus size={16} />
-                                    </button>
-                                  </div>
-                                );
-                              })
-                            )}
-                          </div>
-                          <p className="text-[11px] font-semibold text-muted">
-                            {saleAvailablePhones.length} máy · bấm <Plus size={11} className="inline" /> để
-                            thêm giỏ
-                          </p>
                         </div>
-                      ) : (
-                        <div className="relative rounded-lg border border-dashed border-slate-300 bg-white/70 px-3 py-3 text-center">
-                          <p className="text-sm font-semibold text-slate-600">
-                            Mặc định chỉ bán phụ kiện. Bấm{" "}
-                            <strong className="text-ink">Thêm máy</strong> để load máy còn hàng.
-                          </p>
-                        </div>
-                      )}
+                      </div>
                     </div>
 
-                    {/* Giỏ */}
+                    {/* List máy — chỉ hiện khi bấm Thêm máy (header phụ kiện) */}
+                    {salePhonePickerOpen ? (
+                      <div className="space-y-2 rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-2.5 shadow-sm ring-1 ring-slate-100">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs font-black uppercase tracking-wide text-slate-600">
+                            Máy còn hàng
+                          </p>
+                          <span className="text-[11px] font-semibold text-muted">
+                            {saleAvailablePhones.length} máy
+                          </span>
+                        </div>
+                        <div className="relative">
+                          <Search className="pointer-events-none absolute left-3 top-2.5 text-slate-400" size={16} />
+                          <input
+                            value={salePhoneSearch}
+                            onChange={(e) => setSalePhoneSearch(e.target.value)}
+                            placeholder="Tìm tên / IMEI / màu…"
+                            className="h-9 w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm font-semibold outline-none focus:border-slate-400"
+                          />
+                        </div>
+                        <div className="max-h-48 space-y-1 overflow-auto rounded-lg border border-slate-200 bg-white p-1">
+                          {saleAvailablePhones.length === 0 ? (
+                            <p className="px-3 py-3 text-center text-sm font-semibold text-muted">
+                              Không còn máy tại cửa hàng này
+                            </p>
+                          ) : (
+                            saleAvailablePhones.map((p) => {
+                              const colorHex = p.color ? getColorCode(p.color) : "";
+                              const colorIsLight =
+                                !colorHex ||
+                                ["#ffffff", "#cbd5e1", "#e2e8f0", "#f8fafc", "#94a3b8", "#a8a29e"].includes(
+                                  colorHex.toLowerCase()
+                                );
+                              return (
+                                <div
+                                  key={p.id}
+                                  className="flex items-center gap-2 rounded-lg px-2 py-1.5 transition hover:bg-slate-50"
+                                >
+                                  <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
+                                    <span className="shrink-0 text-sm font-black text-indigo-700">
+                                      {p.brand} {p.name}
+                                    </span>
+                                    {p.color ? (
+                                      <span
+                                        className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-black ring-1"
+                                        style={{
+                                          color: colorIsLight ? "#334155" : colorHex,
+                                          backgroundColor: colorIsLight ? "#f1f5f9" : `${colorHex}22`,
+                                          borderColor: colorIsLight ? "#cbd5e1" : `${colorHex}55`,
+                                        }}
+                                        title={p.color}
+                                      >
+                                        <ColorDot color={p.color} size="sm" />
+                                        {p.color}
+                                      </span>
+                                    ) : null}
+                                    {p.storage ? (
+                                      <span className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-xs font-black text-slate-700 ring-1 ring-slate-200">
+                                        {p.storage}
+                                      </span>
+                                    ) : null}
+                                    <span className="min-w-0 truncate font-mono text-[11px] font-medium text-slate-400">
+                                      {p.imei}
+                                    </span>
+                                  </div>
+                                  <span className="shrink-0 text-sm font-black text-amber-800">
+                                    {formatMoney(p.expectedPrice)}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    title="Thêm vào giỏ"
+                                    onClick={() => addPhoneToSaleCart(p)}
+                                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700 ring-1 ring-slate-200 hover:bg-slate-800 hover:text-white"
+                                  >
+                                    <Plus size={15} />
+                                  </button>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {/* Giỏ — chỉ thông tin cần */}
                     <div className="rounded-xl border border-rose-200/80 bg-gradient-to-br from-rose-50 via-red-50/50 to-orange-50/40 p-3 shadow-sm ring-1 ring-rose-100">
                       <div className="mb-2 flex items-center justify-between">
                         <p className="inline-flex items-center gap-2 text-sm font-black text-rose-950">
@@ -4868,7 +5056,7 @@ export default function Home() {
                           </span>
                           Giỏ hàng
                           <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-800 ring-1 ring-red-200/80">
-                            {saleCart.length} dòng
+                            {saleCart.length}
                           </span>
                         </p>
                         {saleCart.length > 0 ? (
@@ -4882,48 +5070,36 @@ export default function Home() {
                         ) : null}
                       </div>
                       {saleCart.length === 0 ? (
-                        <p className="py-3 text-center text-sm font-semibold text-muted">
-                          Thêm phụ kiện (mặc định) hoặc bấm Thêm máy
-                        </p>
+                        <p className="py-2 text-center text-sm font-semibold text-muted">Giỏ trống</p>
                       ) : (
-                        <ul className="space-y-2">
+                        <ul className="space-y-1.5">
                           {saleCart.map((line) => (
                             <li
                               key={line.key}
-                              className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-white px-3 py-2"
+                              className="flex items-center gap-2 rounded-lg border border-line bg-white px-2.5 py-1.5"
                             >
                               <div className="min-w-0 flex-1">
                                 {line.kind === "phone" ? (
-                                  <>
-                                    <p className="text-sm font-bold text-ink">
-                                      <Smartphone size={14} className="mr-1 inline text-brand" />
-                                      <span className="mr-1.5 rounded-full bg-brand-soft px-2 py-0.5 text-[10px] font-black uppercase text-brand-dark">
-                                        Máy
-                                      </span>
-                                      {line.name}
-                                    </p>
-                                    <p className="mt-0.5 text-xs font-semibold text-muted">
-                                      IMEI {line.imei || "—"}
-                                      {line.color ? ` · ${line.color}` : ""}
-                                      {line.storage ? ` · ${line.storage}` : ""}
-                                      {line.condition ? ` · ${line.condition}` : ""}
-                                    </p>
-                                  </>
+                                  <p className="truncate text-sm font-bold text-ink">
+                                    <span className="mr-1 font-black text-indigo-700">{line.name}</span>
+                                    {line.color ? (
+                                      <span className="font-semibold text-slate-500"> · {line.color}</span>
+                                    ) : null}
+                                    {line.storage ? (
+                                      <span className="font-semibold text-slate-500"> · {line.storage}</span>
+                                    ) : null}
+                                    <span className="ml-1 font-mono text-[11px] font-medium text-slate-400">
+                                      {line.imei}
+                                    </span>
+                                  </p>
                                 ) : (
-                                  <>
-                                    <p className="text-sm font-bold text-ink">
-                                      <PackagePlus size={14} className="mr-1 inline text-amber-600" />
-                                      <span className="mr-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase text-amber-800">
-                                        {line.category || "PK"}
-                                      </span>
-                                      {line.name}
-                                      <span className="ml-1 font-semibold text-muted">×{line.quantity}</span>
-                                    </p>
-                                    <p className="mt-0.5 text-xs font-semibold text-muted">
-                                      Loại: {line.category || "—"} · Nhập {formatMoney(line.cost || 0)} · Bán{" "}
-                                      {formatMoney(line.unitPrice)}
-                                    </p>
-                                  </>
+                                  <p className="truncate text-sm font-bold text-ink">
+                                    <span className="mr-1 rounded bg-amber-50 px-1 py-0.5 text-[10px] font-black uppercase text-amber-800">
+                                      PK
+                                    </span>
+                                    {line.name}
+                                    <span className="ml-1 font-semibold text-muted">×{line.quantity}</span>
+                                  </p>
                                 )}
                               </div>
                               <input
@@ -4932,19 +5108,19 @@ export default function Home() {
                                 onChange={(e) =>
                                   updateSaleCartUnitPrice(line.key, parseShopMoney(e.target.value))
                                 }
-                                className="h-9 w-28 rounded-lg border border-line px-2 text-right text-sm font-bold text-emerald-700 outline-none focus:border-brand"
-                                title="Giá bán short ×1.000 (1.500 = 1.500.000₫)"
+                                className="h-8 w-24 rounded-md border border-line px-2 text-right text-sm font-bold text-emerald-700 outline-none focus:border-brand"
+                                title="Giá bán short"
                               />
-                              <span className="w-24 text-right text-sm font-black text-ink">
-                                {formatMoney(
-                                  line.kind === "phone" ? line.unitPrice : line.unitPrice * line.quantity
-                                )}
-                              </span>
+                              {line.kind === "accessory" && line.quantity > 1 ? (
+                                <span className="w-16 shrink-0 text-right text-xs font-black text-ink">
+                                  {formatMoney(line.unitPrice * line.quantity)}
+                                </span>
+                              ) : null}
                               <button
                                 type="button"
                                 onClick={() => removeSaleCartLine(line.key)}
-                                className="rounded-lg bg-red-50 p-2 text-danger hover:bg-red-100"
-                                title="Xóa dòng"
+                                className="rounded-md bg-red-50 p-1.5 text-danger hover:bg-red-100"
+                                title="Xóa"
                               >
                                 <Trash2 size={14} />
                               </button>
@@ -4953,49 +5129,57 @@ export default function Home() {
                         </ul>
                       )}
                       <div className="mt-3 flex flex-wrap items-end justify-between gap-2 border-t border-line pt-3">
-                        <div className="text-sm">
-                          <p className="font-semibold text-muted">
-                            Tổng short:{" "}
-                            <strong className="text-ink">{formatMoney(saleCartTotals.amountShort)}</strong>
-                            {" · "}
-                            ~{formatMoney(saleCartTotals.amountVnd)} ₫
-                            <span className="ml-1 text-[11px] font-semibold text-slate-400">
-                              (short ×1.000)
+                        <div>
+                          <p className="text-sm font-semibold text-muted">
+                            Tổng:{" "}
+                            <strong className="text-base font-black text-ink">
+                              {formatMoney(saleCartTotals.amountShort)}
+                            </strong>
+                            <span className="ml-1 text-xs font-semibold text-slate-500">
+                              (~{formatMoney(saleCartTotals.amountVnd)} ₫)
                             </span>
+                            {salePayStatus === "NỢ DAI" ? (
+                              <span className="ml-2 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600">
+                                ❌ NỢ DAI
+                              </span>
+                            ) : salePayStatus === "Thanh toán 1 phần" ? (
+                              <span className="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                                ⚠️ 1 phần
+                              </span>
+                            ) : (
+                              <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-600">
+                                ✅ Đã TT
+                              </span>
+                            )}
                           </p>
-                          <p className="font-semibold text-muted">
+                          <p className="mt-0.5 text-[11px] font-semibold text-muted">
                             Lãi ước tính:{" "}
-                            <strong className="text-emerald-700">
+                            <strong className="font-bold text-emerald-700">
                               {formatMoney(saleCartTotals.profitShort)}
                             </strong>
-                            <span className="text-xs font-semibold text-muted"> short</span>
-                            {salePayment === "Nợ" ? (
-                              <span className="ml-2 rounded-full bg-red-50 px-2 py-0.5 text-xs font-bold text-danger">
-                                Nợ
-                              </span>
-                            ) : null}
+                            <span className="text-slate-400"> short</span>
                           </p>
                         </div>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap gap-1.5">
                           <button
                             type="button"
                             onClick={closeSaleModal}
                             disabled={saleSaving}
-                            className="inline-flex h-11 items-center justify-center rounded-lg border border-line bg-white px-4 font-bold text-muted hover:bg-slate-50 disabled:opacity-60"
+                            className="inline-flex h-9 items-center justify-center rounded-lg border border-line bg-white px-3 text-sm font-bold text-muted hover:bg-slate-50 disabled:opacity-60"
                           >
                             Hủy
                           </button>
                           <button
                             type="submit"
                             disabled={saleSaving || saleCart.length === 0}
-                            className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-brand px-5 font-bold text-white hover:bg-brand-dark disabled:opacity-60"
+                            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand px-3.5 text-sm font-bold text-white hover:bg-brand-dark disabled:opacity-60"
                           >
                             {saleSaving ? (
-                              <Loader2 size={18} className="animate-spin" />
+                              <Loader2 size={16} className="animate-spin" />
                             ) : editingSaleId ? (
-                              <Edit3 size={18} />
+                              <Edit3 size={16} />
                             ) : (
-                              <Plus size={18} />
+                              <Plus size={16} />
                             )}
                             {editingSaleId ? "Lưu thay đổi" : "Lưu phiếu bán"}
                           </button>

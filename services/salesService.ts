@@ -10,8 +10,10 @@ export type SaleRow = {
   amount: number;
   profit: number;
   payment: string;
-  status: "Hoàn tất";
+  status: "Hoàn tất" | "Đã hủy";
   customerName?: string;
+  customerPhone?: string;
+  customerAddress?: string;
   lineCount?: number;
 };
 
@@ -25,9 +27,12 @@ export type CreateSaleLineBody =
   | {
       itemType: "Phụ kiện" | "accessory";
       itemName: string;
+      category?: string;
       quantity: number;
       /** Đơn giá 1 cái (short shop OK). */
       unitPrice: number;
+      /** Giá nhập short 1 cái (free-text). */
+      unitCost?: number;
       accessoryId?: string;
     };
 
@@ -36,6 +41,9 @@ export type CreateSaleBody = {
   payment: string;
   customerName?: string;
   customerPhone?: string;
+  customerAddress?: string;
+  /** YYYY-MM-DDTHH:mm (VN) */
+  soldAt?: string;
   note?: string;
   actorUsername?: string;
   /** Multi-line (ưu tiên). */
@@ -66,4 +74,52 @@ export async function createSale(input: CreateSaleBody): Promise<SaleRow> {
     body: JSON.stringify(input),
   });
   return parseJson<SaleRow>(res);
+}
+
+export async function cancelSale(
+  id: string,
+  actorUsername?: string
+): Promise<SaleRow> {
+  const res = await fetch(`/api/inventory/sales/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ actorUsername }),
+  });
+  return parseJson<SaleRow>(res);
+}
+
+export type SaleDetailLine =
+  | {
+      kind: "phone";
+      phoneId?: string;
+      name: string;
+      imei?: string;
+      brand?: string;
+      color?: string;
+      storage?: string;
+      condition?: string;
+      unitPrice: number;
+      cost: number;
+    }
+  | {
+      kind: "accessory";
+      category?: string;
+      name: string;
+      quantity: number;
+      unitPrice: number;
+      cost: number;
+      accessoryId?: string;
+    };
+
+export type SaleDetail = SaleRow & {
+  soldAtLocal?: string;
+  customerId?: string;
+  lines: SaleDetailLine[];
+};
+
+export async function getSale(id: string): Promise<SaleDetail> {
+  const res = await fetch(`/api/inventory/sales/${encodeURIComponent(id)}`, {
+    cache: "no-store",
+  });
+  return parseJson<SaleDetail>(res);
 }
