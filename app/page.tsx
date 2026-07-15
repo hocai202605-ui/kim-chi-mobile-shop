@@ -25,6 +25,7 @@ import {
   ReceiptText,
   Search,
   ShieldCheck,
+  ShoppingCart,
   Smartphone,
   Store,
   Terminal,
@@ -102,7 +103,10 @@ let lastSessionTouchAt = 0;
 
 type Role = "owner" | "staff";
 type StoreId = "all" | "store-1" | "store-2" | "store-3";
-type PaymentMethod = "Tiền mặt" | "Chuyển khoản" | "Thẻ" | "Khác";
+type PaymentMethod = "Tiền mặt" | "Chuyển khoản" | "Thẻ" | "Khác" | "Nợ";
+/** Phương thức TT trên phiếu bán. */
+type SalePaymentMethod = "Tiền mặt" | "Chuyển khoản" | "Nợ";
+const SALE_PAYMENT_OPTIONS: SalePaymentMethod[] = ["Tiền mặt", "Chuyển khoản", "Nợ"];
 type ProductStatus = "Còn hàng" | "Đã bán" | "Đã hủy" | "Chưa xử lý";
 type AccessoryStatus = "Còn hàng" | "Hết hàng" | "Đã hủy";
 type RepairStatus = "Đang chờ" | "Đang sửa" | "Đã xong" | "Đã trả khách" | "Đã hủy";
@@ -141,6 +145,10 @@ type SaleCartLine =
       phoneId: string;
       name: string;
       imei: string;
+      brand?: string;
+      color?: string;
+      storage?: string;
+      condition?: string;
       /** Đơn giá short shop */
       unitPrice: number;
       cost: number;
@@ -148,11 +156,28 @@ type SaleCartLine =
   | {
       key: string;
       kind: "accessory";
+      /** Loại PK: Ốp, củ sạc, … */
+      category: string;
       name: string;
       quantity: number;
-      /** Đơn giá short shop */
+      /** Giá bán short shop (1 cái) */
       unitPrice: number;
+      /** Giá nhập short (1 cái), mặc định 0 */
+      cost: number;
     };
+
+/** Seed droplist loại PK khi store chưa có lookup. */
+const SALE_ACC_CATEGORY_SEED = [
+  "Ốp",
+  "Củ sạc",
+  "Dây sạc",
+  "Bộ sạc",
+  "Tai nghe",
+  "Sạc dự phòng",
+  "Cáp",
+  "Kính cường lực",
+  "Khác",
+];
 
 type PhoneItem = {
   id: string;
@@ -196,15 +221,21 @@ type SaleLineSnapshot =
       phoneId?: string;
       name: string;
       imei?: string;
+      brand?: string;
+      color?: string;
+      storage?: string;
+      condition?: string;
       /** Đơn giá short shop */
       unitPrice: number;
       cost: number;
     }
   | {
       kind: "accessory";
+      category?: string;
       name: string;
       quantity: number;
       unitPrice: number;
+      cost?: number;
     };
 
 type Sale = {
@@ -610,7 +641,7 @@ function formatInputMoney(value?: number | string) {
   return digits ? Number(digits).toLocaleString("vi-VN") : "";
 }
 
-function parseInputMoney(value: FormDataEntryValue | null) {
+function parseInputMoney(value: FormDataEntryValue | null | string) {
   return Number(String(value ?? "").replace(/\D/g, "") || 0);
 }
 
@@ -618,8 +649,8 @@ function parseInputMoney(value: FormDataEntryValue | null) {
  * Giá kho đơn vị short (bớt 3 số 0): 16.900 lưu = 16.900.000 ₫ thật.
  * Nếu lỡ nhập full (≥ 1tr) thì chia 1000 về short.
  */
-function parseShopMoney(value: FormDataEntryValue | null) {
-  const n = parseInputMoney(value);
+function parseShopMoney(value: FormDataEntryValue | null | string) {
+  const n = parseInputMoney(value as FormDataEntryValue | null);
   if (!Number.isFinite(n) || n <= 0) return 0;
   const r = Math.round(n);
   if (r >= 1_000_000) return Math.round(r / 1000);
@@ -781,18 +812,24 @@ export default function Home() {
   const [sales, setSales] = useState(salesSeed);
   /** Form bán hàng */
   const [saleStoreId, setSaleStoreId] = useState<Exclude<StoreId, "all">>("store-1");
-  const [salePayment, setSalePayment] = useState<PaymentMethod>("Tiền mặt");
+  const [salePayment, setSalePayment] = useState<SalePaymentMethod>("Tiền mặt");
   const [saleCustomerId, setSaleCustomerId] = useState<string | null>(null);
   const [saleCustomerName, setSaleCustomerName] = useState("Khách lẻ");
   const [saleCustomerPhone, setSaleCustomerPhone] = useState("");
   const [saleCustomerAddress, setSaleCustomerAddress] = useState("");
-  const [saleCustomerNote, setSaleCustomerNote] = useState("");
   const [saleCustomerSuggestOpen, setSaleCustomerSuggestOpen] = useState(false);
   const [saleCart, setSaleCart] = useState<SaleCartLine[]>([]);
   const [salePhoneSearch, setSalePhoneSearch] = useState("");
+  /** Chỉ hiện list máy khi bấm «Thêm máy» — mặc định chỉ bán PK. */
+  const [salePhonePickerOpen, setSalePhonePickerOpen] = useState(false);
   const [saleAccName, setSaleAccName] = useState("");
   const [saleAccQty, setSaleAccQty] = useState(1);
+  const [saleAccCost, setSaleAccCost] = useState("");
   const [saleAccPrice, setSaleAccPrice] = useState("");
+  /** Key remount ManageableSelect loại PK khi mở phiếu mới. */
+  const [saleAccCategoryKey, setSaleAccCategoryKey] = useState(0);
+  /** Options local fallback khi lookup store trống. */
+  const [saleAccCategoryLocal, setSaleAccCategoryLocal] = useState<string[]>(SALE_ACC_CATEGORY_SEED);
   const [saleSaving, setSaleSaving] = useState(false);
   /** Popup tạo/sửa phiếu bán — màn sales mặc định chỉ grid. */
   const [isSaleModalOpen, setIsSaleModalOpen] = useState(false);
@@ -802,7 +839,7 @@ export default function Home() {
   const [saleMonth, setSaleMonth] = useState(() => vnNowMonth());
   const [saleDate, setSaleDate] = useState(() => vnNowDate());
   const [saleStatusFilter, setSaleStatusFilter] = useState<"all" | "Hoàn tất" | "Đã hủy">("all");
-  const [salePaymentFilter, setSalePaymentFilter] = useState<"all" | PaymentMethod>("all");
+  const [salePaymentFilter, setSalePaymentFilter] = useState<"all" | SalePaymentMethod>("all");
   const [saleTypeFilter, setSaleTypeFilter] = useState<"all" | "Máy" | "Phụ kiện">("all");
   const [saleSearch, setSaleSearch] = useState("");
   const [isSaleSensitiveHidden, setIsSaleSensitiveHidden] = useState(false);
@@ -1144,6 +1181,7 @@ export default function Home() {
         costShort += line.cost;
       } else {
         amountShort += line.unitPrice * line.quantity;
+        costShort += (line.cost || 0) * line.quantity;
       }
     }
     return {
@@ -1233,6 +1271,25 @@ export default function Home() {
       }));
     },
     [phoneFormStoreId]
+  );
+
+  /** Loại PK form bán: lookup store phiếu, fallback seed local (Ốp, củ sạc…). */
+  const saleAccCategoryOptions = useMemo(() => {
+    const fromDb = lookupsByStore[saleStoreId]?.[ACCESSORY_LOOKUP_CATEGORIES.category] ?? [];
+    if (fromDb.length > 0) return fromDb;
+    return saleAccCategoryLocal;
+  }, [lookupsByStore, saleStoreId, saleAccCategoryLocal]);
+
+  const setSaleAccCategoryOptions = useCallback(
+    (next: string[]) => {
+      const fromDb = lookupsByStore[saleStoreId]?.[ACCESSORY_LOOKUP_CATEGORIES.category] ?? [];
+      if (fromDb.length > 0) {
+        setFormLookupOptions(ACCESSORY_LOOKUP_CATEGORIES.category, saleStoreId)(next);
+      } else {
+        setSaleAccCategoryLocal(next);
+      }
+    },
+    [lookupsByStore, saleStoreId, setFormLookupOptions]
   );
 
   /** Filter hãng: 1 cửa hàng → droplist store đó; Toàn hệ thống → union 3 store. */
@@ -2084,7 +2141,6 @@ export default function Home() {
     setSaleCustomerName("Khách lẻ");
     setSaleCustomerPhone("");
     setSaleCustomerAddress("");
-    setSaleCustomerNote("");
     setSaleCustomerSuggestOpen(false);
   }
 
@@ -2092,9 +2148,12 @@ export default function Home() {
     resetSaleCustomerToWalkIn();
     setSaleCart([]);
     setSalePhoneSearch("");
+    setSalePhonePickerOpen(false);
     setSaleAccName("");
     setSaleAccQty(1);
+    setSaleAccCost("");
     setSaleAccPrice("");
+    setSaleAccCategoryKey((k) => k + 1);
     setSalePayment("Tiền mặt");
     setEditingSaleId(null);
     if (currentUser?.storeId) setSaleStoreId(currentUser.storeId);
@@ -2128,14 +2187,21 @@ export default function Home() {
     setSaleCustomerName(sale.customerName || cust?.name || "Khách lẻ");
     setSaleCustomerPhone(sale.customerPhone ?? cust?.phone ?? "");
     setSaleCustomerAddress(sale.customerAddress ?? cust?.address ?? "");
-    setSaleCustomerNote(sale.customerNote ?? cust?.note ?? "");
     setSaleCustomerSuggestOpen(false);
     setSaleStoreId(sale.storeId);
-    setSalePayment(sale.payment);
+    const pay = sale.payment;
+    setSalePayment(
+      pay === "Chuyển khoản" || pay === "Nợ" ? pay : "Tiền mặt"
+    );
     setSalePhoneSearch("");
+    setSalePhonePickerOpen(
+      Boolean(sale.lines?.some((l) => l.kind === "phone") || sale.itemType === "Máy")
+    );
     setSaleAccName("");
     setSaleAccQty(1);
+    setSaleAccCost("");
     setSaleAccPrice("");
+    setSaleAccCategoryKey((k) => k + 1);
 
     if (sale.lines && sale.lines.length > 0) {
       setSaleCart(
@@ -2147,15 +2213,21 @@ export default function Home() {
                 phoneId: line.phoneId || `legacy-phone-${idx}`,
                 name: line.name,
                 imei: line.imei || "",
+                brand: line.brand,
+                color: line.color,
+                storage: line.storage,
+                condition: line.condition,
                 unitPrice: line.unitPrice,
                 cost: line.cost,
               }
             : {
                 key: `acc-${idx}-${sale.id}`,
                 kind: "accessory" as const,
+                category: line.category || "Khác",
                 name: line.name,
                 quantity: line.quantity,
                 unitPrice: line.unitPrice,
+                cost: line.cost || 0,
               }
         )
       );
@@ -2168,9 +2240,11 @@ export default function Home() {
         {
           key: `legacy-${sale.id}`,
           kind: "accessory",
+          category: "Khác",
           name: sale.itemName,
           quantity: Math.max(1, sale.quantity),
           unitPrice: unitShort,
+          cost: 0,
         },
       ]);
     }
@@ -2183,15 +2257,17 @@ export default function Home() {
     setSaleCustomerName(c.name);
     setSaleCustomerPhone(c.phone);
     setSaleCustomerAddress(c.address || "");
-    setSaleCustomerNote(c.note);
     setSaleCustomerSuggestOpen(false);
   }
 
   function handleSaveSaleCustomer() {
-    const name = saleCustomerName.trim() || "Khách lẻ";
+    const name = saleCustomerName.trim();
+    if (!name) {
+      window.alert("Tên khách bắt buộc.");
+      return;
+    }
     const phone = saleCustomerPhone.trim();
     const address = saleCustomerAddress.trim();
-    const note = saleCustomerNote.trim();
 
     // UI mock: lưu local. Trùng SĐT (nếu có) → cập nhật; không SĐT → tạo mới / cập nhật theo id.
     let savedId = saleCustomerId;
@@ -2202,18 +2278,19 @@ export default function Home() {
 
     if (savedId) {
       setCustomers((prev) =>
-        prev.map((c) => (c.id === savedId ? { ...c, name, phone, address, note } : c))
+        prev.map((c) =>
+          c.id === savedId ? { ...c, name, phone, address, note: c.note || "" } : c
+        )
       );
     } else {
       savedId = `c${Date.now()}`;
-      setCustomers((prev) => [{ id: savedId!, name, phone, address, note }, ...prev]);
+      setCustomers((prev) => [{ id: savedId!, name, phone, address, note: "" }, ...prev]);
     }
 
     setSaleCustomerId(savedId);
     setSaleCustomerName(name);
     setSaleCustomerPhone(phone);
     setSaleCustomerAddress(address);
-    setSaleCustomerNote(note);
     setSaleCustomerSuggestOpen(false);
     showUiToast("success", `Đã lưu khách (UI): ${name}`);
     pushLog("Lưu khách hàng (UI mock)", savedId, saleStoreId);
@@ -2236,6 +2313,10 @@ export default function Home() {
         phoneId: phone.id,
         name: `${phone.brand} ${phone.name}`.trim(),
         imei: phone.imei,
+        brand: phone.brand,
+        color: phone.color,
+        storage: phone.storage,
+        condition: phone.condition,
         unitPrice: phone.expectedPrice > 0 ? phone.expectedPrice : 0,
         cost: phone.cost,
       },
@@ -2243,6 +2324,12 @@ export default function Home() {
   }
 
   function addAccessoryToSaleCart() {
+    const formEl = document.getElementById("sale-create-form") as HTMLFormElement | null;
+    const category = String(formEl ? new FormData(formEl).get("saleAccCategory") : "").trim();
+    if (!category) {
+      window.alert("Chọn hoặc nhập loại phụ kiện (Ốp, củ sạc, …).");
+      return;
+    }
     const name = saleAccName.trim();
     if (!name) {
       window.alert("Nhập tên phụ kiện.");
@@ -2251,21 +2338,25 @@ export default function Home() {
     const quantity = Math.max(1, Math.round(Number(saleAccQty) || 1));
     const unitPrice = parseShopMoney(saleAccPrice);
     if (unitPrice <= 0) {
-      window.alert("Nhập đơn giá phụ kiện (vd 150 = 150.000₫).");
+      window.alert("Nhập giá bán phụ kiện (vd 150 = 150.000₫).");
       return;
     }
+    const cost = parseShopMoney(saleAccCost); // 0 nếu trống
     setSaleCart((prev) => [
       ...prev,
       {
         key: `acc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         kind: "accessory",
+        category,
         name,
         quantity,
         unitPrice,
+        cost,
       },
     ]);
     setSaleAccName("");
     setSaleAccQty(1);
+    setSaleAccCost("");
     setSaleAccPrice("");
   }
 
@@ -2281,6 +2372,11 @@ export default function Home() {
 
   function createSale(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const customerName = saleCustomerName.trim();
+    if (!customerName) {
+      window.alert("Tên khách bắt buộc.");
+      return;
+    }
     if (saleCart.length === 0) {
       window.alert("Thêm ít nhất một dòng hàng (máy hoặc phụ kiện).");
       return;
@@ -2301,7 +2397,6 @@ export default function Home() {
     try {
       const isEdit = Boolean(editingSaleId);
       const existing = isEdit ? sales.find((s) => s.id === editingSaleId) : null;
-      const customerName = saleCustomerName.trim() || "Khách lẻ";
       let customerId = saleCustomerId;
       if (!customerId) {
         if (customerName.toLowerCase() === "khách lẻ" || customerName.toLowerCase() === "khach le") {
@@ -2335,7 +2430,7 @@ export default function Home() {
               name: customerName,
               phone: saleCustomerPhone.trim(),
               address: saleCustomerAddress.trim(),
-              note: saleCustomerNote.trim(),
+              note: "",
             },
             ...prev,
           ]);
@@ -2364,19 +2459,29 @@ export default function Home() {
             phoneId: line.phoneId,
             name: line.name,
             imei: line.imei,
+            brand: line.brand,
+            color: line.color,
+            storage: line.storage,
+            condition: line.condition,
             unitPrice: line.unitPrice,
             cost: line.cost,
           });
         } else {
           amountShort += line.unitPrice * line.quantity;
+          costShort += (line.cost || 0) * line.quantity;
           totalQty += line.quantity;
           accLines += 1;
-          names.push(line.quantity > 1 ? `${line.name} ×${line.quantity}` : line.name);
+          const accLabel = line.category
+            ? `${line.category}: ${line.name}`
+            : line.name;
+          names.push(line.quantity > 1 ? `${accLabel} ×${line.quantity}` : accLabel);
           lineSnapshots.push({
             kind: "accessory",
+            category: line.category,
             name: line.name,
             quantity: line.quantity,
             unitPrice: line.unitPrice,
+            cost: line.cost || 0,
           });
         }
       }
@@ -2396,7 +2501,6 @@ export default function Home() {
         customerName,
         customerPhone: saleCustomerPhone.trim(),
         customerAddress: saleCustomerAddress.trim(),
-        customerNote: saleCustomerNote.trim(),
         storeId: saleStoreId,
         itemName,
         itemType,
@@ -4060,7 +4164,7 @@ export default function Home() {
                     className="h-10 rounded-lg border border-line px-3 text-sm font-bold"
                   >
                     <option value="all">Tất cả TT</option>
-                    {(["Tiền mặt", "Chuyển khoản", "Thẻ", "Khác"] as PaymentMethod[]).map((p) => (
+                    {SALE_PAYMENT_OPTIONS.map((p) => (
                       <option key={p} value={p}>
                         {p}
                       </option>
@@ -4276,21 +4380,39 @@ export default function Home() {
                           {viewingSale.lines.map((line, idx) => (
                             <li
                               key={`${viewingSale.id}-line-${idx}`}
-                              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-slate-50 px-3 py-2 text-sm"
+                              className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-line bg-slate-50 px-3 py-2 text-sm"
                             >
-                              <span className="font-bold text-ink">
+                              <div className="min-w-0">
                                 {line.kind === "phone" ? (
-                                  <Smartphone size={14} className="mr-1 inline text-brand" />
+                                  <>
+                                    <p className="font-bold text-ink">
+                                      <span className="mr-1.5 rounded-full bg-brand-soft px-2 py-0.5 text-[10px] font-black uppercase text-brand-dark">
+                                        Máy
+                                      </span>
+                                      {line.name}
+                                    </p>
+                                    <p className="text-xs font-semibold text-muted">
+                                      IMEI {line.imei || "—"}
+                                      {line.color ? ` · ${line.color}` : ""}
+                                      {line.storage ? ` · ${line.storage}` : ""}
+                                      {line.condition ? ` · ${line.condition}` : ""}
+                                    </p>
+                                  </>
                                 ) : (
-                                  <PackagePlus size={14} className="mr-1 inline text-amber-600" />
+                                  <>
+                                    <p className="font-bold text-ink">
+                                      <span className="mr-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase text-amber-800">
+                                        {line.category || "PK"}
+                                      </span>
+                                      {line.name} ×{line.quantity}
+                                    </p>
+                                    <p className="text-xs font-semibold text-muted">
+                                      Loại: {line.category || "—"}
+                                    </p>
+                                  </>
                                 )}
-                                {line.name}
-                                {line.kind === "accessory" ? ` ×${line.quantity}` : ""}
-                                {line.kind === "phone" && line.imei ? (
-                                  <span className="ml-1 font-semibold text-muted">({line.imei})</span>
-                                ) : null}
-                              </span>
-                              <span className="font-black text-emerald-700">
+                              </div>
+                              <span className="shrink-0 font-black text-emerald-700">
                                 {isSaleSensitiveHidden
                                   ? "***"
                                   : formatMoney(
@@ -4360,21 +4482,27 @@ export default function Home() {
                     </button>
                   </div>
 
-                  <form onSubmit={createSale} className="grid gap-4 p-4 sm:p-5">
-                    {/* Khách hàng */}
-                    <div className="rounded-xl border border-line bg-canvas/60 p-3">
-                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                        <p className="text-sm font-black text-ink">Khách hàng</p>
+                  <form id="sale-create-form" onSubmit={createSale} className="grid gap-3 p-4 sm:p-5">
+                    {/* Khách hàng — compact */}
+                    <div className="rounded-lg border border-line/80 bg-slate-50/80 px-2.5 py-2">
+                      <div className="mb-1.5 flex flex-wrap items-center justify-between gap-1.5">
+                        <p className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-slate-600">
+                          <Users size={13} className="text-muted" />
+                          Khách hàng
+                        </p>
                         <button
                           type="button"
                           onClick={resetSaleCustomerToWalkIn}
-                          className="rounded-full border border-line bg-white px-3 py-1 text-xs font-bold text-muted hover:bg-white"
+                          className="rounded-full border border-line bg-white px-2 py-0.5 text-[11px] font-bold text-muted hover:bg-white"
                         >
                           Về khách lẻ
                         </button>
                       </div>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <Field label="Tên khách">
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <label className="grid gap-0.5">
+                          <span className="text-xs font-bold text-slate-700">
+                            Tên khách <span className="text-red-500">*</span>
+                          </span>
                           <div className="relative">
                             <input
                               value={saleCustomerName}
@@ -4387,25 +4515,25 @@ export default function Home() {
                               onBlur={() => {
                                 window.setTimeout(() => setSaleCustomerSuggestOpen(false), 180);
                               }}
-                              className="h-10 w-full rounded-lg border border-line bg-white px-3 font-semibold outline-none focus:border-brand"
-                              placeholder="Xóa để chọn khách cũ / gõ tên mới"
+                              required
+                              className="h-9 w-full rounded-md border border-line bg-white px-2.5 text-sm font-semibold outline-none focus:border-brand"
+                              placeholder="Bắt buộc — xóa chọn khách cũ / gõ tên"
                               autoComplete="off"
                             />
                             {saleCustomerSuggestOpen && saleCustomerSuggestions.length > 0 ? (
-                              <ul className="absolute z-20 mt-1 max-h-52 w-full overflow-auto rounded-lg border border-line bg-white py-1 shadow-panel">
+                              <ul className="absolute z-20 mt-1 max-h-44 w-full overflow-auto rounded-lg border border-line bg-white py-1 shadow-panel">
                                 {saleCustomerSuggestions.map((c) => (
                                   <li key={c.id}>
                                     <button
                                       type="button"
                                       onMouseDown={(e) => e.preventDefault()}
                                       onClick={() => selectSaleCustomer(c)}
-                                      className="flex w-full flex-col items-start px-3 py-2 text-left hover:bg-brand-soft"
+                                      className="flex w-full flex-col items-start px-2.5 py-1.5 text-left hover:bg-brand-soft"
                                     >
                                       <span className="text-sm font-bold text-ink">{c.name}</span>
-                                      <span className="text-xs font-semibold text-muted">
+                                      <span className="text-[11px] font-semibold text-muted">
                                         {c.phone || "Không SĐT"}
                                         {c.address ? ` · ${c.address}` : ""}
-                                        {c.note ? ` · ${c.note}` : ""}
                                       </span>
                                     </button>
                                   </li>
@@ -4413,8 +4541,9 @@ export default function Home() {
                               </ul>
                             ) : null}
                           </div>
-                        </Field>
-                        <Field label="Số điện thoại">
+                        </label>
+                        <label className="grid gap-0.5">
+                          <span className="text-xs font-bold text-slate-700">Số điện thoại</span>
                           <input
                             value={saleCustomerPhone}
                             onChange={(e) => {
@@ -4426,57 +4555,46 @@ export default function Home() {
                             onBlur={() => {
                               window.setTimeout(() => setSaleCustomerSuggestOpen(false), 180);
                             }}
-                            className="h-10 w-full rounded-lg border border-line bg-white px-3 font-semibold outline-none focus:border-brand"
+                            className="h-9 w-full rounded-md border border-line bg-white px-2.5 text-sm font-semibold outline-none focus:border-brand"
                             placeholder="Không bắt buộc"
                             autoComplete="off"
                           />
-                        </Field>
+                        </label>
                       </div>
-                      <div className="mt-3 grid gap-3">
-                        <Field label="Địa chỉ">
+                      <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
+                        <label className="grid gap-0.5">
+                          <span className="text-xs font-bold text-slate-700">Địa chỉ</span>
                           <input
                             value={saleCustomerAddress}
                             onChange={(e) => {
                               setSaleCustomerAddress(e.target.value);
                               setSaleCustomerId(null);
                             }}
-                            className="h-10 w-full rounded-lg border border-line bg-white px-3 font-semibold outline-none focus:border-brand"
+                            className="h-9 w-full rounded-md border border-line bg-white px-2.5 text-sm font-semibold outline-none focus:border-brand"
                             placeholder="Không bắt buộc"
                             autoComplete="off"
                           />
-                        </Field>
-                      </div>
-                      <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]">
-                        <Field label="Ghi chú khách">
-                          <input
-                            value={saleCustomerNote}
-                            onChange={(e) => setSaleCustomerNote(e.target.value)}
-                            className="h-10 w-full rounded-lg border border-line bg-white px-3 font-semibold outline-none focus:border-brand"
-                            placeholder="Tuỳ chọn"
-                          />
-                        </Field>
+                        </label>
                         <div className="flex items-end">
                           <button
                             type="button"
                             onClick={handleSaveSaleCustomer}
-                            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-brand bg-brand-soft px-4 font-bold text-brand-dark hover:bg-brand hover:text-white"
+                            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-brand bg-brand-soft px-3 text-sm font-bold text-brand-dark hover:bg-brand hover:text-white"
                           >
-                            <Users size={16} />
+                            <Users size={14} />
                             Lưu khách
                           </button>
                         </div>
                       </div>
-                      <p className="mt-2 text-xs font-semibold text-muted">
-                        Mặc định <strong>Khách lẻ</strong>. Xóa tên → droplist khách cũ; không có thì gõ free-text. Địa chỉ / SĐT không bắt buộc.
-                      </p>
                     </div>
 
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <Field label="Cửa hàng">
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <label className="grid gap-0.5">
+                        <span className="text-xs font-bold text-slate-700">Cửa hàng</span>
                         {currentUser?.role === "staff" ? (
                           <>
                             <input type="hidden" value={saleStoreId} readOnly />
-                            <div className="flex h-10 items-center rounded-lg border border-line bg-slate-50 px-3 text-sm font-bold text-ink">
+                            <div className="flex h-9 items-center rounded-md border border-line bg-slate-50 px-2.5 text-sm font-bold text-ink">
                               {storeName(saleStoreId)}
                             </div>
                           </>
@@ -4494,7 +4612,7 @@ export default function Home() {
                                 })
                               );
                             }}
-                            className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
+                            className="h-9 rounded-md border border-line bg-white px-2.5 text-sm font-semibold"
                           >
                             {stores.map((s) => (
                               <option key={s.id} value={s.id}>
@@ -4503,112 +4621,253 @@ export default function Home() {
                             ))}
                           </select>
                         )}
-                      </Field>
-                      <Field label="Thanh toán">
+                      </label>
+                      <label className="grid gap-0.5">
+                        <span className="text-xs font-bold text-slate-700">Thanh toán</span>
                         <select
                           value={salePayment}
-                          onChange={(e) => setSalePayment(e.target.value as PaymentMethod)}
-                          className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
+                          onChange={(e) => setSalePayment(e.target.value as SalePaymentMethod)}
+                          className="h-9 rounded-md border border-line bg-white px-2.5 text-sm font-semibold"
                         >
-                          {(["Tiền mặt", "Chuyển khoản", "Thẻ", "Khác"] as PaymentMethod[]).map((p) => (
+                          {SALE_PAYMENT_OPTIONS.map((p) => (
                             <option key={p} value={p}>
                               {p}
                             </option>
                           ))}
                         </select>
-                      </Field>
+                      </label>
                     </div>
 
-                    {/* Máy còn hàng */}
-                    <div className="rounded-xl border border-line p-3">
-                      <div className="mb-2 flex items-center justify-between gap-2">
-                        <p className="text-sm font-black text-ink">Máy còn hàng</p>
-                        <span className="text-xs font-semibold text-muted">{saleAvailablePhones.length} máy</span>
+                    {/* Phụ kiện — highlight amber */}
+                    <div className="relative overflow-hidden rounded-xl border border-amber-200/80 bg-gradient-to-br from-amber-50 via-orange-50/40 to-white p-3 shadow-sm ring-1 ring-amber-100/80">
+                      <div className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full bg-amber-200/30 blur-2xl" />
+                      <div className="relative mb-2.5 flex flex-wrap items-center justify-between gap-2">
+                        <div className="inline-flex items-center gap-2">
+                          <span className="grid h-8 w-8 place-items-center rounded-lg bg-amber-100 text-amber-700 shadow-sm ring-1 ring-amber-200/80">
+                            <PackagePlus size={16} />
+                          </span>
+                          <p className="text-sm font-black text-amber-950">Phụ kiện</p>
+                        </div>
                       </div>
-                      <div className="relative mb-2">
-                        <Search className="pointer-events-none absolute left-3 top-2.5 text-muted" size={16} />
-                        <input
-                          value={salePhoneSearch}
-                          onChange={(e) => setSalePhoneSearch(e.target.value)}
-                          placeholder="Tìm tên / IMEI / màu…"
-                          className="h-10 w-full rounded-lg border border-line bg-white py-2 pl-9 pr-3 text-sm font-semibold outline-none focus:border-brand"
+                      <div className="relative mb-2 rounded-lg border border-amber-100/80 bg-white/90 p-2 shadow-sm">
+                        <ManageableSelect
+                          key={`sale-acc-cat-${saleAccCategoryKey}-${saleStoreId}`}
+                          label="Loại phụ kiện"
+                          name="saleAccCategory"
+                          options={saleAccCategoryOptions}
+                          setOptions={setSaleAccCategoryOptions}
+                          defaultValue=""
+                          required
+                          categoryCode={
+                            (lookupsByStore[saleStoreId]?.[ACCESSORY_LOOKUP_CATEGORIES.category] ?? [])
+                              .length > 0
+                              ? ACCESSORY_LOOKUP_CATEGORIES.category
+                              : undefined
+                          }
+                          storeId={saleStoreId}
+                          onRenameCascade={reloadInventoryFromDb}
+                          allowManage
+                          allowFreeText
+                          actorUsername={currentUser?.username ?? ""}
                         />
                       </div>
-                      <div className="max-h-48 space-y-1 overflow-auto rounded-lg border border-line bg-white p-1">
-                        {saleAvailablePhones.length === 0 ? (
-                          <p className="px-3 py-4 text-center text-sm font-semibold text-muted">
-                            Không còn máy tại cửa hàng này
-                          </p>
+                      <div className="relative grid gap-2">
+                        <div className="grid gap-2 sm:grid-cols-[1fr_5.5rem_auto]">
+                          <label className="flex min-w-0 items-center gap-2">
+                            <span className="shrink-0 text-xs font-bold text-amber-900">Tên</span>
+                            <input
+                              value={saleAccName}
+                              onChange={(e) => setSaleAccName(e.target.value)}
+                              placeholder="Tên phụ kiện"
+                              className="h-10 min-w-0 flex-1 rounded-lg border border-amber-200/70 bg-white px-3 text-sm font-semibold outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+                            />
+                          </label>
+                          <label className="flex items-center gap-1.5">
+                            <span className="shrink-0 text-xs font-bold text-amber-900">SL</span>
+                            <input
+                              type="number"
+                              min={1}
+                              value={saleAccQty}
+                              onChange={(e) => setSaleAccQty(Math.max(1, Number(e.target.value) || 1))}
+                              className="h-10 w-full min-w-0 rounded-lg border border-amber-200/70 bg-white px-2 text-sm font-semibold outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+                              title="Số lượng"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={addAccessoryToSaleCart}
+                            className="inline-flex h-10 items-center justify-center gap-1 rounded-lg bg-amber-500 px-3 font-bold text-white shadow-sm hover:bg-amber-600"
+                          >
+                            <Plus size={16} />
+                            Thêm
+                          </button>
+                        </div>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <label className="flex min-w-0 items-center gap-2">
+                            <span className="shrink-0 text-xs font-bold text-amber-900">Giá nhập</span>
+                            <input
+                              inputMode="numeric"
+                              value={saleAccCost}
+                              onChange={(e) => setSaleAccCost(formatInputMoney(e.target.value))}
+                              className="h-10 min-w-0 flex-1 rounded-lg border border-amber-200/70 bg-white px-3 text-sm font-semibold outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+                              title="Giá nhập short ×1.000"
+                            />
+                          </label>
+                          <label className="flex min-w-0 items-center gap-2">
+                            <span className="shrink-0 text-xs font-bold text-amber-900">
+                              Giá bán <span className="text-red-500">*</span>
+                            </span>
+                            <input
+                              inputMode="numeric"
+                              value={saleAccPrice}
+                              onChange={(e) => setSaleAccPrice(formatInputMoney(e.target.value))}
+                              className="h-10 min-w-0 flex-1 rounded-lg border border-amber-300 bg-white px-3 text-sm font-bold text-amber-950 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+                              title="Giá bán short ×1.000"
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Máy — highlight trung tính (ít xanh) */}
+                    <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-gradient-to-br from-slate-100/90 via-white to-indigo-50/40 p-3 shadow-sm ring-1 ring-slate-100">
+                      <div className="pointer-events-none absolute -left-8 -top-8 h-28 w-28 rounded-full bg-slate-300/30 blur-2xl" />
+                      <div className="relative mb-2.5 flex flex-wrap items-center justify-between gap-2">
+                        <div className="inline-flex items-center gap-2">
+                          <span className="grid h-8 w-8 place-items-center rounded-lg bg-slate-800 text-white shadow-sm">
+                            <Smartphone size={16} />
+                          </span>
+                          <div>
+                            <p className="text-sm font-black text-ink">Máy</p>
+                            <p className="text-[11px] font-semibold text-muted">
+                              Chọn từ kho còn hàng · IMEI
+                            </p>
+                          </div>
+                        </div>
+                        {!salePhonePickerOpen ? (
+                          <button
+                            type="button"
+                            onClick={() => setSalePhonePickerOpen(true)}
+                            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-slate-800 px-3 text-sm font-bold text-white shadow-sm hover:bg-slate-900"
+                          >
+                            <Smartphone size={16} />
+                            Thêm máy
+                          </button>
                         ) : (
-                          saleAvailablePhones.map((p) => (
-                            <button
-                              key={p.id}
-                              type="button"
-                              onClick={() => addPhoneToSaleCart(p)}
-                              className="flex w-full items-start justify-between gap-2 rounded-lg px-3 py-2 text-left hover:bg-brand-soft"
-                            >
-                              <span>
-                                <span className="block text-sm font-bold text-ink">
-                                  {p.brand} {p.name}
-                                </span>
-                                <span className="block text-xs font-semibold text-muted">
-                                  {p.imei}
-                                  {p.color ? ` · ${p.color}` : ""}
-                                  {p.storage ? ` · ${p.storage}` : ""}
-                                </span>
-                              </span>
-                              <span className="shrink-0 text-sm font-black text-emerald-600">
-                                {formatMoney(p.expectedPrice)}
-                              </span>
-                            </button>
-                          ))
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSalePhonePickerOpen(false);
+                              setSalePhoneSearch("");
+                            }}
+                            className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                          >
+                            Ẩn danh sách
+                          </button>
                         )}
                       </div>
-                    </div>
-
-                    {/* Phụ kiện free-text */}
-                    <div className="rounded-xl border border-line p-3">
-                      <p className="mb-2 text-sm font-black text-ink">Phụ kiện (thêm tay)</p>
-                      <div className="grid gap-2 sm:grid-cols-[1fr_5rem_7rem_auto]">
-                        <input
-                          value={saleAccName}
-                          onChange={(e) => setSaleAccName(e.target.value)}
-                          placeholder="Tên phụ kiện"
-                          className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-semibold outline-none focus:border-brand"
-                        />
-                        <input
-                          type="number"
-                          min={1}
-                          value={saleAccQty}
-                          onChange={(e) => setSaleAccQty(Math.max(1, Number(e.target.value) || 1))}
-                          className="h-10 rounded-lg border border-line bg-white px-2 text-sm font-semibold outline-none focus:border-brand"
-                          title="Số lượng"
-                        />
-                        <input
-                          value={saleAccPrice}
-                          onChange={(e) => setSaleAccPrice(e.target.value)}
-                          placeholder="ĐG short"
-                          className="h-10 rounded-lg border border-line bg-white px-2 text-sm font-semibold outline-none focus:border-brand"
-                          title="Đơn giá short (150 = 150.000₫)"
-                        />
-                        <button
-                          type="button"
-                          onClick={addAccessoryToSaleCart}
-                          className="inline-flex h-10 items-center justify-center gap-1 rounded-lg border border-line bg-white px-3 font-bold text-ink hover:bg-slate-50"
-                        >
-                          <Plus size={16} />
-                          Thêm
-                        </button>
-                      </div>
-                      <p className="mt-1 text-xs font-semibold text-muted">
-                        Free-text: không trừ tồn kho PK. Đơn giá short × 1.000 = ₫ thật.
-                      </p>
+                      {salePhonePickerOpen ? (
+                        <div className="relative space-y-2">
+                          <div className="relative">
+                            <Search className="pointer-events-none absolute left-3 top-2.5 text-slate-400" size={16} />
+                            <input
+                              value={salePhoneSearch}
+                              onChange={(e) => setSalePhoneSearch(e.target.value)}
+                              placeholder="Tìm tên / IMEI / màu…"
+                              className="h-10 w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm font-semibold outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                            />
+                          </div>
+                          <div className="max-h-48 space-y-1 overflow-auto rounded-lg border border-slate-200 bg-white p-1 shadow-inner">
+                            {saleAvailablePhones.length === 0 ? (
+                              <p className="px-3 py-4 text-center text-sm font-semibold text-muted">
+                                Không còn máy tại cửa hàng này
+                              </p>
+                            ) : (
+                              saleAvailablePhones.map((p) => {
+                                const colorHex = p.color ? getColorCode(p.color) : "";
+                                const colorIsLight =
+                                  !colorHex ||
+                                  ["#ffffff", "#cbd5e1", "#e2e8f0", "#f8fafc", "#94a3b8", "#a8a29e"].includes(
+                                    colorHex.toLowerCase()
+                                  );
+                                return (
+                                  <div
+                                    key={p.id}
+                                    className="flex items-center gap-2 rounded-lg border border-transparent px-2.5 py-2 transition hover:border-slate-200 hover:bg-slate-50"
+                                  >
+                                    {/* Tên · màu (theo mã màu) · GB · IMEI — một hàng */}
+                                    <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
+                                      <span className="shrink-0 text-sm font-black text-indigo-700">
+                                        {p.brand} {p.name}
+                                      </span>
+                                      {p.color ? (
+                                        <span
+                                          className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-black ring-1"
+                                          style={{
+                                            color: colorIsLight ? "#334155" : colorHex,
+                                            backgroundColor: colorIsLight
+                                              ? "#f1f5f9"
+                                              : `${colorHex}22`,
+                                            borderColor: colorIsLight ? "#cbd5e1" : `${colorHex}55`,
+                                          }}
+                                          title={p.color}
+                                        >
+                                          <ColorDot color={p.color} size="sm" />
+                                          {p.color}
+                                        </span>
+                                      ) : null}
+                                      {p.storage ? (
+                                        <span className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-xs font-black text-slate-700 ring-1 ring-slate-200">
+                                          {p.storage}
+                                        </span>
+                                      ) : null}
+                                      <span className="min-w-0 truncate font-mono text-[11px] font-medium text-slate-400">
+                                        {p.imei}
+                                      </span>
+                                    </div>
+                                    <span className="shrink-0 rounded-md bg-amber-50 px-2 py-0.5 text-sm font-black text-amber-800 ring-1 ring-amber-100">
+                                      {formatMoney(p.expectedPrice)}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      title="Thêm vào giỏ"
+                                      onClick={() => addPhoneToSaleCart(p)}
+                                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-800 hover:text-white"
+                                    >
+                                      <Plus size={16} />
+                                    </button>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                          <p className="text-[11px] font-semibold text-muted">
+                            {saleAvailablePhones.length} máy · bấm <Plus size={11} className="inline" /> để
+                            thêm giỏ
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="relative rounded-lg border border-dashed border-slate-300 bg-white/70 px-3 py-3 text-center">
+                          <p className="text-sm font-semibold text-slate-600">
+                            Mặc định chỉ bán phụ kiện. Bấm{" "}
+                            <strong className="text-ink">Thêm máy</strong> để load máy còn hàng.
+                          </p>
+                        </div>
+                      )}
                     </div>
 
                     {/* Giỏ */}
-                    <div className="rounded-xl border border-line p-3">
+                    <div className="rounded-xl border border-rose-200/80 bg-gradient-to-br from-rose-50 via-red-50/50 to-orange-50/40 p-3 shadow-sm ring-1 ring-rose-100">
                       <div className="mb-2 flex items-center justify-between">
-                        <p className="text-sm font-black text-ink">Giỏ hàng ({saleCart.length} dòng)</p>
+                        <p className="inline-flex items-center gap-2 text-sm font-black text-rose-950">
+                          <span className="grid h-7 w-7 place-items-center rounded-md bg-red-600 text-white shadow-sm ring-1 ring-red-500/30">
+                            <ShoppingCart size={14} />
+                          </span>
+                          Giỏ hàng
+                          <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-800 ring-1 ring-red-200/80">
+                            {saleCart.length} dòng
+                          </span>
+                        </p>
                         {saleCart.length > 0 ? (
                           <button
                             type="button"
@@ -4621,7 +4880,7 @@ export default function Home() {
                       </div>
                       {saleCart.length === 0 ? (
                         <p className="py-3 text-center text-sm font-semibold text-muted">
-                          Chọn máy hoặc thêm phụ kiện
+                          Thêm phụ kiện (mặc định) hoặc bấm Thêm máy
                         </p>
                       ) : (
                         <ul className="space-y-2">
@@ -4631,26 +4890,47 @@ export default function Home() {
                               className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-white px-3 py-2"
                             >
                               <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-bold text-ink">
-                                  {line.kind === "phone" ? (
-                                    <Smartphone size={14} className="mr-1 inline text-brand" />
-                                  ) : (
-                                    <PackagePlus size={14} className="mr-1 inline text-amber-600" />
-                                  )}
-                                  {line.name}
-                                  {line.kind === "accessory" ? ` ×${line.quantity}` : ""}
-                                </p>
                                 {line.kind === "phone" ? (
-                                  <p className="text-xs font-semibold text-muted">{line.imei}</p>
-                                ) : null}
+                                  <>
+                                    <p className="text-sm font-bold text-ink">
+                                      <Smartphone size={14} className="mr-1 inline text-brand" />
+                                      <span className="mr-1.5 rounded-full bg-brand-soft px-2 py-0.5 text-[10px] font-black uppercase text-brand-dark">
+                                        Máy
+                                      </span>
+                                      {line.name}
+                                    </p>
+                                    <p className="mt-0.5 text-xs font-semibold text-muted">
+                                      IMEI {line.imei || "—"}
+                                      {line.color ? ` · ${line.color}` : ""}
+                                      {line.storage ? ` · ${line.storage}` : ""}
+                                      {line.condition ? ` · ${line.condition}` : ""}
+                                    </p>
+                                  </>
+                                ) : (
+                                  <>
+                                    <p className="text-sm font-bold text-ink">
+                                      <PackagePlus size={14} className="mr-1 inline text-amber-600" />
+                                      <span className="mr-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase text-amber-800">
+                                        {line.category || "PK"}
+                                      </span>
+                                      {line.name}
+                                      <span className="ml-1 font-semibold text-muted">×{line.quantity}</span>
+                                    </p>
+                                    <p className="mt-0.5 text-xs font-semibold text-muted">
+                                      Loại: {line.category || "—"} · Nhập {formatMoney(line.cost || 0)} · Bán{" "}
+                                      {formatMoney(line.unitPrice)}
+                                    </p>
+                                  </>
+                                )}
                               </div>
                               <input
-                                type="number"
-                                min={0}
-                                value={line.unitPrice || ""}
-                                onChange={(e) => updateSaleCartUnitPrice(line.key, Number(e.target.value) || 0)}
+                                inputMode="numeric"
+                                value={line.unitPrice ? formatInputMoney(line.unitPrice) : ""}
+                                onChange={(e) =>
+                                  updateSaleCartUnitPrice(line.key, parseShopMoney(e.target.value))
+                                }
                                 className="h-9 w-28 rounded-lg border border-line px-2 text-right text-sm font-bold text-emerald-700 outline-none focus:border-brand"
-                                title="Đơn giá short"
+                                title="Giá bán short ×1.000 (1.500 = 1.500.000₫)"
                               />
                               <span className="w-24 text-right text-sm font-black text-ink">
                                 {formatMoney(
@@ -4676,13 +4956,21 @@ export default function Home() {
                             <strong className="text-ink">{formatMoney(saleCartTotals.amountShort)}</strong>
                             {" · "}
                             ~{formatMoney(saleCartTotals.amountVnd)} ₫
+                            <span className="ml-1 text-[11px] font-semibold text-slate-400">
+                              (short ×1.000)
+                            </span>
                           </p>
                           <p className="font-semibold text-muted">
-                            Lãi ước tính (máy):{" "}
+                            Lãi ước tính:{" "}
                             <strong className="text-emerald-700">
                               {formatMoney(saleCartTotals.profitShort)}
-                            </strong>{" "}
-                            short
+                            </strong>
+                            <span className="text-xs font-semibold text-muted"> short</span>
+                            {salePayment === "Nợ" ? (
+                              <span className="ml-2 rounded-full bg-red-50 px-2 py-0.5 text-xs font-bold text-danger">
+                                Nợ
+                              </span>
+                            ) : null}
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-2">
