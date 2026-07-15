@@ -4483,7 +4483,9 @@ export default function Home() {
                   </div>
 
                   <form id="sale-create-form" onSubmit={createSale} className="grid gap-3 p-4 sm:p-5">
-                    {/* Khách hàng — compact */}
+                    {/* Khách hàng — chỉ hiện khi thêm máy / giỏ có máy */}
+                    {(salePhonePickerOpen ||
+                      saleCart.some((l) => l.kind === "phone")) && (
                     <div className="rounded-lg border border-line/80 bg-slate-50/80 px-2.5 py-2">
                       <div className="mb-1.5 flex flex-wrap items-center justify-between gap-1.5">
                         <p className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-slate-600">
@@ -4587,6 +4589,7 @@ export default function Home() {
                         </div>
                       </div>
                     </div>
+                    )}
 
                     <div className="grid gap-2 sm:grid-cols-2">
                       <label className="grid gap-0.5">
