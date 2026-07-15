@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { repoCreateSale, repoListRecentSales, type CreateSaleInput } from "@/lib/db/inventoryRepo";
+import {
+  repoCreateSale,
+  repoListRecentSales,
+  type CreateSaleInput,
+  type CreateSaleLineInput,
+} from "@/lib/db/inventoryRepo";
 import { isMaxConnSessionError } from "@/lib/db/pool";
 import type { StoreId } from "@/types";
 
@@ -11,6 +16,28 @@ function mapPayment(raw: string): CreateSaleInput["payment"] {
   if (t === "chuyển khoản" || t === "chuyen khoan" || t === "transfer") return "transfer";
   if (t === "thẻ" || t === "the" || t === "card") return "card";
   return "other";
+}
+
+function mapLine(raw: Record<string, unknown>): CreateSaleLineInput {
+  const typeRaw = String(raw.itemType || raw.type || "");
+  const isAccessory =
+    typeRaw === "Phụ kiện" || typeRaw === "accessory" || typeRaw.toLowerCase() === "phu kien";
+
+  if (isAccessory) {
+    return {
+      itemType: "accessory",
+      itemName: String(raw.itemName ?? raw.name ?? "").trim(),
+      quantity: Number(raw.quantity ?? 1),
+      unitPrice: Number(raw.unitPrice ?? raw.amount ?? 0),
+      accessoryId: raw.accessoryId ? String(raw.accessoryId) : undefined,
+    };
+  }
+
+  return {
+    itemType: "phone",
+    phoneId: String(raw.phoneId ?? raw.itemId ?? ""),
+    unitPrice: Number(raw.unitPrice ?? raw.amount ?? 0),
+  };
 }
 
 export async function GET() {
@@ -30,34 +57,58 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const storeId = String(body?.storeId || "") as Exclude<StoreId, "all">;
-    const itemTypeRaw = String(body?.itemType || "");
-    const itemType = itemTypeRaw === "Phụ kiện" || itemTypeRaw === "accessory" ? "accessory" : "phone";
-    const unitPrice = Number(body?.unitPrice ?? body?.amount ?? 0);
-    const quantity = Number(body?.quantity ?? 1);
 
     if (!storeId || storeId === ("all" as StoreId)) {
       return NextResponse.json({ error: "Thiếu cửa hàng." }, { status: 400 });
     }
 
+    const linesRaw = Array.isArray(body?.lines) ? body.lines : null;
+    let lines: CreateSaleLineInput[] | undefined;
+
+    if (linesRaw && linesRaw.length > 0) {
+      const mapped: CreateSaleLineInput[] = linesRaw.map((row: Record<string, unknown>) =>
+        mapLine(row)
+      );
+      for (const line of mapped) {
+        if (line.itemType === "phone" && !line.phoneId) {
+          return NextResponse.json({ error: "Thiếu máy cần bán." }, { status: 400 });
+        }
+        if (line.itemType === "accessory" && !line.itemName && !line.accessoryId) {
+          return NextResponse.json({ error: "Nhập tên phụ kiện." }, { status: 400 });
+        }
+      }
+      lines = mapped;
+    }
+
+    const itemTypeRaw = String(body?.itemType || "");
+    const legacyItemType =
+      itemTypeRaw === "Phụ kiện" || itemTypeRaw === "accessory" ? "accessory" : "phone";
+
     const input: CreateSaleInput = {
       storeId,
-      itemType,
-      phoneId: body?.phoneId ? String(body.phoneId) : undefined,
-      accessoryId: body?.accessoryId ? String(body.accessoryId) : undefined,
-      quantity,
-      unitPrice,
       payment: mapPayment(String(body?.payment ?? "cash")),
-      customerName: body?.customerName ? String(body.customerName) : undefined,
-      customerPhone: body?.customerPhone ? String(body.customerPhone) : undefined,
+      customerName: body?.customerName != null ? String(body.customerName) : undefined,
+      customerPhone: body?.customerPhone != null ? String(body.customerPhone) : undefined,
       note: body?.note ? String(body.note) : undefined,
       actorUsername: body?.actorUsername ? String(body.actorUsername) : undefined,
+      lines,
+      // Legacy single-line
+      itemType: lines ? undefined : legacyItemType,
+      phoneId: body?.phoneId ? String(body.phoneId) : undefined,
+      accessoryId: body?.accessoryId ? String(body.accessoryId) : undefined,
+      quantity: body?.quantity != null ? Number(body.quantity) : undefined,
+      unitPrice: body?.unitPrice != null || body?.amount != null
+        ? Number(body?.unitPrice ?? body?.amount ?? 0)
+        : undefined,
     };
 
-    if (itemType === "phone" && !input.phoneId) {
-      return NextResponse.json({ error: "Thiếu máy cần bán." }, { status: 400 });
-    }
-    if (itemType === "accessory" && !input.accessoryId) {
-      return NextResponse.json({ error: "Thiếu phụ kiện cần bán." }, { status: 400 });
+    if (!lines) {
+      if (legacyItemType === "phone" && !input.phoneId) {
+        return NextResponse.json({ error: "Thiếu máy cần bán." }, { status: 400 });
+      }
+      if (legacyItemType === "accessory" && !input.accessoryId) {
+        return NextResponse.json({ error: "Thiếu phụ kiện cần bán." }, { status: 400 });
+      }
     }
 
     const data = await repoCreateSale(input);

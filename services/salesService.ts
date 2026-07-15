@@ -11,21 +11,41 @@ export type SaleRow = {
   profit: number;
   payment: string;
   status: "Hoàn tất";
+  customerName?: string;
+  lineCount?: number;
 };
+
+export type CreateSaleLineBody =
+  | {
+      itemType: "Máy" | "phone";
+      phoneId: string;
+      /** Giá bán 1 máy (short shop OK). */
+      unitPrice: number;
+    }
+  | {
+      itemType: "Phụ kiện" | "accessory";
+      itemName: string;
+      quantity: number;
+      /** Đơn giá 1 cái (short shop OK). */
+      unitPrice: number;
+      accessoryId?: string;
+    };
 
 export type CreateSaleBody = {
   storeId: Exclude<StoreId, "all">;
-  itemType: "Máy" | "Phụ kiện";
-  phoneId?: string;
-  accessoryId?: string;
-  quantity: number;
-  /** Giá / đơn giá (short shop OK — server ×1000). */
-  unitPrice: number;
   payment: string;
   customerName?: string;
   customerPhone?: string;
   note?: string;
   actorUsername?: string;
+  /** Multi-line (ưu tiên). */
+  lines?: CreateSaleLineBody[];
+  /** Legacy 1 dòng */
+  itemType?: "Máy" | "Phụ kiện";
+  phoneId?: string;
+  accessoryId?: string;
+  quantity?: number;
+  unitPrice?: number;
 };
 
 async function parseJson<T>(res: Response): Promise<T> {

@@ -39,6 +39,8 @@ export type Customer = {
   id: string;
   name: string;
   phone: string;
+  /** Địa chỉ (tuỳ chọn). */
+  address: string;
   note: string;
 };
 
@@ -81,6 +83,7 @@ export type Sale = {
   id: string;
   createdAt: string;
   customerId: string;
+  customerName?: string;
   storeId: Exclude<StoreId, "all">;
   itemName: string;
   itemType: "Máy" | "Phụ kiện";
