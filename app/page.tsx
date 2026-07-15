@@ -872,7 +872,7 @@ export default function Home() {
   /** Form bán hàng */
   const [saleStoreId, setSaleStoreId] = useState<Exclude<StoreId, "all">>("store-1");
   const [salePayMethod, setSalePayMethod] = useState<SalePayMethod>("Tiền mặt");
-  const [salePayStatus, setSalePayStatus] = useState<SalePayStatus>("NỢ DAI");
+  const [salePayStatus, setSalePayStatus] = useState<SalePayStatus>("Đã thanh toán");
   /** Ngày giờ bán — mặc định VN now (datetime-local). */
   const [saleSoldAt, setSaleSoldAt] = useState(() => vnNowDateTimeLocal());
   const [saleCustomerId, setSaleCustomerId] = useState<string | null>(null);
@@ -2326,7 +2326,7 @@ export default function Home() {
     setSaleAccNameKey((k) => k + 1);
     setSaleAccDefaultName("");
     setSalePayMethod("Tiền mặt");
-    setSalePayStatus("NỢ DAI");
+    setSalePayStatus("Đã thanh toán");
     setSaleSoldAt(vnNowDateTimeLocal());
     setEditingSaleId(null);
     if (currentUser?.storeId) setSaleStoreId(currentUser.storeId);
@@ -4826,8 +4826,11 @@ export default function Home() {
                       </div>
                       <div className="grid gap-2 sm:grid-cols-2">
                         <label className="grid gap-0.5">
-                          <span className="text-xs font-bold text-slate-700">Hình thức thanh toán</span>
+                          <span className="text-xs font-bold text-slate-700">
+                            Hình thức thanh toán <span className="text-red-500">*</span>
+                          </span>
                           <select
+                            required
                             value={salePayMethod}
                             onChange={(e) => setSalePayMethod(e.target.value as SalePayMethod)}
                             className="h-9 rounded-md border border-line bg-white px-2.5 text-sm font-semibold"
@@ -4840,8 +4843,11 @@ export default function Home() {
                           </select>
                         </label>
                         <label className="grid gap-0.5">
-                          <span className="text-xs font-bold text-slate-700">Trạng thái thanh toán</span>
+                          <span className="text-xs font-bold text-slate-700">
+                            Trạng thái thanh toán <span className="text-red-500">*</span>
+                          </span>
                           <select
+                            required
                             value={salePayStatus}
                             onChange={(e) => setSalePayStatus(e.target.value as SalePayStatus)}
                             className="h-9 rounded-md border border-line bg-white px-2.5 text-sm font-semibold"
@@ -5157,7 +5163,7 @@ export default function Home() {
                             <strong className="font-bold text-emerald-700">
                               {formatMoney(saleCartTotals.profitShort)}
                             </strong>
-                            <span className="text-slate-400"> short</span>
+                            <span className="text-slate-400"> K</span>
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-1.5">
