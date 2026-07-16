@@ -4362,7 +4362,7 @@ export default function Home() {
 
               <div className="overflow-x-auto pb-2">
                 <DataTable
-                  headers={["Ngày", "Khách", "Hàng", "Cửa hàng", "Tiền", "Lãi", "Thanh toán", "Thao tác"]}
+                  headers={["Ngày", "Khách", "Hàng", "Tổng tiền", "Lãi", "Thanh toán", "Thao tác"]}
                   rows={filteredSales.map((item) => {
                     const custName =
                       item.customerName ||
@@ -4378,7 +4378,6 @@ export default function Home() {
                         {item.itemName}
                         {item.quantity > 1 ? ` (${item.quantity})` : ""}
                       </span>,
-                      storeName(item.storeId),
                       <span key={`a-${item.id}`} className="font-black text-ink">
                         {isSaleSensitiveHidden ? "***" : formatMoney(item.amount)}
                       </span>,
