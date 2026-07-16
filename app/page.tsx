@@ -903,7 +903,8 @@ export default function Home() {
   /** Bộ lọc grid bán hàng (giống phần mềm). */
   const [saleMonth, setSaleMonth] = useState(() => vnNowMonth());
   const [saleDate, setSaleDate] = useState(() => vnNowDate());
-  const [saleStatusFilter, setSaleStatusFilter] = useState<"all" | "Hoàn tất" | "Đã hủy">("all");
+  /** Mặc định chỉ phiếu hoàn tất — xóa (hủy mềm) biến mất khỏi grid. */
+  const [saleStatusFilter, setSaleStatusFilter] = useState<"all" | "Hoàn tất" | "Đã hủy">("Hoàn tất");
   /** Lọc TT: đã thu | 1 phần | nợ */
   const [salePaymentFilter, setSalePaymentFilter] = useState<
     "all" | "paid" | "partial" | "debt"
@@ -2907,24 +2908,38 @@ export default function Home() {
 
   async function cancelSale(id: string) {
     const sale = sales.find((item) => item.id === id);
-    if (!sale || !canCancel) return;
-    if (!window.confirm(`Hủy mềm phiếu bán «${sale.itemName}»?`)) return;
+    if (!sale || !canCancel || saleSaving) return;
+    if (
+      !window.confirm(
+        `Xóa phiếu bán «${sale.itemName}»?\n\nPhiếu sẽ bị hủy (hoàn tồn kho) và biến mất khỏi danh sách.`
+      )
+    ) {
+      return;
+    }
+    setSaleSaving(true);
     try {
       await apiCancelSale(id, currentUser?.username);
-      setSales((prev) =>
-        prev.map((item) => (item.id === id ? { ...item, status: "Đã hủy" as const } : item))
-      );
+      // Gỡ khỏi grid ngay (optimistic), rồi load lại từ DB.
+      setSales((prev) => prev.filter((item) => item.id !== id));
       setLedger((prev) =>
         prev.map((item) => (item.source.includes(id) ? { ...item, status: "Đã hủy" } : item))
       );
       if (viewingSaleId === id) setViewingSaleId(null);
-      pushLog("Hủy mềm phiếu bán", id, sale.storeId);
+      if (editingSaleId === id) {
+        setEditingSaleId(null);
+        setIsSaleModalOpen(false);
+      }
+      pushLog("Xóa phiếu bán", id, sale.storeId);
       await reloadInventoryFromDb();
       await reloadSalesFromDb();
       void refreshDashboardSummary();
-      showUiToast("success", "Đã hủy mềm phiếu bán.");
+      showUiToast("success", "Đã xóa phiếu bán.");
     } catch (err) {
       window.alert(toUiError(err));
+      // Khôi phục list nếu API lỗi sau khi đã gỡ local
+      await reloadSalesFromDb();
+    } finally {
+      setSaleSaving(false);
     }
   }
 
@@ -4414,9 +4429,10 @@ export default function Home() {
                         {canCancel && item.status === "Hoàn tất" ? (
                           <button
                             type="button"
-                            onClick={() => cancelSale(item.id)}
-                            title="Hủy mềm"
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100"
+                            onClick={() => void cancelSale(item.id)}
+                            title="Xóa phiếu"
+                            disabled={saleSaving}
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             <Trash2 size={16} />
                           </button>
