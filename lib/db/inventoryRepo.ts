@@ -1,5 +1,5 @@
 import type { Accessory, PhoneItem, StoreId } from "@/types";
-import { shopMoneyToVnd, toShopMoney } from "@/lib/format";
+import { shopMoneyToVnd, toShopMoney, vndToShopMoney } from "@/lib/format";
 import { toVnDate, toVnDateTimeLocal, vnDateTimeLocalToIso } from "@/lib/datetime";
 import {
   accessoryStatusToDb,
@@ -61,6 +61,7 @@ export type CreateSaleInput = {
   unitPrice?: number;
 };
 
+/** Phiếu bán trả về UI — amount/profit đơn vị **short shop** (giống kho). */
 export type CreatedSale = {
   id: string;
   soldAt: string;
@@ -68,7 +69,9 @@ export type CreatedSale = {
   itemName: string;
   itemType: "Máy" | "Phụ kiện";
   quantity: number;
+  /** Short shop (DB VND ÷ 1000). */
   amount: number;
+  /** Short shop (DB VND ÷ 1000). */
   profit: number;
   payment: string;
   status: "Hoàn tất" | "Đã hủy";
@@ -1037,6 +1040,7 @@ function paymentToUi(p: string): string {
  * Tạo phiếu bán completed (nhiều dòng) + cập nhật tồn máy / PK kho.
  * Phụ kiện free-text: không trừ tồn, vốn = 0.
  * total_amount / profit lưu **VND thật** (kho short × 1000).
+ * Response UI (`CreatedSale` / `SaleDetail`) quy về **short shop** (÷ 1000) giống màn nhập kho.
  */
 export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSale> {
   const { codeToId } = await loadStoreMaps();
@@ -1255,8 +1259,8 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
       itemName: itemName || "Hàng",
       itemType,
       quantity: totalQty,
-      amount: totalAmount,
-      profit: totalProfit,
+      amount: vndToShopMoney(totalAmount),
+      profit: vndToShopMoney(totalProfit),
       payment: paymentToUi(input.payment),
       status: "Hoàn tất" as const,
       customerName,
@@ -1393,8 +1397,8 @@ export async function repoGetSale(saleId: string): Promise<SaleDetail> {
         : `${itemNames[0]} + ${itemNames.length - 1} dòng khác`,
     itemType,
     quantity: lines.reduce((s, l) => s + (l.kind === "phone" ? 1 : l.quantity), 0),
-    amount: Number(sale.total_amount) || 0,
-    profit: Number(sale.total_profit) || 0,
+    amount: vndToShopMoney(Number(sale.total_amount) || 0),
+    profit: vndToShopMoney(Number(sale.total_profit) || 0),
     payment: paymentToUi(String(sale.payment_method)),
     status: sale.status === "cancelled" ? ("Đã hủy" as const) : ("Hoàn tất" as const),
     customerId: sale.customer_id ? String(sale.customer_id) : undefined,
@@ -1467,8 +1471,8 @@ export async function repoListRecentSales(limit = 80): Promise<CreatedSale[]> {
     itemName: String(row.item_name),
     itemType: row.item_type === "accessory" ? ("Phụ kiện" as const) : ("Máy" as const),
     quantity: Number(row.quantity) || 1,
-    amount: Number(row.total_amount) || 0,
-    profit: Number(row.total_profit) || 0,
+    amount: vndToShopMoney(Number(row.total_amount) || 0),
+    profit: vndToShopMoney(Number(row.total_profit) || 0),
     payment: paymentToUi(String(row.payment_method)),
     status: row.status === "cancelled" ? ("Đã hủy" as const) : ("Hoàn tất" as const),
     customerName: String(row.customer_name || "Khách lẻ"),
@@ -1556,8 +1560,8 @@ export async function repoCancelSale(
       itemName: "Hàng",
       itemType: "Máy" as const,
       quantity: 0,
-      amount: Number(sale.total_amount) || 0,
-      profit: Number(sale.total_profit) || 0,
+      amount: vndToShopMoney(Number(sale.total_amount) || 0),
+      profit: vndToShopMoney(Number(sale.total_profit) || 0),
       payment: paymentToUi(String(sale.payment_method)),
       status: "Đã hủy" as const,
       customerName: "",

@@ -310,7 +310,9 @@ type Sale = {
   itemName: string;
   itemType: "Máy" | "Phụ kiện";
   quantity: number;
+  /** Short shop — cùng đơn vị giá kho (nhập 150 → hiện 150). */
   amount: number;
+  /** Short shop. */
   profit: number;
   payment: PaymentMethod;
   status: "Hoàn tất" | "Đã hủy";
@@ -393,25 +395,26 @@ const customersSeed: Customer[] = [
   { id: "c3", name: "Bạn Huy", phone: "0987 111 222", address: "", note: "Quan tâm phụ kiện" },
 ];
 
+/** Seed demo — đơn vị short shop (giống kho). */
 const salesSeed: Sale[] = [
-  { id: "s1", createdAt: "2026-07-05", customerId: "c1", storeId: "store-1", itemName: "iPhone 14 128GB", itemType: "Máy", quantity: 1, amount: 14500000, profit: 1500000, payment: "Chuyển khoản", status: "Hoàn tất" },
-  { id: "s2", createdAt: "2026-07-06", customerId: "c3", storeId: "store-3", itemName: "Kính cường lực Kingkong", itemType: "Phụ kiện", quantity: 2, amount: 140000, profit: 104000, payment: "Tiền mặt", status: "Hoàn tất" },
-  { id: "s3", createdAt: "2026-07-06", customerId: "c2", storeId: "store-1", itemName: "iPhone 13 128GB Hồng", itemType: "Máy", quantity: 1, amount: 11800000, profit: 1300000, payment: "Thẻ", status: "Hoàn tất" },
-  { id: "s4", createdAt: "2026-07-05", customerId: "c1", storeId: "store-2", itemName: "Ốp lưng chống sốc iPhone 14", itemType: "Phụ kiện", quantity: 1, amount: 110000, profit: 70000, payment: "Tiền mặt", status: "Hoàn tất" },
-  { id: "s5", createdAt: "2026-07-04", customerId: "c2", storeId: "store-1", itemName: "Cáp sạc nhanh 20W Apple", itemType: "Phụ kiện", quantity: 1, amount: 120000, profit: 65000, payment: "Chuyển khoản", status: "Hoàn tất" },
-  { id: "s6", createdAt: "2026-07-03", customerId: "c3", storeId: "store-3", itemName: "Củ sạc GaN 65W Baseus", itemType: "Phụ kiện", quantity: 1, amount: 550000, profit: 230000, payment: "Tiền mặt", status: "Hoàn tất" },
-  { id: "s7", createdAt: "2026-01-15", customerId: "c1", storeId: "store-1", itemName: "iPhone 15 Pro Max", itemType: "Máy", quantity: 2, amount: 62000000, profit: 5000000, payment: "Chuyển khoản", status: "Hoàn tất" },
-  { id: "s8", createdAt: "2026-02-10", customerId: "c2", storeId: "store-2", itemName: "Samsung S22 Ultra", itemType: "Máy", quantity: 1, amount: 14000000, profit: 1200000, payment: "Tiền mặt", status: "Hoàn tất" },
-  { id: "s9", createdAt: "2026-03-20", customerId: "c3", storeId: "store-3", itemName: "iPhone 11 64GB", itemType: "Máy", quantity: 3, amount: 19500000, profit: 3000000, payment: "Thẻ", status: "Hoàn tất" },
-  { id: "s10", createdAt: "2026-04-05", customerId: "c1", storeId: "store-1", itemName: "Oppo Reno 8", itemType: "Máy", quantity: 1, amount: 8500000, profit: 1500000, payment: "Chuyển khoản", status: "Hoàn tất" },
-  { id: "s11", createdAt: "2026-05-12", customerId: "c2", storeId: "store-2", itemName: "Xiaomi Redmi Note 12", itemType: "Máy", quantity: 4, amount: 16800000, profit: 2800000, payment: "Tiền mặt", status: "Hoàn tất" },
-  { id: "s12", createdAt: "2026-06-25", customerId: "c3", storeId: "store-3", itemName: "iPhone 14 Pro Max", itemType: "Máy", quantity: 1, amount: 23200000, profit: 1700000, payment: "Chuyển khoản", status: "Hoàn tất" },
-  { id: "s13", createdAt: "2026-02-28", customerId: "c1", storeId: "store-1", itemName: "Z Fold 5", itemType: "Máy", quantity: 1, amount: 28000000, profit: 3000000, payment: "Thẻ", status: "Hoàn tất" },
-  { id: "s14", createdAt: "2026-04-18", customerId: "c2", storeId: "store-2", itemName: "iPhone XS Max", itemType: "Máy", quantity: 2, amount: 11000000, profit: 2000000, payment: "Tiền mặt", status: "Hoàn tất" },
-  { id: "s15", createdAt: "2026-01-05", customerId: "c3", storeId: "store-3", itemName: "Sạc dự phòng 10000mAh", itemType: "Phụ kiện", quantity: 5, amount: 2000000, profit: 750000, payment: "Chuyển khoản", status: "Hoàn tất" },
-  { id: "s16", createdAt: "2026-03-10", customerId: "c1", storeId: "store-1", itemName: "Tai nghe AirPods Pro 2", itemType: "Phụ kiện", quantity: 2, amount: 1100000, profit: 400000, payment: "Tiền mặt", status: "Hoàn tất" },
-  { id: "s17", createdAt: "2026-05-22", customerId: "c2", storeId: "store-2", itemName: "Giá đỡ điện thoại ô tô", itemType: "Phụ kiện", quantity: 3, amount: 450000, profit: 240000, payment: "Thẻ", status: "Hoàn tất" },
-  { id: "s18", createdAt: "2026-06-15", customerId: "c3", storeId: "store-3", itemName: "Dây đeo Apple Watch", itemType: "Phụ kiện", quantity: 4, amount: 480000, profit: 300000, payment: "Chuyển khoản", status: "Hoàn tất" },
+  { id: "s1", createdAt: "2026-07-05", customerId: "c1", storeId: "store-1", itemName: "iPhone 14 128GB", itemType: "Máy", quantity: 1, amount: 14500, profit: 1500, payment: "Chuyển khoản", status: "Hoàn tất" },
+  { id: "s2", createdAt: "2026-07-06", customerId: "c3", storeId: "store-3", itemName: "Kính cường lực Kingkong", itemType: "Phụ kiện", quantity: 2, amount: 140, profit: 104, payment: "Tiền mặt", status: "Hoàn tất" },
+  { id: "s3", createdAt: "2026-07-06", customerId: "c2", storeId: "store-1", itemName: "iPhone 13 128GB Hồng", itemType: "Máy", quantity: 1, amount: 11800, profit: 1300, payment: "Thẻ", status: "Hoàn tất" },
+  { id: "s4", createdAt: "2026-07-05", customerId: "c1", storeId: "store-2", itemName: "Ốp lưng chống sốc iPhone 14", itemType: "Phụ kiện", quantity: 1, amount: 110, profit: 70, payment: "Tiền mặt", status: "Hoàn tất" },
+  { id: "s5", createdAt: "2026-07-04", customerId: "c2", storeId: "store-1", itemName: "Cáp sạc nhanh 20W Apple", itemType: "Phụ kiện", quantity: 1, amount: 120, profit: 65, payment: "Chuyển khoản", status: "Hoàn tất" },
+  { id: "s6", createdAt: "2026-07-03", customerId: "c3", storeId: "store-3", itemName: "Củ sạc GaN 65W Baseus", itemType: "Phụ kiện", quantity: 1, amount: 550, profit: 230, payment: "Tiền mặt", status: "Hoàn tất" },
+  { id: "s7", createdAt: "2026-01-15", customerId: "c1", storeId: "store-1", itemName: "iPhone 15 Pro Max", itemType: "Máy", quantity: 2, amount: 62000, profit: 5000, payment: "Chuyển khoản", status: "Hoàn tất" },
+  { id: "s8", createdAt: "2026-02-10", customerId: "c2", storeId: "store-2", itemName: "Samsung S22 Ultra", itemType: "Máy", quantity: 1, amount: 14000, profit: 1200, payment: "Tiền mặt", status: "Hoàn tất" },
+  { id: "s9", createdAt: "2026-03-20", customerId: "c3", storeId: "store-3", itemName: "iPhone 11 64GB", itemType: "Máy", quantity: 3, amount: 19500, profit: 3000, payment: "Thẻ", status: "Hoàn tất" },
+  { id: "s10", createdAt: "2026-04-05", customerId: "c1", storeId: "store-1", itemName: "Oppo Reno 8", itemType: "Máy", quantity: 1, amount: 8500, profit: 1500, payment: "Chuyển khoản", status: "Hoàn tất" },
+  { id: "s11", createdAt: "2026-05-12", customerId: "c2", storeId: "store-2", itemName: "Xiaomi Redmi Note 12", itemType: "Máy", quantity: 4, amount: 16800, profit: 2800, payment: "Tiền mặt", status: "Hoàn tất" },
+  { id: "s12", createdAt: "2026-06-25", customerId: "c3", storeId: "store-3", itemName: "iPhone 14 Pro Max", itemType: "Máy", quantity: 1, amount: 23200, profit: 1700, payment: "Chuyển khoản", status: "Hoàn tất" },
+  { id: "s13", createdAt: "2026-02-28", customerId: "c1", storeId: "store-1", itemName: "Z Fold 5", itemType: "Máy", quantity: 1, amount: 28000, profit: 3000, payment: "Thẻ", status: "Hoàn tất" },
+  { id: "s14", createdAt: "2026-04-18", customerId: "c2", storeId: "store-2", itemName: "iPhone XS Max", itemType: "Máy", quantity: 2, amount: 11000, profit: 2000, payment: "Tiền mặt", status: "Hoàn tất" },
+  { id: "s15", createdAt: "2026-01-05", customerId: "c3", storeId: "store-3", itemName: "Sạc dự phòng 10000mAh", itemType: "Phụ kiện", quantity: 5, amount: 2000, profit: 750, payment: "Chuyển khoản", status: "Hoàn tất" },
+  { id: "s16", createdAt: "2026-03-10", customerId: "c1", storeId: "store-1", itemName: "Tai nghe AirPods Pro 2", itemType: "Phụ kiện", quantity: 2, amount: 1100, profit: 400, payment: "Tiền mặt", status: "Hoàn tất" },
+  { id: "s17", createdAt: "2026-05-22", customerId: "c2", storeId: "store-2", itemName: "Giá đỡ điện thoại ô tô", itemType: "Phụ kiện", quantity: 3, amount: 450, profit: 240, payment: "Thẻ", status: "Hoàn tất" },
+  { id: "s18", createdAt: "2026-06-15", customerId: "c3", storeId: "store-3", itemName: "Dây đeo Apple Watch", itemType: "Phụ kiện", quantity: 4, amount: 480, profit: 300, payment: "Chuyển khoản", status: "Hoàn tất" },
 ];
 
 const softwareServiceSeed: SoftwareService[] = [
@@ -2450,8 +2453,9 @@ export default function Home() {
           setSaleAccDefaultName("");
         }
       } else {
-        // Fallback seed / thiếu lines
-        const amountShort = Math.round((Number(sale.amount) || 0) / 1000);
+        // Fallback seed / thiếu lines — amount API đã short; seed cũ full VND thì ÷1000
+        const rawAmt = Number(sale.amount) || 0;
+        const amountShort = rawAmt >= 1_000_000 ? Math.round(rawAmt / 1000) : rawAmt;
         const unitShort = Math.max(1, Math.round(amountShort / Math.max(1, sale.quantity)));
         setSalePhonePickerOpen(sale.itemType === "Máy");
         setSaleCart([
@@ -2713,8 +2717,8 @@ export default function Home() {
       showUiToast(
         "success",
         wasEdit
-          ? `Đã cập nhật phiếu: ${sale.itemName} · ${formatMoney(sale.amount)} ₫`
-          : `Đã tạo phiếu: ${sale.itemName} · ${formatMoney(sale.amount)} ₫ · lãi ${formatMoney(sale.profit)} ₫`
+          ? `Đã cập nhật phiếu: ${sale.itemName} · ${formatMoney(sale.amount)}`
+          : `Đã tạo phiếu: ${sale.itemName} · ${formatMoney(sale.amount)} · lãi ${formatMoney(sale.profit)}`
       );
     } catch (err) {
       window.alert(toUiError(err));
@@ -4260,7 +4264,7 @@ export default function Home() {
                   />
                 </div>
                 <strong className="text-3xl text-emerald-700">
-                  {isSaleSensitiveHidden ? "*** ₫" : `${formatMoney(saleStats.monthlyRevenue)} ₫`}
+                  {isSaleSensitiveHidden ? "***" : formatMoney(saleStats.monthlyRevenue)}
                 </strong>
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-emerald-200/50 pt-2 text-sm font-semibold text-emerald-700/90">
                   <span>
@@ -4281,7 +4285,7 @@ export default function Home() {
                   />
                 </div>
                 <strong className="text-3xl text-red-600">
-                  {isSaleSensitiveHidden ? "*** ₫" : `${formatMoney(saleStats.dailyRevenue)} ₫`}
+                  {isSaleSensitiveHidden ? "***" : formatMoney(saleStats.dailyRevenue)}
                 </strong>
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2 text-sm font-semibold text-slate-500">
                   <span>
@@ -4619,11 +4623,9 @@ export default function Home() {
                                 {isSaleSensitiveHidden
                                   ? "***"
                                   : formatMoney(
-                                      shopMoneyToVnd(
-                                        line.kind === "phone"
-                                          ? line.unitPrice
-                                          : line.unitPrice * line.quantity
-                                      )
+                                      line.kind === "phone"
+                                        ? line.unitPrice
+                                        : line.unitPrice * line.quantity
                                     )}
                               </span>
                             </li>
@@ -4967,7 +4969,7 @@ export default function Home() {
                               value={saleAccPrice}
                               onChange={(e) => setSaleAccPrice(formatInputMoney(e.target.value))}
                               className="h-10 min-w-0 w-full rounded-lg border border-amber-300 bg-white px-2.5 text-sm font-bold text-amber-950 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
-                              title="Giá bán short ×1.000"
+                              title="Giá bán (đơn vị shop, giống kho)"
                             />
                           </div>
                           <div className="grid min-w-0 gap-1.5">
@@ -4977,7 +4979,7 @@ export default function Home() {
                               value={saleAccCost}
                               onChange={(e) => setSaleAccCost(formatInputMoney(e.target.value))}
                               className="h-10 min-w-0 w-full rounded-lg border border-amber-200/70 bg-white px-2.5 text-sm font-semibold outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
-                              title="Giá nhập short ×1.000"
+                              title="Giá nhập (đơn vị shop, giống kho)"
                             />
                           </div>
                         </div>
@@ -5130,7 +5132,7 @@ export default function Home() {
                                   updateSaleCartUnitPrice(line.key, parseShopMoney(e.target.value))
                                 }
                                 className="h-8 w-24 rounded-md border border-line px-2 text-right text-sm font-bold text-emerald-700 outline-none focus:border-brand"
-                                title="Giá bán short"
+                                title="Giá bán (đơn vị shop)"
                               />
                               {line.kind === "accessory" && line.quantity > 1 ? (
                                 <span className="w-16 shrink-0 text-right text-xs font-black text-ink">
@@ -5156,9 +5158,6 @@ export default function Home() {
                             <strong className="text-base font-black text-ink">
                               {formatMoney(saleCartTotals.amountShort)}
                             </strong>
-                            <span className="ml-1 text-xs font-semibold text-slate-500">
-                              (~{formatMoney(saleCartTotals.amountVnd)} ₫)
-                            </span>
                             {salePayStatus === "NỢ DAI" ? (
                               <span className="ml-2 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600">
                                 ❌ NỢ DAI
@@ -5178,7 +5177,6 @@ export default function Home() {
                             <strong className="font-bold text-emerald-700">
                               {formatMoney(saleCartTotals.profitShort)}
                             </strong>
-                            <span className="text-slate-400"> K</span>
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-1.5">

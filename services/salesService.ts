@@ -1,5 +1,6 @@
 import type { StoreId } from "@/types";
 
+/** amount / profit = short shop (giống giá kho), không phải VND đầy đủ. */
 export type SaleRow = {
   id: string;
   soldAt: string;
@@ -7,7 +8,9 @@ export type SaleRow = {
   itemName: string;
   itemType: "Máy" | "Phụ kiện";
   quantity: number;
+  /** Short shop (VD nhập 150 → hiện 150). */
   amount: number;
+  /** Short shop. */
   profit: number;
   payment: string;
   status: "Hoàn tất" | "Đã hủy";

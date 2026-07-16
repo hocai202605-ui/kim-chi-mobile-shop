@@ -23,6 +23,16 @@ export function shopMoneyToVnd(short: number): number {
 }
 
 /**
+ * VND thật (cột sales/sale_items) → short UI kho.
+ * Luôn chia 1000 (khác `toShopMoney` heuristic cho form).
+ * VD: 150_000 → 150, -24_850_000 → -24_850.
+ */
+export function vndToShopMoney(vnd: number): number {
+  if (!Number.isFinite(vnd)) return 0;
+  return Math.round(vnd / SHOP_MONEY_SCALE);
+}
+
+/**
  * Chuẩn hóa về đơn vị short khi ghi/load.
  * - 16900 → 16900
  * - 16_900_000 (lỡ full VND) → 16900
