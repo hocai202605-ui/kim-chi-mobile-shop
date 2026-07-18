@@ -15,10 +15,12 @@ export const PAYMENT_METHODS = ["Tiền mặt", "Chuyển khoản", "Thẻ", "Kh
 
 /** Sidebar page ids — sync with navItems + app_accounts.allowed_menus */
 export const ALL_MENU_IDS = [
+  "sales",
   "online-repairs",
   "inventory",
+  "parts",
+  "inbound",
   "inventoryReports",
-  "sales",
   "software",
   "customers",
   "ledger",

@@ -20,6 +20,7 @@ import {
   LayoutDashboard,
   Loader2,
   LogOut,
+  Cpu,
   PackagePlus,
   Plus,
   ReceiptText,
@@ -552,16 +553,18 @@ const logSeed: AuditLog[] = [
 ];
 
 const navItems = [
-  { id: "online-repairs", label: "Phần mềm", icon: Terminal },
-  { id: "inventory", label: "Kho hàng", icon: Boxes },
-  { id: "inventoryReports", label: "Báo cáo kho hàng", icon: FileText },
-  { id: "sales", label: "Bán hàng", icon: ReceiptText },
-  { id: "software", label: "Sửa chữa", icon: Wrench },
-  { id: "customers", label: "Khách hàng", icon: Users },
-  { id: "ledger", label: "Công nợ", icon: CreditCard },
-  { id: "logs", label: "Nhật ký", icon: ClipboardList },
-  { id: "accounts", label: "Tài khoản", icon: UserCog },
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "sales", label: "BÁN HÀNG", icon: ReceiptText },
+  { id: "online-repairs", label: "PHẦN MỀM", icon: Terminal },
+  { id: "inventory", label: "KHO HÀNG", icon: Boxes },
+  { id: "parts", label: "LINH KIỆN", icon: Cpu },
+  { id: "inbound", label: "NHẬP HÀNG", icon: PackagePlus },
+  { id: "inventoryReports", label: "BÁO CÁO KHO HÀNG", icon: FileText },
+  { id: "software", label: "SỬA CHỮA", icon: Wrench },
+  { id: "customers", label: "KHÁCH HÀNG", icon: Users },
+  { id: "ledger", label: "CÔNG NỢ", icon: CreditCard },
+  { id: "logs", label: "NHẬT KÝ", icon: ClipboardList },
+  { id: "accounts", label: "TÀI KHOẢN", icon: UserCog },
+  { id: "dashboard", label: "DASHBOARD", icon: LayoutDashboard },
 ] as const;
 
 type PageId = (typeof navItems)[number]["id"];
@@ -3353,21 +3356,39 @@ export default function Home() {
         <nav className="grid gap-2">
           {visibleNavItems.map((item) => {
             const Icon = item.icon;
+            const isActive = activePage === item.id;
+            // BÁN HÀNG / PHẦN MỀM: màu riêng; menu còn lại = brand xanh.
+            const isSales = item.id === "sales";
+            const isSoftwarePm = item.id === "online-repairs";
+            const btnClass = isSales
+              ? isActive
+                ? "border-sky-300/50 bg-sky-600 text-white shadow-[0_10px_24px_rgba(2,132,199,0.35)]"
+                : "border-sky-400/25 bg-sky-500/15 text-sky-100 hover:border-sky-300/40 hover:bg-sky-500/25 hover:text-white"
+              : isSoftwarePm
+                ? isActive
+                  ? "border-amber-300/50 bg-amber-600 text-white shadow-[0_10px_24px_rgba(217,119,6,0.35)]"
+                  : "border-amber-400/25 bg-amber-500/15 text-amber-100 hover:border-amber-300/40 hover:bg-amber-500/25 hover:text-white"
+                : isActive
+                  ? "border-emerald-300/40 bg-brand text-white shadow-[0_10px_24px_rgba(15,139,98,0.32)]"
+                  : "border-white/5 bg-white/[0.04] text-slate-300 hover:border-emerald-300/25 hover:bg-white/[0.09] hover:text-white";
+            const iconWrapClass = isSales
+              ? isActive
+                ? "bg-white/20 text-white"
+                : "bg-sky-400/20 text-sky-100 group-hover:bg-sky-400/30"
+              : isSoftwarePm
+                ? isActive
+                  ? "bg-white/20 text-white"
+                  : "bg-amber-400/20 text-amber-100 group-hover:bg-amber-400/30"
+                : isActive
+                  ? "bg-white/18 text-white"
+                  : "bg-white/[0.06] text-emerald-100 group-hover:bg-white/[0.12]";
             return (
               <button
                 key={item.id}
                 onClick={() => setActivePage(item.id)}
-                className={`group flex h-11 items-center gap-3 rounded-lg border px-3 text-left text-sm font-bold transition ${
-                  activePage === item.id
-                    ? "border-emerald-300/40 bg-brand text-white shadow-[0_10px_24px_rgba(15,139,98,0.32)]"
-                    : "border-white/5 bg-white/[0.04] text-slate-300 hover:border-emerald-300/25 hover:bg-white/[0.09] hover:text-white"
-                }`}
+                className={`group flex h-11 items-center gap-3 rounded-lg border px-3 text-left text-sm font-black uppercase tracking-wide transition ${btnClass}`}
               >
-                <span
-                  className={`grid h-7 w-7 place-items-center rounded-md transition ${
-                    activePage === item.id ? "bg-white/18 text-white" : "bg-white/[0.06] text-emerald-100 group-hover:bg-white/[0.12]"
-                  }`}
-                >
+                <span className={`grid h-7 w-7 place-items-center rounded-md transition ${iconWrapClass}`}>
                   <Icon size={17} />
                 </span>
                 {item.label}
@@ -3625,6 +3646,42 @@ export default function Home() {
                 </ResponsiveContainer>
               </div>
             </section>
+          </section>
+        )}
+
+        {activePage === "parts" && (
+          <section className="grid gap-4">
+            <div className="rounded-xl border border-line bg-white p-8 shadow-panel">
+              <div className="flex items-start gap-4">
+                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-brand-soft text-brand">
+                  <Cpu size={24} />
+                </div>
+                <div>
+                  <h2 className="text-xl font-black text-ink">Linh kiện</h2>
+                  <p className="mt-2 text-sm font-semibold text-muted">
+                    Menu đã sẵn sàng. Tính năng quản lý linh kiện sẽ được phát triển sau.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {activePage === "inbound" && (
+          <section className="grid gap-4">
+            <div className="rounded-xl border border-line bg-white p-8 shadow-panel">
+              <div className="flex items-start gap-4">
+                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-brand-soft text-brand">
+                  <PackagePlus size={24} />
+                </div>
+                <div>
+                  <h2 className="text-xl font-black text-ink">Nhập hàng</h2>
+                  <p className="mt-2 text-sm font-semibold text-muted">
+                    Menu đã sẵn sàng. Tính năng nhập hàng sẽ được phát triển sau.
+                  </p>
+                </div>
+              </div>
+            </div>
           </section>
         )}
 

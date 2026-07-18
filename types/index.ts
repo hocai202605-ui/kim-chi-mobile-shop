@@ -12,10 +12,12 @@ export type RepairStatus = "Đang chờ" | "Đang sửa" | "Đã xong" | "Đã t
 
 /** Sidebar page ids — keep in sync with navItems / app_accounts.allowed_menus */
 export type MenuId =
+  | "sales"
   | "online-repairs"
   | "inventory"
+  | "parts"
+  | "inbound"
   | "inventoryReports"
-  | "sales"
   | "software"
   | "customers"
   | "ledger"
