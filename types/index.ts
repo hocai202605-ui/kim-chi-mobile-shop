@@ -156,3 +156,15 @@ export type OnlineRepair = {
   rewardPoints: number;
   isPaid: boolean;
 };
+
+/** Đơn sửa chữa cửa hàng (menu software) — DB repair_orders. */
+export type ShopRepairOrder = OnlineRepair & {
+  /** Tình trạng máy khi tiếp nhận / ghi nhận. */
+  condition: string;
+  /** Thời hạn / ghi chú bảo hành. */
+  warranty: string;
+  /** IMEI (tùy chọn). */
+  imei: string;
+  /** SĐT khách / mật khẩu máy (free text, tùy chọn). */
+  phoneOrPass: string;
+};

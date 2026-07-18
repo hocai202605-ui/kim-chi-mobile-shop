@@ -539,6 +539,20 @@ const LOOKUP_SOFTWARE_MONEY_COLUMN: Record<string, string> = {
   software_fee: "deposit",
 };
 
+/** Repair order text columns (global table — no store filter). */
+const LOOKUP_REPAIR_TEXT_COLUMN: Record<string, string> = {
+  repair_customer: "customer_name",
+  repair_device: "device_name",
+  repair_condition: "device_condition",
+  repair_warranty: "warranty",
+};
+
+/** Repair order money columns — cascade by numeric value parsed from label. */
+const LOOKUP_REPAIR_MONEY_COLUMN: Record<string, string> = {
+  repair_quote: "quote",
+  repair_fee: "deposit",
+};
+
 function parseLookupMoneyLabel(label: string): number | null {
   const n = Number(String(label ?? "").replace(/\D/g, "") || "");
   if (!Number.isFinite(n) || n < 0) return null;
@@ -775,6 +789,30 @@ export async function repoRenameLookupLabel(
             `update public.software_orders set ${swMoneyCol} = $1,
                updated_by = coalesce($3, updated_by), updated_at = now()
              where ${swMoneyCol} = $2`,
+            [toN, fromN, actor]
+          );
+        }
+      }
+
+      const rpTextCol = LOOKUP_REPAIR_TEXT_COLUMN[categoryCode];
+      if (rpTextCol) {
+        await client.query(
+          `update public.repair_orders set ${rpTextCol} = $1,
+             updated_by = coalesce($3, updated_by), updated_at = now()
+           where ${rpTextCol} = $2`,
+          [to, from, actor]
+        );
+      }
+
+      const rpMoneyCol = LOOKUP_REPAIR_MONEY_COLUMN[categoryCode];
+      if (rpMoneyCol) {
+        const fromN = parseLookupMoneyLabel(from);
+        const toN = parseLookupMoneyLabel(to);
+        if (fromN != null && toN != null && fromN !== toN) {
+          await client.query(
+            `update public.repair_orders set ${rpMoneyCol} = $1,
+               updated_by = coalesce($3, updated_by), updated_at = now()
+             where ${rpMoneyCol} = $2`,
             [toN, fromN, actor]
           );
         }

@@ -53,6 +53,7 @@ import {
 import {
   ACCESSORY_LOOKUP_CATEGORIES,
   PHONE_LOOKUP_CATEGORIES,
+  REPAIR_LOOKUP_CATEGORIES,
   SOFTWARE_LOOKUP_CATEGORIES,
   addLookupItem as apiAddLookupItem,
   deactivateLookupItem as apiDeactivateLookupItem,
@@ -65,6 +66,12 @@ import {
   markSoftwareOrdersPaid as apiMarkSoftwareOrdersPaid,
   upsertSoftwareOrder as apiUpsertSoftwareOrder,
 } from "@/services/softwareService";
+import {
+  deleteRepairOrder as apiDeleteRepairOrder,
+  listRepairOrders as apiListRepairOrders,
+  markRepairOrdersPaid as apiMarkRepairOrdersPaid,
+  upsertRepairOrder as apiUpsertRepairOrder,
+} from "@/services/repairService";
 import {
   cancelManualDebt as apiCancelManualDebt,
   listDebts as apiListDebts,
@@ -424,8 +431,8 @@ const softwareServiceSeed: SoftwareService[] = [
 ];
 
 /**
- * UI Sửa chữa (menu `software`) — clone form/list từ Phần mềm.
- * Mock state only; chưa API/DB. Shape giống OnlineRepair + tình trạng / bảo hành.
+ * UI Sửa chữa (menu `software`) — load/ghi Postgres qua /api/repairs.
+ * Shape = OnlineRepair + tình trạng / bảo hành / IMEI / SĐT-Pass.
  */
 type ShopRepairOrder = OnlineRepair & {
   /** Tình trạng máy khi tiếp nhận / ghi nhận. */
@@ -437,83 +444,6 @@ type ShopRepairOrder = OnlineRepair & {
   /** SĐT khách / mật khẩu máy (free text, tùy chọn). */
   phoneOrPass: string;
 };
-
-const shopRepairsSeed: ShopRepairOrder[] = [
-  {
-    id: "r1",
-    createdAt: "2026-07-06 10:20",
-    customerName: "Chị Lan",
-    customerType: "Vãng lai",
-    deviceName: "iPhone XS",
-    issue: "Thay pin — màn trầy nhẹ",
-    condition: "Màn trầy nhẹ",
-    warranty: "1 tháng",
-    imei: "356938035643809",
-    phoneOrPass: "0901 234 567 / 2580",
-    quote: 650000,
-    deposit: 200000,
-    receiveDate: "2026-07-06T10:20",
-    completeDate: "",
-    paymentDate: "",
-    paymentStatus: "NỢ DAI",
-    rewardPoints: 0,
-    isPaid: false,
-  },
-  {
-    id: "r2",
-    createdAt: "2026-07-05 14:00",
-    customerName: "Anh Minh",
-    customerType: "Thân thiết",
-    deviceName: "Samsung A52",
-    issue: "Lỗi sạc — máy móp góc dưới",
-    condition: "Móp góc dưới",
-    warranty: "Không BH",
-    imei: "",
-    phoneOrPass: "Không có",
-    quote: 450000,
-    deposit: 0,
-    receiveDate: "2026-07-05T14:00",
-    completeDate: "",
-    paymentDate: "",
-    paymentStatus: "NỢ DAI",
-    rewardPoints: 0,
-    isPaid: false,
-  },
-  {
-    id: "r3",
-    createdAt: "2026-07-06 16:30",
-    customerName: "Bạn Huy",
-    customerType: "Mới",
-    deviceName: "iPhone 11 Pro Max",
-    issue: "Ép kính",
-    condition: "Kính nứt",
-    warranty: "3 tháng",
-    imei: "353918101234567",
-    phoneOrPass: "111",
-    quote: 900000,
-    deposit: 300000,
-    receiveDate: "2026-07-06T16:30",
-    completeDate: "2026-07-07T11:00",
-    paymentDate: "2026-07-07T11:05",
-    paymentStatus: "Đã thanh toán",
-    rewardPoints: 0,
-    isPaid: true,
-  },
-];
-
-const SHOP_REPAIR_CUSTOMER_SEED = ["Khách lẻ", "Chị Lan", "Anh Minh", "Bạn Huy"];
-const SHOP_REPAIR_DEVICE_SEED = ["iPhone XS", "Samsung A52", "iPhone 11 Pro Max", "iPhone 13"];
-const SHOP_REPAIR_CONDITION_SEED = [
-  "Màn trầy nhẹ",
-  "Móp góc dưới",
-  "Kính nứt",
-  "Pin phồng",
-  "Lỗi sạc",
-  "Cần kiểm tra",
-];
-const SHOP_REPAIR_WARRANTY_SEED = ["Không BH", "7 ngày", "1 tháng", "3 tháng", "6 tháng", "Còn BH hãng"];
-const SHOP_REPAIR_QUOTE_SEED = ["450000", "650000", "900000", "1200000"];
-const SHOP_REPAIR_FEE_SEED = ["0", "100000", "200000", "300000"];
 
 const repairsSeed: Repair[] = [
   { id: "r1", createdAt: "2026-07-06", customerId: "c2", storeId: "store-2", deviceName: "iPhone XS", screenPassword: "2580", issue: "Thay pin", intakeNote: "Màn trầy nhẹ, camera bình thường", quote: 650000, deposit: 200000, status: "Đang sửa" },
@@ -960,8 +890,8 @@ export default function Home() {
   const [selectedSoftwareIds, setSelectedSoftwareIds] = useState<string[]>([]);
   const [softwarePaying, setSoftwarePaying] = useState(false);
 
-  // Sửa chữa (menu software) — UI clone Phần mềm, mock only
-  const [shopRepairs, setShopRepairs] = useState<ShopRepairOrder[]>(shopRepairsSeed);
+  // Sửa chữa (menu software) — Postgres qua /api/repairs
+  const [shopRepairs, setShopRepairs] = useState<ShopRepairOrder[]>([]);
   const [editingShopRepairId, setEditingShopRepairId] = useState<string | null>(null);
   const [cloneShopRepairDraft, setCloneShopRepairDraft] = useState<ShopRepairOrder | null>(null);
   const [cloneShopRepairFormKey, setCloneShopRepairFormKey] = useState(0);
@@ -971,27 +901,13 @@ export default function Home() {
   const [shopRepairFilter, setShopRepairFilter] = useState("all");
   const [shopRepairMonth, setShopRepairMonth] = useState(() => vnNowMonth());
   const [shopRepairDate, setShopRepairDate] = useState(() => vnNowDate());
-  /** Tìm grid sửa chữa: gõ tay + chọn droplist. */
-  const [shopRepairSearchCustomer, setShopRepairSearchCustomer] = useState("");
-  const [shopRepairSearchDevice, setShopRepairSearchDevice] = useState("");
-  const [shopRepairSearchCondition, setShopRepairSearchCondition] = useState("");
-  const [shopRepairSearchWarranty, setShopRepairSearchWarranty] = useState("");
+  /** Tìm grid sửa chữa: 1 ô free text (khách, tên máy, tình trạng, BH, …). */
+  const [shopRepairSearch, setShopRepairSearch] = useState("");
   const [selectedShopRepairIds, setSelectedShopRepairIds] = useState<string[]>([]);
   const [shopRepairSaving, setShopRepairSaving] = useState(false);
-  const [shopRepairCustomerOptions, setShopRepairCustomerOptions] =
-    useState<string[]>(SHOP_REPAIR_CUSTOMER_SEED);
-  const [shopRepairDeviceOptions, setShopRepairDeviceOptions] =
-    useState<string[]>(SHOP_REPAIR_DEVICE_SEED);
-  const [shopRepairConditionOptions, setShopRepairConditionOptions] =
-    useState<string[]>(SHOP_REPAIR_CONDITION_SEED);
-  const [shopRepairWarrantyOptions, setShopRepairWarrantyOptions] =
-    useState<string[]>(SHOP_REPAIR_WARRANTY_SEED);
-  const [shopRepairQuoteOptions, setShopRepairQuoteOptions] = useState<string[]>(() =>
-    sortMoneyLabelsAsc([...SHOP_REPAIR_QUOTE_SEED])
-  );
-  const [shopRepairFeeOptions, setShopRepairFeeOptions] = useState<string[]>(() =>
-    sortMoneyLabelsAsc([...SHOP_REPAIR_FEE_SEED])
-  );
+  const [shopRepairLoading, setShopRepairLoading] = useState(false);
+  const [shopRepairBackendError, setShopRepairBackendError] = useState("");
+  const [shopRepairPaying, setShopRepairPaying] = useState(false);
 
   const [customers, setCustomers] = useState(customersSeed);
   const [phones, setPhones] = useState<PhoneItem[]>([]);
@@ -1132,6 +1048,21 @@ export default function Home() {
     }
   }, []);
 
+  /** Sửa chữa: load từ Postgres qua /api/repairs. */
+  const reloadShopRepairsFromDb = useCallback(async () => {
+    setShopRepairLoading(true);
+    setShopRepairBackendError("");
+    try {
+      const rows = await apiListRepairOrders();
+      setShopRepairs(rows);
+    } catch (err) {
+      setShopRepairs([]);
+      setShopRepairBackendError(toUiError(err));
+    } finally {
+      setShopRepairLoading(false);
+    }
+  }, []);
+
   const reloadSalesFromDb = useCallback(async () => {
     try {
       const rows = await apiListRecentSales();
@@ -1179,10 +1110,11 @@ export default function Home() {
 
   useEffect(() => {
     if (!currentUser) return;
-    // Sequential: inventory first, then software — fewer concurrent DB slots
+    // Sequential: inventory first, then software/repairs — fewer concurrent DB slots
     void (async () => {
       await reloadInventoryFromDb();
       await reloadSoftwareFromDb();
+      await reloadShopRepairsFromDb();
       await reloadSalesFromDb();
       await reloadCustomersFromDb();
     })();
@@ -1190,6 +1122,7 @@ export default function Home() {
     currentUser,
     reloadInventoryFromDb,
     reloadSoftwareFromDb,
+    reloadShopRepairsFromDb,
     reloadSalesFromDb,
     reloadCustomersFromDb,
   ]);
@@ -1546,13 +1479,29 @@ export default function Home() {
     softwareLookups[SOFTWARE_LOOKUP_CATEGORIES.fee] ?? []
   );
 
+  /** Droplist sửa chữa — cùng store rule với phần mềm. */
+  const repairLookupStoreId = softwareLookupStoreId;
+  const repairLookups = lookupsByStore[repairLookupStoreId] ?? {};
+  const shopRepairCustomerOptions = repairLookups[REPAIR_LOOKUP_CATEGORIES.customer] ?? [];
+  const shopRepairDeviceOptions = repairLookups[REPAIR_LOOKUP_CATEGORIES.device] ?? [];
+  const shopRepairConditionOptions = repairLookups[REPAIR_LOOKUP_CATEGORIES.condition] ?? [];
+  const shopRepairWarrantyOptions = repairLookups[REPAIR_LOOKUP_CATEGORIES.warranty] ?? [];
+  const shopRepairQuoteOptions = sortMoneyLabelsAsc(
+    repairLookups[REPAIR_LOOKUP_CATEGORIES.quote] ?? []
+  );
+  const shopRepairFeeOptions = sortMoneyLabelsAsc(
+    repairLookups[REPAIR_LOOKUP_CATEGORIES.fee] ?? []
+  );
+
   const setFormLookupOptions = useCallback(
     (categoryCode: string, storeKey?: string) => (next: string[]) => {
       const sid = storeKey ?? phoneFormStoreId;
-      // Chuẩn hóa option tiền (PM + phụ kiện) → digits (ổn định parse + DB), sort bé → lớn
+      // Chuẩn hóa option tiền (PM + phụ kiện + sửa chữa) → digits (ổn định parse + DB), sort bé → lớn
       const isMoney =
         categoryCode === SOFTWARE_LOOKUP_CATEGORIES.quote ||
         categoryCode === SOFTWARE_LOOKUP_CATEGORIES.fee ||
+        categoryCode === REPAIR_LOOKUP_CATEGORIES.quote ||
+        categoryCode === REPAIR_LOOKUP_CATEGORIES.fee ||
         categoryCode === ACCESSORY_LOOKUP_CATEGORIES.price ||
         categoryCode === ACCESSORY_LOOKUP_CATEGORIES.cost;
       const normalized = isMoney
@@ -2267,13 +2216,14 @@ export default function Home() {
     }
   }
 
-  // ——— Sửa chữa mock handlers (UI clone; chưa API/DB) ———
+  // ——— Sửa chữa handlers (API/DB) ———
   function closeShopRepairModal() {
     if (shopRepairSaving) return;
     setIsShopRepairModalOpen(false);
     setEditingShopRepairId(null);
     setCloneShopRepairDraft(null);
     setShopRepairSaving(false);
+    setShopRepairBackendError("");
   }
 
   function openShopRepairCloneModal(id: string) {
@@ -2298,22 +2248,37 @@ export default function Home() {
     setIsShopRepairModalOpen(true);
   }
 
-  function deleteShopRepair(id: string) {
+  async function deleteShopRepair(id: string) {
     const source = shopRepairs.find((item) => item.id === id);
     if (!source) return;
     const ok = window.confirm(
-      `Xóa đơn sửa "${source.customerName} — ${source.deviceName}"?\n\n(Mock UI — chưa ghi DB.)`
+      `Xóa đơn sửa "${source.customerName} — ${source.deviceName}"?\n\nThao tác này không hoàn tác được.`
     );
     if (!ok) return;
-    setShopRepairs((prev) => prev.filter((r) => r.id !== id));
-    if (editingShopRepairId === id) closeShopRepairModal();
-    if (viewingShopRepairId === id) setViewingShopRepairId(null);
-    setSelectedShopRepairIds((prev) => prev.filter((x) => x !== id));
-    pushLog("Xóa đơn sửa chữa (mock)", `${source.customerName} — ${source.deviceName}`, currentUser?.storeId ?? "store-1");
-    showUiToast("success", `Đã xóa đơn ${source.customerName} — ${source.deviceName}.`);
+    setShopRepairBackendError("");
+    try {
+      await apiDeleteRepairOrder(id);
+      pushLog(
+        "Xóa đơn sửa chữa",
+        `${source.customerName} — ${source.deviceName}`,
+        repairLookupStoreId
+      );
+      if (editingShopRepairId === id) closeShopRepairModal();
+      if (viewingShopRepairId === id) setViewingShopRepairId(null);
+      setSelectedShopRepairIds((prev) => prev.filter((x) => x !== id));
+      await reloadShopRepairsFromDb();
+      showUiToast(
+        "success",
+        `Đã xóa đơn ${source.customerName} — ${source.deviceName}.`
+      );
+    } catch (err) {
+      const msg = toUiError(err);
+      setShopRepairBackendError(msg);
+      showUiToast("error", `Xóa đơn sửa chữa thất bại: ${msg}`);
+    }
   }
 
-  function markSelectedShopRepairsPaid(debtCandidates: ShopRepairOrder[]) {
+  async function markSelectedShopRepairsPaid(debtCandidates: ShopRepairOrder[]) {
     const selectedSet = new Set(selectedShopRepairIds);
     const toPay = debtCandidates.filter(
       (r) => selectedSet.has(r.id) && r.paymentStatus === "NỢ DAI"
@@ -2323,29 +2288,40 @@ export default function Home() {
       return;
     }
     const ok = window.confirm(
-      `Đánh dấu ${toPay.length} đơn NỢ DAI → Đã thanh toán?\n\n(Mock UI — chưa ghi DB.)`
+      `Đánh dấu ${toPay.length} đơn NỢ DAI → Đã thanh toán?\n\nChỉ các đơn đang nợ được chọn mới được cập nhật.`
     );
     if (!ok) return;
-    const payIds = new Set(toPay.map((r) => r.id));
-    const now = vnNowDateTimeLocal();
-    setShopRepairs((prev) =>
-      prev.map((r) =>
-        payIds.has(r.id)
-          ? {
-              ...r,
-              paymentStatus: "Đã thanh toán" as const,
-              isPaid: true,
-              paymentDate: now,
-            }
-          : r
-      )
-    );
-    setSelectedShopRepairIds([]);
-    pushLog("Thanh toán hàng loạt sửa chữa (mock)", `${toPay.length} đơn`, currentUser?.storeId ?? "store-1");
-    showUiToast("success", `Đã thanh toán ${toPay.length} đơn sửa chữa (mock).`);
+    setShopRepairPaying(true);
+    setShopRepairBackendError("");
+    try {
+      const updated = await apiMarkRepairOrdersPaid(
+        toPay.map((r) => r.id),
+        currentUser?.username
+      );
+      pushLog(
+        "Thanh toán hàng loạt sửa chữa",
+        `${updated.length} đơn`,
+        repairLookupStoreId
+      );
+      setSelectedShopRepairIds([]);
+      await reloadShopRepairsFromDb();
+      showUiToast(
+        "success",
+        updated.length
+          ? `Đã thanh toán ${updated.length} đơn sửa chữa.`
+          : "Không có đơn NỢ DAI nào được cập nhật."
+      );
+    } catch (err) {
+      const msg = toUiError(err);
+      setShopRepairBackendError(msg);
+      showUiToast("error", `Thanh toán hàng loạt thất bại: ${msg}`);
+    } finally {
+      setShopRepairPaying(false);
+    }
   }
 
-  function saveShopRepairFromForm(form: FormData) {
+  async function saveShopRepairFromForm(form: FormData) {
+    if (!currentUser) return;
     const quote = parseInputMoney(form.get("quote"));
     const deposit = parseInputMoney(form.get("deposit"));
     const pStatus = String(form.get("paymentStatus")) as ShopRepairOrder["paymentStatus"];
@@ -2365,9 +2341,8 @@ export default function Home() {
         : String(form.get("receiveTimePart") || "").trim();
     const receiveDate = d && t ? `${d}T${t}` : d || String(form.get("receiveDate") || "");
 
-    const payload: ShopRepairOrder = {
-      id: isEdit && existing ? existing.id : `r${Date.now()}`,
-      createdAt: existing?.createdAt || vnNowDateTimeLocal().replace("T", " "),
+    const payload = {
+      id: isEdit && existing ? existing.id : undefined,
       customerName: String(form.get("customerName") || "").trim() || "Khách lẻ",
       customerType: (form.get("customerType")
         ? String(form.get("customerType"))
@@ -2389,31 +2364,39 @@ export default function Home() {
       paymentStatus: pStatus,
       rewardPoints: existing?.rewardPoints ?? 0,
       isPaid: pStatus === "Đã thanh toán",
+      actorUsername: currentUser.username,
     };
 
     setShopRepairSaving(true);
-    // Mock delay nhẹ để thấy loading UI
-    window.setTimeout(() => {
-      setShopRepairs((prev) => {
-        if (isEdit) return prev.map((r) => (r.id === payload.id ? payload : r));
-        return [payload, ...prev];
-      });
+    setShopRepairBackendError("");
+    try {
+      const saved = await apiUpsertRepairOrder(payload);
       pushLog(
-        isEdit ? "Sửa đơn sửa chữa (mock)" : isClone ? "Nhân bản đơn sửa chữa (mock)" : "Tạo đơn sửa chữa (mock)",
-        `${payload.customerName} — ${payload.deviceName}`,
-        currentUser?.storeId ?? "store-1"
+        isEdit
+          ? "Sửa đơn sửa chữa"
+          : isClone
+            ? "Nhân bản đơn sửa chữa"
+            : "Tạo đơn sửa chữa",
+        `${saved.customerName} — ${saved.deviceName}`,
+        repairLookupStoreId
       );
+      await reloadShopRepairsFromDb();
       showUiToast(
         "success",
         isEdit
-          ? `Đã sửa đơn ${payload.customerName} — ${payload.deviceName} (mock).`
+          ? `Đã sửa đơn ${saved.customerName} — ${saved.deviceName}.`
           : isClone
-            ? `Đã nhân bản đơn ${payload.customerName} — ${payload.deviceName} (mock).`
-            : `Đã tạo đơn ${payload.customerName} — ${payload.deviceName} (mock).`
+            ? `Đã nhân bản đơn ${saved.customerName} — ${saved.deviceName}.`
+            : `Đã tạo đơn ${saved.customerName} — ${saved.deviceName}.`
       );
       setShopRepairSaving(false);
       closeShopRepairModal();
-    }, 280);
+    } catch (err) {
+      const msg = toUiError(err);
+      setShopRepairBackendError(msg);
+      showUiToast("error", `Lưu đơn sửa chữa thất bại: ${msg}`);
+      setShopRepairSaving(false);
+    }
   }
 
   async function savePhone(event: FormEvent<HTMLFormElement>) {
@@ -5489,35 +5472,29 @@ export default function Home() {
         )}
 
         {activePage === "ledger" && (() => {
-          // Sửa chữa (mock): map → dòng công nợ ảo (source repair).
-          const repairDebtRows: DebtItem[] = repairs
-            .filter(
-              (r) =>
-                (storeFilter === "all" || r.storeId === storeFilter) &&
-                r.status !== "Đã trả khách" &&
-                r.status !== "Đã hủy"
-            )
+          // Sửa chữa: map đơn NỢ DAI từ repair_orders (API) → dòng công nợ ảo.
+          const repairDebtRows: DebtItem[] = shopRepairs
+            .filter((r) => r.paymentStatus === "NỢ DAI")
             .map((r) => {
-              const customer = customers.find((c) => c.id === r.customerId);
               const amount = Math.max(0, Number(r.quote) - Number(r.deposit));
               return {
                 id: `repair:${r.id}`,
                 source: "repair" as const,
                 sourceId: r.id,
-                storeId: r.storeId,
-                customerName: customer?.name ?? r.customerId,
-                customerPhone: customer?.phone ?? "",
+                storeId: (currentUser?.storeId ?? "store-1") as Exclude<StoreId, "all">,
+                customerName: r.customerName,
+                customerPhone: r.phoneOrPass || "",
                 title: r.deviceName,
                 amount,
-                debtDate: r.createdAt?.slice(0, 10) || "",
+                debtDate: (r.receiveDate || r.createdAt || "").slice(0, 10),
                 status: "open" as const,
-                note: r.issue || "",
+                note: [r.condition, r.warranty, r.issue].filter(Boolean).join(" · "),
               };
             })
             .filter((r) => {
               if (debtStatusFilter === "all") return true;
               if (debtStatusFilter === "open") return r.status === "open" && r.amount > 0;
-              return false; // paid/cancelled: chưa có trên mock sửa chữa
+              return false; // paid: đã lọc NỢ DAI ở trên
             });
 
           // Bán hàng: chưa ghi nợ trên sales → rỗng (tab vẫn hiện).
@@ -6289,9 +6266,6 @@ export default function Home() {
           const orderTimeKey = (r: ShopRepairOrder) =>
             (r.receiveDate || r.createdAt || "").replace("T", " ");
 
-          const includesVi = (hay: string, needle: string) =>
-            hay.toLowerCase().includes(needle.trim().toLowerCase());
-
           let filteredRepairs = shopRepairs;
           if (shopRepairDate) {
             filteredRepairs = filteredRepairs.filter((r) => orderTimeKey(r).includes(shopRepairDate));
@@ -6303,52 +6277,25 @@ export default function Home() {
               shopRepairFilter === "paid" ? r.isPaid : !r.isPaid
             );
           }
-          if (shopRepairSearchCustomer.trim()) {
-            filteredRepairs = filteredRepairs.filter((r) =>
-              includesVi(r.customerName, shopRepairSearchCustomer)
-            );
+          const shopRepairSearchQ = shopRepairSearch.trim().toLowerCase();
+          if (shopRepairSearchQ) {
+            filteredRepairs = filteredRepairs.filter((r) => {
+              const hay = [
+                r.customerName,
+                r.deviceName,
+                r.condition,
+                r.warranty,
+                r.imei,
+                r.phoneOrPass,
+                r.issue,
+                r.paymentStatus,
+              ]
+                .filter(Boolean)
+                .join(" ")
+                .toLowerCase();
+              return hay.includes(shopRepairSearchQ);
+            });
           }
-          if (shopRepairSearchDevice.trim()) {
-            filteredRepairs = filteredRepairs.filter((r) =>
-              includesVi(r.deviceName, shopRepairSearchDevice)
-            );
-          }
-          if (shopRepairSearchCondition.trim()) {
-            filteredRepairs = filteredRepairs.filter((r) =>
-              includesVi(r.condition || "", shopRepairSearchCondition)
-            );
-          }
-          if (shopRepairSearchWarranty.trim()) {
-            filteredRepairs = filteredRepairs.filter((r) =>
-              includesVi(r.warranty || "", shopRepairSearchWarranty)
-            );
-          }
-
-          const uniqSorted = (values: string[]) =>
-            Array.from(new Set(values.map((v) => v.trim()).filter(Boolean))).sort((a, b) =>
-              a.localeCompare(b, "vi", { sensitivity: "base" })
-            );
-          const shopRepairSearchCustomerOptions = uniqSorted([
-            ...shopRepairCustomerOptions,
-            ...shopRepairs.map((r) => r.customerName),
-          ]);
-          const shopRepairSearchDeviceOptions = uniqSorted([
-            ...shopRepairDeviceOptions,
-            ...shopRepairs.map((r) => r.deviceName),
-          ]);
-          const shopRepairSearchConditionOptions = uniqSorted([
-            ...shopRepairConditionOptions,
-            ...shopRepairs.map((r) => r.condition),
-          ]);
-          const shopRepairSearchWarrantyOptions = uniqSorted([
-            ...shopRepairWarrantyOptions,
-            ...shopRepairs.map((r) => r.warranty),
-          ]);
-          const hasShopRepairTextSearch =
-            Boolean(shopRepairSearchCustomer.trim()) ||
-            Boolean(shopRepairSearchDevice.trim()) ||
-            Boolean(shopRepairSearchCondition.trim()) ||
-            Boolean(shopRepairSearchWarranty.trim());
 
           const debtVisibleRepairs = filteredRepairs.filter((r) => r.paymentStatus === "NỢ DAI");
           const debtVisibleIds = debtVisibleRepairs.map((r) => r.id);
@@ -6368,9 +6315,26 @@ export default function Home() {
 
           return (
           <section className="grid gap-4">
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">
-              Sửa chữa đang dùng <strong>UI mock</strong> (clone Phần mềm). Chưa kết nối API/DB — dữ liệu reset khi F5.
-            </div>
+            {(shopRepairBackendError || shopRepairLoading) && (
+              <div
+                className={`rounded-lg border p-3 text-sm font-semibold ${
+                  shopRepairBackendError
+                    ? "border-red-200 bg-red-50 text-danger"
+                    : "border-line bg-white text-muted"
+                }`}
+              >
+                {shopRepairBackendError || "Đang tải đơn sửa chữa từ Supabase…"}
+                {!shopRepairLoading && shopRepairBackendError ? (
+                  <button
+                    type="button"
+                    onClick={() => void reloadShopRepairsFromDb()}
+                    className="ml-2 font-bold text-brand hover:underline"
+                  >
+                    Thử lại
+                  </button>
+                ) : null}
+              </div>
+            )}
 
             {isShopRepairModalOpen && (() => {
               const formDefaults = editingShopRepairId
@@ -6417,7 +6381,7 @@ export default function Home() {
                       onSubmit={(e) => {
                         e.preventDefault();
                         if (shopRepairSaving) return;
-                        saveShopRepairFromForm(new FormData(e.currentTarget));
+                        void saveShopRepairFromForm(new FormData(e.currentTarget));
                       }}
                       className="grid gap-3"
                       autoComplete="off"
@@ -6428,8 +6392,11 @@ export default function Home() {
                     label="Khách hàng"
                     name="customerName"
                     options={shopRepairCustomerOptions}
-                    setOptions={setShopRepairCustomerOptions}
+                    setOptions={setFormLookupOptions(REPAIR_LOOKUP_CATEGORIES.customer, repairLookupStoreId)}
                     defaultValue={formDefaults?.customerName ?? "Khách lẻ"}
+                    categoryCode={REPAIR_LOOKUP_CATEGORIES.customer}
+                    storeId={repairLookupStoreId}
+                    onRenameCascade={reloadShopRepairsFromDb}
                     allowManage
                     allowFreeText
                     actorUsername={currentUser?.username ?? ""}
@@ -6438,8 +6405,11 @@ export default function Home() {
                     label="Tên máy"
                     name="deviceName"
                     options={shopRepairDeviceOptions}
-                    setOptions={setShopRepairDeviceOptions}
+                    setOptions={setFormLookupOptions(REPAIR_LOOKUP_CATEGORIES.device, repairLookupStoreId)}
                     defaultValue={formDefaults?.deviceName}
+                    categoryCode={REPAIR_LOOKUP_CATEGORIES.device}
+                    storeId={repairLookupStoreId}
+                    onRenameCascade={reloadShopRepairsFromDb}
                     allowManage
                     allowFreeText
                     actorUsername={currentUser?.username ?? ""}
@@ -6450,9 +6420,12 @@ export default function Home() {
                     label="Tình trạng"
                     name="condition"
                     options={shopRepairConditionOptions}
-                    setOptions={setShopRepairConditionOptions}
+                    setOptions={setFormLookupOptions(REPAIR_LOOKUP_CATEGORIES.condition, repairLookupStoreId)}
                     defaultValue={formDefaults?.condition}
                     required={false}
+                    categoryCode={REPAIR_LOOKUP_CATEGORIES.condition}
+                    storeId={repairLookupStoreId}
+                    onRenameCascade={reloadShopRepairsFromDb}
                     allowManage
                     allowFreeText
                     actorUsername={currentUser?.username ?? ""}
@@ -6461,9 +6434,12 @@ export default function Home() {
                     label="Bảo hành"
                     name="warranty"
                     options={shopRepairWarrantyOptions}
-                    setOptions={setShopRepairWarrantyOptions}
+                    setOptions={setFormLookupOptions(REPAIR_LOOKUP_CATEGORIES.warranty, repairLookupStoreId)}
                     defaultValue={formDefaults?.warranty}
                     required={false}
+                    categoryCode={REPAIR_LOOKUP_CATEGORIES.warranty}
+                    storeId={repairLookupStoreId}
+                    onRenameCascade={reloadShopRepairsFromDb}
                     allowManage
                     allowFreeText
                     actorUsername={currentUser?.username ?? ""}
@@ -6497,8 +6473,11 @@ export default function Home() {
                     label="Báo giá"
                     name="quote"
                     options={shopRepairQuoteOptions}
-                    setOptions={(next) => setShopRepairQuoteOptions(sortMoneyLabelsAsc(next))}
+                    setOptions={setFormLookupOptions(REPAIR_LOOKUP_CATEGORIES.quote, repairLookupStoreId)}
                     defaultValue={formatInputMoney(formDefaults?.quote ?? "")}
+                    categoryCode={REPAIR_LOOKUP_CATEGORIES.quote}
+                    storeId={repairLookupStoreId}
+                    onRenameCascade={reloadShopRepairsFromDb}
                     allowManage
                     allowFreeText
                     actorUsername={currentUser?.username ?? ""}
@@ -6507,10 +6486,13 @@ export default function Home() {
                     label="Phí dịch vụ"
                     name="deposit"
                     options={shopRepairFeeOptions}
-                    setOptions={(next) => setShopRepairFeeOptions(sortMoneyLabelsAsc(next))}
+                    setOptions={setFormLookupOptions(REPAIR_LOOKUP_CATEGORIES.fee, repairLookupStoreId)}
                     defaultValue={formatInputMoney(
                       formDefaults != null ? formDefaults.deposit ?? 0 : 0
                     )}
+                    categoryCode={REPAIR_LOOKUP_CATEGORIES.fee}
+                    storeId={repairLookupStoreId}
+                    onRenameCascade={reloadShopRepairsFromDb}
                     allowManage
                     allowFreeText
                     actorUsername={currentUser?.username ?? ""}
@@ -6645,7 +6627,7 @@ export default function Home() {
                   </p>
                   <p className="font-semibold text-white/80 flex items-center gap-2 text-xs sm:text-sm">
                     <span className="flex h-1.5 w-1.5 rounded-full bg-white/50 shrink-0 hidden md:block"></span>
-                    UI mock · chờ chốt rồi gắn API/DB
+                    Dữ liệu real-time từ Supabase
                   </p>
                 </div>
               </div>
@@ -6751,19 +6733,50 @@ export default function Home() {
                         </button>
                       ) : null}
                     </div>
+                    <div className="relative min-w-[14rem] flex-1 sm:max-w-md">
+                      <Search className="pointer-events-none absolute left-3 top-2.5 text-muted" size={16} />
+                      <input
+                        value={shopRepairSearch}
+                        onChange={(e) => {
+                          setShopRepairSearch(e.target.value);
+                          setSelectedShopRepairIds([]);
+                        }}
+                        placeholder="Tìm tên máy, khách hàng, bảo hành…"
+                        className="h-10 w-full rounded-lg border border-line bg-white py-2 pl-9 pr-3 text-sm font-semibold outline-none focus:border-brand"
+                        autoComplete="off"
+                      />
+                    </div>
+                    {shopRepairSearch.trim() ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShopRepairSearch("");
+                          setSelectedShopRepairIds([]);
+                        }}
+                        className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold text-muted hover:bg-slate-50"
+                      >
+                        Xóa tìm
+                      </button>
+                    ) : null}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      disabled={selectedDebtCount === 0}
-                      onClick={() => markSelectedShopRepairsPaid(debtVisibleRepairs)}
+                      disabled={shopRepairPaying || selectedDebtCount === 0}
+                      onClick={() => void markSelectedShopRepairsPaid(debtVisibleRepairs)}
                       className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                       title="Đánh dấu các đơn NỢ DAI đã chọn → Đã thanh toán"
                     >
-                      <CheckCircle2 size={18} />
-                      {selectedDebtCount > 0
-                        ? `Thanh toán (${selectedDebtCount})`
-                        : "Thanh toán"}
+                      {shopRepairPaying ? (
+                        <Loader2 size={18} className="animate-spin" />
+                      ) : (
+                        <CheckCircle2 size={18} />
+                      )}
+                      {shopRepairPaying
+                        ? "Đang thanh toán…"
+                        : selectedDebtCount > 0
+                          ? `Thanh toán (${selectedDebtCount})`
+                          : "Thanh toán"}
                     </button>
                     <button
                       type="button"
@@ -6786,104 +6799,6 @@ export default function Home() {
                     </button>
                   </div>
                 </div>
-                <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                  <div className="relative min-w-0">
-                    <Search className="pointer-events-none absolute left-3 top-2.5 text-muted" size={16} />
-                    <input
-                      list="shop-repair-search-customer"
-                      value={shopRepairSearchCustomer}
-                      onChange={(e) => {
-                        setShopRepairSearchCustomer(e.target.value);
-                        setSelectedShopRepairIds([]);
-                      }}
-                      placeholder="Khách hàng…"
-                      className="h-10 w-full rounded-lg border border-line bg-white py-2 pl-9 pr-3 text-sm font-semibold outline-none focus:border-brand"
-                      autoComplete="off"
-                    />
-                    <datalist id="shop-repair-search-customer">
-                      {shopRepairSearchCustomerOptions.map((name) => (
-                        <option key={`sc-${name}`} value={name} />
-                      ))}
-                    </datalist>
-                  </div>
-                  <div className="relative min-w-0">
-                    <Search className="pointer-events-none absolute left-3 top-2.5 text-muted" size={16} />
-                    <input
-                      list="shop-repair-search-device"
-                      value={shopRepairSearchDevice}
-                      onChange={(e) => {
-                        setShopRepairSearchDevice(e.target.value);
-                        setSelectedShopRepairIds([]);
-                      }}
-                      placeholder="Tên máy…"
-                      className="h-10 w-full rounded-lg border border-line bg-white py-2 pl-9 pr-3 text-sm font-semibold outline-none focus:border-brand"
-                      autoComplete="off"
-                    />
-                    <datalist id="shop-repair-search-device">
-                      {shopRepairSearchDeviceOptions.map((name) => (
-                        <option key={`sd-${name}`} value={name} />
-                      ))}
-                    </datalist>
-                  </div>
-                  <div className="relative min-w-0">
-                    <Search className="pointer-events-none absolute left-3 top-2.5 text-muted" size={16} />
-                    <input
-                      list="shop-repair-search-condition"
-                      value={shopRepairSearchCondition}
-                      onChange={(e) => {
-                        setShopRepairSearchCondition(e.target.value);
-                        setSelectedShopRepairIds([]);
-                      }}
-                      placeholder="Tình trạng…"
-                      className="h-10 w-full rounded-lg border border-line bg-white py-2 pl-9 pr-3 text-sm font-semibold outline-none focus:border-brand"
-                      autoComplete="off"
-                    />
-                    <datalist id="shop-repair-search-condition">
-                      {shopRepairSearchConditionOptions.map((name) => (
-                        <option key={`scond-${name}`} value={name} />
-                      ))}
-                    </datalist>
-                  </div>
-                  <div className="relative min-w-0">
-                    <Search className="pointer-events-none absolute left-3 top-2.5 text-muted" size={16} />
-                    <input
-                      list="shop-repair-search-warranty"
-                      value={shopRepairSearchWarranty}
-                      onChange={(e) => {
-                        setShopRepairSearchWarranty(e.target.value);
-                        setSelectedShopRepairIds([]);
-                      }}
-                      placeholder="Bảo hành…"
-                      className="h-10 w-full rounded-lg border border-line bg-white py-2 pl-9 pr-3 text-sm font-semibold outline-none focus:border-brand"
-                      autoComplete="off"
-                    />
-                    <datalist id="shop-repair-search-warranty">
-                      {shopRepairSearchWarrantyOptions.map((name) => (
-                        <option key={`sw-${name}`} value={name} />
-                      ))}
-                    </datalist>
-                  </div>
-                </div>
-                {hasShopRepairTextSearch ? (
-                  <div className="mb-3 flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-semibold text-muted">
-                      Đang lọc · {filteredRepairs.length} đơn
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShopRepairSearchCustomer("");
-                        setShopRepairSearchDevice("");
-                        setShopRepairSearchCondition("");
-                        setShopRepairSearchWarranty("");
-                        setSelectedShopRepairIds([]);
-                      }}
-                      className="h-9 rounded-lg border border-line bg-white px-3 text-sm font-bold text-muted hover:bg-slate-50"
-                    >
-                      Xóa tìm kiếm
-                    </button>
-                  </div>
-                ) : null}
                 <div className="overflow-x-auto pb-4">
                   <DataTable
                     compact
@@ -6989,7 +6904,7 @@ export default function Home() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => deleteShopRepair(item.id)}
+                            onClick={() => void deleteShopRepair(item.id)}
                             title="Xóa đơn"
                             className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100"
                           >

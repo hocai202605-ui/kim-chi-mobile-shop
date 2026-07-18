@@ -30,6 +30,19 @@ export const SOFTWARE_LOOKUP_CATEGORIES = {
 export type SoftwareLookupCategoryCode =
   (typeof SOFTWARE_LOOKUP_CATEGORIES)[keyof typeof SOFTWARE_LOOKUP_CATEGORIES];
 
+/** Droplist form Sửa chữa (per-store lookup_items). */
+export const REPAIR_LOOKUP_CATEGORIES = {
+  customer: "repair_customer",
+  device: "repair_device",
+  condition: "repair_condition",
+  warranty: "repair_warranty",
+  quote: "repair_quote",
+  fee: "repair_fee",
+} as const;
+
+export type RepairLookupCategoryCode =
+  (typeof REPAIR_LOOKUP_CATEGORIES)[keyof typeof REPAIR_LOOKUP_CATEGORIES];
+
 /** Droplist form phụ kiện (per-store lookup_items). */
 export const ACCESSORY_LOOKUP_CATEGORIES = {
   category: "accessory_category",

@@ -24,6 +24,12 @@ const BOOTSTRAP_LOOKUP_CODES = [
   "software_device",
   "software_quote",
   "software_fee",
+  "repair_customer",
+  "repair_device",
+  "repair_condition",
+  "repair_warranty",
+  "repair_quote",
+  "repair_fee",
 ];
 
 export async function GET() {
