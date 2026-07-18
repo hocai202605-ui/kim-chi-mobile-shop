@@ -1,4 +1,5 @@
 import type { StoreId } from "@/types";
+import { toVnDate } from "@/lib/datetime";
 import { getPool, withTransaction } from "./pool";
 
 /** Nguồn công nợ (sale/repair: UI/tab; API ghi nợ hiện hỗ trợ software + manual). */
@@ -66,10 +67,15 @@ async function loadStoreMaps(): Promise<{
   return { codeToId, idToCode };
 }
 
+/** Calendar day in VN — tránh toISOString().slice(0,10) lùi 1 ngày trên UTC+7. */
 function toDateOnly(value: Date | string | null | undefined): string {
   if (!value) return "";
-  if (typeof value === "string") return value.slice(0, 10);
-  return value.toISOString().slice(0, 10);
+  if (typeof value === "string") {
+    const s = value.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    return toVnDate(s) || s.slice(0, 10);
+  }
+  return toVnDate(value) || "";
 }
 
 function moneyN(n: unknown): number {

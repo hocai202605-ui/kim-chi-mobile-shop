@@ -1447,23 +1447,22 @@ export default function Home() {
     [phoneFormStoreId]
   );
 
-  /** Tên PK form bán: lookup store, fallback seed local. */
+  /**
+   * Tên PK form bán: luôn lấy lookup store (persist DB).
+   * Seed local chỉ hiển thị khi store chưa có option — không dùng để ghi tạm (tránh F5 mất).
+   */
   const saleAccNameOptions = useMemo(() => {
     const fromDb = lookupsByStore[saleStoreId]?.[ACCESSORY_LOOKUP_CATEGORIES.name] ?? [];
     if (fromDb.length > 0) return fromDb;
     return saleAccNameLocal;
   }, [lookupsByStore, saleStoreId, saleAccNameLocal]);
 
+  /** Luôn ghi vào lookupsByStore — ManageableSelect gọi API khi có categoryCode. */
   const setSaleAccNameOptions = useCallback(
     (next: string[]) => {
-      const fromDb = lookupsByStore[saleStoreId]?.[ACCESSORY_LOOKUP_CATEGORIES.name] ?? [];
-      if (fromDb.length > 0) {
-        setFormLookupOptions(ACCESSORY_LOOKUP_CATEGORIES.name, saleStoreId)(next);
-      } else {
-        setSaleAccNameLocal(next);
-      }
+      setFormLookupOptions(ACCESSORY_LOOKUP_CATEGORIES.name, saleStoreId)(next);
     },
-    [lookupsByStore, saleStoreId, setFormLookupOptions]
+    [saleStoreId, setFormLookupOptions]
   );
 
   /** Filter hãng: 1 cửa hàng → droplist store đó; Toàn hệ thống → union 3 store. */
@@ -2566,9 +2565,15 @@ export default function Home() {
       return;
     }
     const quantity = Math.max(1, Math.round(Number(saleAccQty) || 1));
-    const unitPrice = parseShopMoney(saleAccPrice);
-    if (unitPrice <= 0) {
-      window.alert("Nhập giá bán phụ kiện (vd 150 = 150.000₫).");
+    // Cho phép 0 = tặng kèm máy (vẫn giữ giá nhập để trừ lãi).
+    const priceDigits = String(saleAccPrice ?? "").replace(/\D/g, "");
+    if (!priceDigits) {
+      window.alert("Nhập giá bán phụ kiện (0 = tặng kèm).");
+      return;
+    }
+    const unitPrice = parseShopMoney(saleAccPrice); // "0" → 0
+    if (unitPrice < 0) {
+      window.alert("Giá bán phụ kiện không hợp lệ.");
       return;
     }
     const cost = parseShopMoney(saleAccCost); // 0 nếu trống
@@ -2583,6 +2588,14 @@ export default function Home() {
         cost,
       },
     ]);
+    if (unitPrice === 0) {
+      showUiToast(
+        "success",
+        cost > 0
+          ? `Đã thêm PK tặng: ${name} (vốn ${formatMoney(cost)}/cái).`
+          : `Đã thêm PK tặng: ${name}.`
+      );
+    }
     setSaleAccQty(1);
     setSaleAccCost("");
     setSaleAccPrice("");
@@ -2614,12 +2627,18 @@ export default function Home() {
       return;
     }
     for (const line of saleCart) {
-      if (line.unitPrice <= 0) {
-        window.alert(`Nhập giá bán cho: ${line.name}`);
-        return;
-      }
-      if (line.kind === "phone" && line.phoneId.startsWith("legacy-phone-")) {
-        window.alert("Dòng máy không hợp lệ — chọn lại máy từ kho.");
+      // Máy: bắt buộc giá bán > 0. Phụ kiện: cho phép 0 (tặng kèm), chặn số âm.
+      if (line.kind === "phone") {
+        if (line.unitPrice <= 0) {
+          window.alert(`Nhập giá bán cho: ${line.name}`);
+          return;
+        }
+        if (line.phoneId.startsWith("legacy-phone-")) {
+          window.alert("Dòng máy không hợp lệ — chọn lại máy từ kho.");
+          return;
+        }
+      } else if (line.unitPrice < 0) {
+        window.alert(`Giá bán không hợp lệ: ${line.name}`);
         return;
       }
     }
@@ -4924,12 +4943,7 @@ export default function Home() {
                                 setOptions={setSaleAccNameOptions}
                                 defaultValue={saleAccDefaultName}
                                 required={false}
-                                categoryCode={
-                                  (lookupsByStore[saleStoreId]?.[ACCESSORY_LOOKUP_CATEGORIES.name] ?? [])
-                                    .length > 0
-                                    ? ACCESSORY_LOOKUP_CATEGORIES.name
-                                    : undefined
-                                }
+                                categoryCode={ACCESSORY_LOOKUP_CATEGORIES.name}
                                 storeId={saleStoreId}
                                 onRenameCascade={reloadInventoryFromDb}
                                 allowManage
@@ -4958,18 +4972,20 @@ export default function Home() {
                             Thêm PK
                           </button>
                         </div>
-                        {/* Dòng 2: Giá bán | Giá nhập */}
+                        {/* Dòng 2: Giá bán | Giá nhập — giá bán 0 = tặng kèm */}
                         <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
                           <div className="grid min-w-0 gap-1.5">
                             <span className="text-sm font-bold text-amber-950">
                               Giá bán <span className="text-red-500">*</span>
+                              <span className="ml-1 text-[11px] font-semibold text-muted">(0 = tặng)</span>
                             </span>
                             <input
                               inputMode="numeric"
                               value={saleAccPrice}
                               onChange={(e) => setSaleAccPrice(formatInputMoney(e.target.value))}
                               className="h-10 min-w-0 w-full rounded-lg border border-amber-300 bg-white px-2.5 text-sm font-bold text-amber-950 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
-                              title="Giá bán (đơn vị shop, giống kho)"
+                              title="Giá bán (đơn vị shop). Nhập 0 = phụ kiện tặng kèm — vẫn trừ vốn/lãi."
+                              placeholder="0 = tặng"
                             />
                           </div>
                           <div className="grid min-w-0 gap-1.5">
@@ -4979,7 +4995,7 @@ export default function Home() {
                               value={saleAccCost}
                               onChange={(e) => setSaleAccCost(formatInputMoney(e.target.value))}
                               className="h-10 min-w-0 w-full rounded-lg border border-amber-200/70 bg-white px-2.5 text-sm font-semibold outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
-                              title="Giá nhập (đơn vị shop, giống kho)"
+                              title="Giá nhập (đơn vị shop). Khi tặng (giá bán 0) vẫn nên nhập để trừ lãi."
                             />
                           </div>
                         </div>
@@ -5122,17 +5138,36 @@ export default function Home() {
                                     </span>
                                     {line.name}
                                     <span className="ml-1 font-semibold text-muted">×{line.quantity}</span>
+                                    {line.unitPrice === 0 ? (
+                                      <span className="ml-1 rounded bg-fuchsia-50 px-1 py-0.5 text-[10px] font-black uppercase text-fuchsia-700 ring-1 ring-fuchsia-200">
+                                        Tặng
+                                      </span>
+                                    ) : null}
                                   </p>
                                 )}
                               </div>
                               <input
                                 inputMode="numeric"
-                                value={line.unitPrice ? formatInputMoney(line.unitPrice) : ""}
+                                value={
+                                  line.kind === "accessory" && line.unitPrice === 0
+                                    ? "0"
+                                    : line.unitPrice
+                                      ? formatInputMoney(line.unitPrice)
+                                      : ""
+                                }
                                 onChange={(e) =>
                                   updateSaleCartUnitPrice(line.key, parseShopMoney(e.target.value))
                                 }
-                                className="h-8 w-24 rounded-md border border-line px-2 text-right text-sm font-bold text-emerald-700 outline-none focus:border-brand"
-                                title="Giá bán (đơn vị shop)"
+                                className={`h-8 w-24 rounded-md border px-2 text-right text-sm font-bold outline-none focus:border-brand ${
+                                  line.kind === "accessory" && line.unitPrice === 0
+                                    ? "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-800"
+                                    : "border-line text-emerald-700"
+                                }`}
+                                title={
+                                  line.kind === "accessory"
+                                    ? "Giá bán (0 = tặng kèm)"
+                                    : "Giá bán (đơn vị shop)"
+                                }
                               />
                               {line.kind === "accessory" && line.quantity > 1 ? (
                                 <span className="w-16 shrink-0 text-right text-xs font-black text-ink">
@@ -7244,7 +7279,21 @@ function ManageableSelect({
   const [editMode, setEditMode] = useState<null | "add" | "edit">(null);
   const [draftText, setDraftText] = useState("");
   const [manageError, setManageError] = useState("");
+  const [manageSuccess, setManageSuccess] = useState("");
   const draftInputRef = useRef<HTMLInputElement>(null);
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flashSuccess = (msg: string) => {
+    setManageSuccess(msg);
+    if (successTimerRef.current) clearTimeout(successTimerRef.current);
+    successTimerRef.current = setTimeout(() => setManageSuccess(""), 2500);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (successTimerRef.current) clearTimeout(successTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (editMode && draftInputRef.current) {
@@ -7288,6 +7337,7 @@ function ManageableSelect({
   const openAddEditor = () => {
     if (!allowManage || busy) return;
     setManageError("");
+    setManageSuccess("");
     // Ưu tiên text đang gõ trên combobox
     setDraftText(value.trim());
     setEditMode("add");
@@ -7296,6 +7346,7 @@ function ManageableSelect({
   const openEditEditor = () => {
     if (!allowManage || busy || !value || !valueInOptions) return;
     setManageError("");
+    setManageSuccess("");
     setDraftText(value);
     setEditMode("edit");
   };
@@ -7323,6 +7374,7 @@ function ManageableSelect({
         setOptions([...options, next]);
         setValue(next);
         cancelEditor();
+        flashSuccess(`Đã thêm "${next}" (chỉ phiên này — chưa gắn DB).`);
         return;
       }
       if (!actorUsername?.trim()) {
@@ -7336,6 +7388,7 @@ function ManageableSelect({
         setOptions(result.labels);
         setValue(result.label ?? next);
         cancelEditor();
+        flashSuccess(`Đã lưu "${result.label ?? next}" vào droplist.`);
       } catch (err) {
         setManageError(toUiError(err));
       } finally {
@@ -7354,6 +7407,7 @@ function ManageableSelect({
         setOptions(options.map((o) => (o === oldVal ? next : o)));
         setValue(next);
         cancelEditor();
+        flashSuccess(`Đã đổi tên option (chỉ phiên này).`);
         return;
       }
       if (!actorUsername?.trim()) {
@@ -7374,6 +7428,7 @@ function ManageableSelect({
         setValue(result.label ?? next);
         if (onRenameCascade) await onRenameCascade();
         cancelEditor();
+        flashSuccess(`Đã cập nhật "${result.label ?? next}".`);
       } catch (err) {
         setManageError(toUiError(err));
       } finally {
@@ -7387,11 +7442,13 @@ function ManageableSelect({
     if (!value || !valueInOptions) return;
     if (!window.confirm(`Xóa giá trị "${value}" khỏi danh sách ${label}?`)) return;
     setManageError("");
+    setManageSuccess("");
 
     const removed = value;
     if (!categoryCode) {
       setOptions(options.filter((o) => o !== removed));
       setValue("");
+      flashSuccess(`Đã xóa "${removed}" (chỉ phiên này).`);
       return;
     }
     if (!actorUsername?.trim()) {
@@ -7409,6 +7466,7 @@ function ManageableSelect({
       );
       setOptions(result.labels);
       setValue("");
+      flashSuccess(`Đã xóa "${removed}" khỏi droplist.`);
     } catch (err) {
       setManageError(toUiError(err));
     } finally {
@@ -7553,6 +7611,9 @@ function ManageableSelect({
 
         {manageError ? (
           <p className="text-xs font-semibold text-danger">{manageError}</p>
+        ) : null}
+        {!manageError && manageSuccess ? (
+          <p className="text-xs font-semibold text-emerald-700">{manageSuccess}</p>
         ) : null}
       </div>
     </Field>

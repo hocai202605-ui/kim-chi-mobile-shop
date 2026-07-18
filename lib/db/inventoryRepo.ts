@@ -98,29 +98,25 @@ async function skipStatusGuard(client: PoolClient) {
 }
 
 /**
- * PG `date` / `timestamptz` → `YYYY-MM-DD`.
+ * PG `date` / `timestamptz` → `YYYY-MM-DD` theo lịch Việt Nam (Asia/Ho_Chi_Minh).
+ *
+ * Không dùng getUTC* / toISOString().slice(0,10):
+ * - node-pg map cột `date` → Date lúc 00:00 **local**
+ * - trên máy UTC+7 (VN), getUTC* lùi 1 ngày → grid bán hàng nhảy sai ngày
  * Không dùng String(date).slice(0,10) — ra "Wed Jul 01" mất năm → UI hiện 2001.
  */
 function toDateOnly(value: unknown): string | undefined {
   if (value == null || value === "") return undefined;
   if (value instanceof Date) {
     if (Number.isNaN(value.getTime())) return undefined;
-    const y = value.getUTCFullYear();
-    const m = String(value.getUTCMonth() + 1).padStart(2, "0");
-    const d = String(value.getUTCDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
+    const vn = toVnDate(value);
+    return vn || undefined;
   }
   const s = String(value).trim();
-  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
-  const parsed = new Date(s);
-  if (!Number.isNaN(parsed.getTime())) {
-    const y = parsed.getUTCFullYear();
-    const m = String(parsed.getUTCMonth() + 1).padStart(2, "0");
-    const d = String(parsed.getUTCDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
-  }
-  return undefined;
+  // Pure calendar date as stored — keep as-is
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const vn = toVnDate(s);
+  return vn || undefined;
 }
 
 function mapPhone(
@@ -1063,9 +1059,10 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
       actor
     );
 
+    // soldAt từ UI = datetime-local giờ VN → ISO UTC; ngày lịch lấy theo VN từ ISO đó
     const soldAtIso = vnDateTimeLocalToIso(input.soldAt) ?? new Date().toISOString();
     const soldAtDate =
-      toVnDate(input.soldAt || soldAtIso) || toDateOnly(soldAtIso) || toDateOnly(new Date()) || "";
+      toVnDate(soldAtIso) || toDateOnly(soldAtIso) || toVnDate(new Date()) || "";
 
     const { rows: saleRows } = await client.query(
       `insert into public.sales (
@@ -1147,9 +1144,13 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
         itemNames.push(itemName);
       } else {
         const quantity = Math.max(1, Math.round(Number(line.quantity) || 1));
-        const unitPriceShort = toShopMoney(Number(line.unitPrice) || 0);
+        // Giá bán 0 = phụ kiện tặng (vẫn ghi vốn → lãi âm). Chỉ chặn số âm.
+        const rawAccPrice = Number(line.unitPrice);
+        if (!Number.isFinite(rawAccPrice) || rawAccPrice < 0) {
+          throw new Error("Giá phụ kiện không hợp lệ.");
+        }
+        const unitPriceShort = toShopMoney(rawAccPrice);
         const unitPriceVnd = shopMoneyToVnd(unitPriceShort);
-        if (unitPriceVnd <= 0) throw new Error("Giá phụ kiện không hợp lệ.");
 
         let itemName = String(line.itemName || "").trim();
         let unitCostVnd = 0;
