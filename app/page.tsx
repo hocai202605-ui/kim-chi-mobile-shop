@@ -4949,6 +4949,7 @@ export default function Home() {
                                 allowManage
                                 allowFreeText
                                 actorUsername={currentUser?.username ?? ""}
+                                onManageNotify={(type, message) => showUiToast(type, message)}
                               />
                             </div>
                           </div>
@@ -7248,6 +7249,8 @@ function ManageableSelect({
   actorUsername = "",
   /** Mặc định bật combobox (gõ tay + droplist) — chuẩn toàn hệ thống. */
   allowFreeText = true,
+  /** Toast / feedback ngoài (vd form bán) — optional, không bắt buộc kho/PM. */
+  onManageNotify,
 }: {
   label: string;
   name: string;
@@ -7272,6 +7275,8 @@ function ManageableSelect({
    * false = chỉ chọn trong list (dùng khi option cố định).
    */
   allowFreeText?: boolean;
+  /** Gọi khi thêm/sửa/xóa option (persist hoặc local). */
+  onManageNotify?: (type: "success" | "error", message: string) => void;
 }) {
   const [value, setValue] = useState(defaultValue ?? "");
   const [busy, setBusy] = useState(false);
@@ -7285,8 +7290,14 @@ function ManageableSelect({
 
   const flashSuccess = (msg: string) => {
     setManageSuccess(msg);
+    onManageNotify?.("success", msg);
     if (successTimerRef.current) clearTimeout(successTimerRef.current);
     successTimerRef.current = setTimeout(() => setManageSuccess(""), 2500);
+  };
+
+  const flashError = (msg: string) => {
+    setManageError(msg);
+    onManageNotify?.("error", msg);
   };
 
   useEffect(() => {
@@ -7367,7 +7378,7 @@ function ManageableSelect({
 
     if (editMode === "add") {
       if (options.some((o) => o.toLowerCase() === next.toLowerCase())) {
-        setManageError(`"${next}" đã có trong danh sách.`);
+        flashError(`"${next}" đã có trong danh sách.`);
         return;
       }
       if (!categoryCode) {
@@ -7378,7 +7389,7 @@ function ManageableSelect({
         return;
       }
       if (!actorUsername?.trim()) {
-        setManageError("Thiếu tài khoản đăng nhập — không thêm được option.");
+        flashError("Thiếu tài khoản đăng nhập — không thêm được option.");
         return;
       }
       try {
@@ -7390,7 +7401,7 @@ function ManageableSelect({
         cancelEditor();
         flashSuccess(`Đã lưu "${result.label ?? next}" vào droplist.`);
       } catch (err) {
-        setManageError(toUiError(err));
+        flashError(toUiError(err));
       } finally {
         setBusy(false);
       }
@@ -7411,7 +7422,7 @@ function ManageableSelect({
         return;
       }
       if (!actorUsername?.trim()) {
-        setManageError("Thiếu tài khoản đăng nhập — không sửa được option.");
+        flashError("Thiếu tài khoản đăng nhập — không sửa được option.");
         return;
       }
       try {
@@ -7430,7 +7441,7 @@ function ManageableSelect({
         cancelEditor();
         flashSuccess(`Đã cập nhật "${result.label ?? next}".`);
       } catch (err) {
-        setManageError(toUiError(err));
+        flashError(toUiError(err));
       } finally {
         setBusy(false);
       }
@@ -7452,7 +7463,7 @@ function ManageableSelect({
       return;
     }
     if (!actorUsername?.trim()) {
-      setManageError("Thiếu tài khoản đăng nhập — không xóa được option.");
+      flashError("Thiếu tài khoản đăng nhập — không xóa được option.");
       return;
     }
 
@@ -7468,7 +7479,7 @@ function ManageableSelect({
       setValue("");
       flashSuccess(`Đã xóa "${removed}" khỏi droplist.`);
     } catch (err) {
-      setManageError(toUiError(err));
+      flashError(toUiError(err));
     } finally {
       setBusy(false);
     }
@@ -7593,9 +7604,16 @@ function ManageableSelect({
                 type="button"
                 disabled={busy}
                 onClick={() => void commitEditor()}
-                className="inline-flex h-10 shrink-0 items-center rounded-lg bg-brand px-3 text-sm font-bold text-white hover:bg-brand-dark disabled:opacity-50"
+                className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg bg-brand px-3 text-sm font-bold text-white hover:bg-brand-dark disabled:opacity-50"
               >
-                {busy ? <Loader2 size={16} className="animate-spin" /> : "Lưu"}
+                {busy ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Đang lưu…
+                  </>
+                ) : (
+                  "Lưu"
+                )}
               </button>
               <button
                 type="button"
