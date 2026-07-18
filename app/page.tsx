@@ -425,9 +425,18 @@ const softwareServiceSeed: SoftwareService[] = [
 
 /**
  * UI Sửa chữa (menu `software`) — clone form/list từ Phần mềm.
- * Mock state only; chưa API/DB. Shape giống OnlineRepair để tái dùng layout.
+ * Mock state only; chưa API/DB. Shape giống OnlineRepair + tình trạng / bảo hành.
  */
-type ShopRepairOrder = OnlineRepair;
+type ShopRepairOrder = OnlineRepair & {
+  /** Tình trạng máy khi tiếp nhận / ghi nhận. */
+  condition: string;
+  /** Thời hạn / ghi chú bảo hành. */
+  warranty: string;
+  /** IMEI (tùy chọn). */
+  imei: string;
+  /** SĐT khách / mật khẩu máy (free text, tùy chọn). */
+  phoneOrPass: string;
+};
 
 const shopRepairsSeed: ShopRepairOrder[] = [
   {
@@ -437,6 +446,10 @@ const shopRepairsSeed: ShopRepairOrder[] = [
     customerType: "Vãng lai",
     deviceName: "iPhone XS",
     issue: "Thay pin — màn trầy nhẹ",
+    condition: "Màn trầy nhẹ",
+    warranty: "1 tháng",
+    imei: "356938035643809",
+    phoneOrPass: "0901 234 567 / 2580",
     quote: 650000,
     deposit: 200000,
     receiveDate: "2026-07-06T10:20",
@@ -453,6 +466,10 @@ const shopRepairsSeed: ShopRepairOrder[] = [
     customerType: "Thân thiết",
     deviceName: "Samsung A52",
     issue: "Lỗi sạc — máy móp góc dưới",
+    condition: "Móp góc dưới",
+    warranty: "Không BH",
+    imei: "",
+    phoneOrPass: "Không có",
     quote: 450000,
     deposit: 0,
     receiveDate: "2026-07-05T14:00",
@@ -469,6 +486,10 @@ const shopRepairsSeed: ShopRepairOrder[] = [
     customerType: "Mới",
     deviceName: "iPhone 11 Pro Max",
     issue: "Ép kính",
+    condition: "Kính nứt",
+    warranty: "3 tháng",
+    imei: "353918101234567",
+    phoneOrPass: "111",
     quote: 900000,
     deposit: 300000,
     receiveDate: "2026-07-06T16:30",
@@ -480,8 +501,17 @@ const shopRepairsSeed: ShopRepairOrder[] = [
   },
 ];
 
-const SHOP_REPAIR_CUSTOMER_SEED = ["Chị Lan", "Anh Minh", "Bạn Huy"];
+const SHOP_REPAIR_CUSTOMER_SEED = ["Khách lẻ", "Chị Lan", "Anh Minh", "Bạn Huy"];
 const SHOP_REPAIR_DEVICE_SEED = ["iPhone XS", "Samsung A52", "iPhone 11 Pro Max", "iPhone 13"];
+const SHOP_REPAIR_CONDITION_SEED = [
+  "Màn trầy nhẹ",
+  "Móp góc dưới",
+  "Kính nứt",
+  "Pin phồng",
+  "Lỗi sạc",
+  "Cần kiểm tra",
+];
+const SHOP_REPAIR_WARRANTY_SEED = ["Không BH", "7 ngày", "1 tháng", "3 tháng", "6 tháng", "Còn BH hãng"];
 const SHOP_REPAIR_QUOTE_SEED = ["450000", "650000", "900000", "1200000"];
 const SHOP_REPAIR_FEE_SEED = ["0", "100000", "200000", "300000"];
 
@@ -947,6 +977,10 @@ export default function Home() {
     useState<string[]>(SHOP_REPAIR_CUSTOMER_SEED);
   const [shopRepairDeviceOptions, setShopRepairDeviceOptions] =
     useState<string[]>(SHOP_REPAIR_DEVICE_SEED);
+  const [shopRepairConditionOptions, setShopRepairConditionOptions] =
+    useState<string[]>(SHOP_REPAIR_CONDITION_SEED);
+  const [shopRepairWarrantyOptions, setShopRepairWarrantyOptions] =
+    useState<string[]>(SHOP_REPAIR_WARRANTY_SEED);
   const [shopRepairQuoteOptions, setShopRepairQuoteOptions] = useState<string[]>(() =>
     sortMoneyLabelsAsc([...SHOP_REPAIR_QUOTE_SEED])
   );
@@ -2334,6 +2368,10 @@ export default function Home() {
         ? String(form.get("customerType"))
         : existing?.customerType || draft?.customerType || "Vãng lai") as ShopRepairOrder["customerType"],
       deviceName: String(form.get("deviceName") || "").trim() || "Máy",
+      condition: String(form.get("condition") || "").trim(),
+      warranty: String(form.get("warranty") || "").trim(),
+      imei: String(form.get("imei") || "").trim(),
+      phoneOrPass: String(form.get("phoneOrPass") || "").trim(),
       issue: existing?.issue ?? draft?.issue ?? "",
       quote,
       deposit,
@@ -6337,7 +6375,7 @@ export default function Home() {
                     name="customerName"
                     options={shopRepairCustomerOptions}
                     setOptions={setShopRepairCustomerOptions}
-                    defaultValue={formDefaults?.customerName}
+                    defaultValue={formDefaults?.customerName ?? "Khách lẻ"}
                     allowManage
                     allowFreeText
                     actorUsername={currentUser?.username ?? ""}
@@ -6352,6 +6390,53 @@ export default function Home() {
                     allowFreeText
                     actorUsername={currentUser?.username ?? ""}
                   />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <ManageableSelect
+                    label="Tình trạng"
+                    name="condition"
+                    options={shopRepairConditionOptions}
+                    setOptions={setShopRepairConditionOptions}
+                    defaultValue={formDefaults?.condition}
+                    required={false}
+                    allowManage
+                    allowFreeText
+                    actorUsername={currentUser?.username ?? ""}
+                  />
+                  <ManageableSelect
+                    label="Bảo hành"
+                    name="warranty"
+                    options={shopRepairWarrantyOptions}
+                    setOptions={setShopRepairWarrantyOptions}
+                    defaultValue={formDefaults?.warranty}
+                    required={false}
+                    allowManage
+                    allowFreeText
+                    actorUsername={currentUser?.username ?? ""}
+                  />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="IMEI">
+                    <input
+                      name="imei"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      placeholder="Không bắt buộc"
+                      defaultValue={formDefaults?.imei ?? ""}
+                      className="h-10 w-full rounded-lg border border-line bg-white px-3 font-semibold text-slate-800 outline-none focus:border-brand"
+                    />
+                  </Field>
+                  <Field label="SĐT / Pass">
+                    <input
+                      name="phoneOrPass"
+                      type="text"
+                      autoComplete="off"
+                      placeholder="SĐT hoặc mật khẩu máy"
+                      defaultValue={formDefaults?.phoneOrPass ?? ""}
+                      className="h-10 w-full rounded-lg border border-line bg-white px-3 font-semibold text-slate-800 outline-none focus:border-brand"
+                    />
+                  </Field>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <ManageableSelect
@@ -6649,15 +6734,20 @@ export default function Home() {
                 </div>
                 <div className="overflow-x-auto pb-4">
                   <DataTable
+                    compact
                     headers={[
                       "",
                       "Khách hàng",
                       "Tên máy",
+                      "Tình trạng",
+                      "Bảo hành",
+                      "IMEI",
+                      "SĐT / Pass",
                       "Báo giá",
-                      "Phí / cọc",
+                      "Phí dịch vụ / cọc",
                       "Lãi",
-                      "Giờ",
-                      "Trạng thái TT",
+                      "Ngày & giờ",
+                      "Thanh toán",
                       "Thao tác",
                     ]}
                     rows={filteredRepairs.map((item) => {
@@ -6691,6 +6781,18 @@ export default function Home() {
                         </span>,
                         <span key={`d-${item.id}`} className="font-semibold text-slate-700 whitespace-nowrap">
                           {item.deviceName}
+                        </span>,
+                        <span key={`cond-${item.id}`} className="font-semibold text-slate-600 whitespace-nowrap">
+                          {item.condition?.trim() || "—"}
+                        </span>,
+                        <span key={`war-${item.id}`} className="font-semibold text-slate-600 whitespace-nowrap">
+                          {item.warranty?.trim() || "—"}
+                        </span>,
+                        <span key={`imei-${item.id}`} className="font-mono text-xs font-semibold text-slate-600 whitespace-nowrap">
+                          {item.imei?.trim() || "—"}
+                        </span>,
+                        <span key={`pp-${item.id}`} className="font-semibold text-slate-600 whitespace-nowrap">
+                          {item.phoneOrPass?.trim() || "—"}
                         </span>,
                         formatMoney(item.quote),
                         isShopRepairSensitiveHidden ? "***" : formatMoney(item.deposit),
@@ -6822,6 +6924,26 @@ export default function Home() {
                       <Field label="Tên máy">
                         <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-semibold text-slate-800">
                           {viewingShopRepair.deviceName}
+                        </div>
+                      </Field>
+                      <Field label="IMEI">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-mono text-sm font-semibold text-slate-800">
+                          {viewingShopRepair.imei?.trim() || "—"}
+                        </div>
+                      </Field>
+                      <Field label="SĐT / Pass">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-semibold text-slate-800">
+                          {viewingShopRepair.phoneOrPass?.trim() || "—"}
+                        </div>
+                      </Field>
+                      <Field label="Tình trạng">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-semibold text-slate-800">
+                          {viewingShopRepair.condition?.trim() || "—"}
+                        </div>
+                      </Field>
+                      <Field label="Bảo hành">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-semibold text-slate-800">
+                          {viewingShopRepair.warranty?.trim() || "—"}
                         </div>
                       </Field>
                       <Field label="Trạng thái thanh toán">
