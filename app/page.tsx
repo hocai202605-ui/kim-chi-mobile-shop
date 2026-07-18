@@ -423,6 +423,68 @@ const softwareServiceSeed: SoftwareService[] = [
   { id: "sw3", createdAt: "2026-07-07 23:47", customerName: "Dũng Mobi", deviceName: "Unlock mạng", quantity: 1, revenue: 5000000, cost: 3500000, profit: 1500000, isPaid: true },
 ];
 
+/**
+ * UI Sửa chữa (menu `software`) — clone form/list từ Phần mềm.
+ * Mock state only; chưa API/DB. Shape giống OnlineRepair để tái dùng layout.
+ */
+type ShopRepairOrder = OnlineRepair;
+
+const shopRepairsSeed: ShopRepairOrder[] = [
+  {
+    id: "r1",
+    createdAt: "2026-07-06 10:20",
+    customerName: "Chị Lan",
+    customerType: "Vãng lai",
+    deviceName: "iPhone XS",
+    issue: "Thay pin — màn trầy nhẹ",
+    quote: 650000,
+    deposit: 200000,
+    receiveDate: "2026-07-06T10:20",
+    completeDate: "",
+    paymentDate: "",
+    paymentStatus: "NỢ DAI",
+    rewardPoints: 0,
+    isPaid: false,
+  },
+  {
+    id: "r2",
+    createdAt: "2026-07-05 14:00",
+    customerName: "Anh Minh",
+    customerType: "Thân thiết",
+    deviceName: "Samsung A52",
+    issue: "Lỗi sạc — máy móp góc dưới",
+    quote: 450000,
+    deposit: 0,
+    receiveDate: "2026-07-05T14:00",
+    completeDate: "",
+    paymentDate: "",
+    paymentStatus: "NỢ DAI",
+    rewardPoints: 0,
+    isPaid: false,
+  },
+  {
+    id: "r3",
+    createdAt: "2026-07-06 16:30",
+    customerName: "Bạn Huy",
+    customerType: "Mới",
+    deviceName: "iPhone 11 Pro Max",
+    issue: "Ép kính",
+    quote: 900000,
+    deposit: 300000,
+    receiveDate: "2026-07-06T16:30",
+    completeDate: "2026-07-07T11:00",
+    paymentDate: "2026-07-07T11:05",
+    paymentStatus: "Đã thanh toán",
+    rewardPoints: 0,
+    isPaid: true,
+  },
+];
+
+const SHOP_REPAIR_CUSTOMER_SEED = ["Chị Lan", "Anh Minh", "Bạn Huy"];
+const SHOP_REPAIR_DEVICE_SEED = ["iPhone XS", "Samsung A52", "iPhone 11 Pro Max", "iPhone 13"];
+const SHOP_REPAIR_QUOTE_SEED = ["450000", "650000", "900000", "1200000"];
+const SHOP_REPAIR_FEE_SEED = ["0", "100000", "200000", "300000"];
+
 const repairsSeed: Repair[] = [
   { id: "r1", createdAt: "2026-07-06", customerId: "c2", storeId: "store-2", deviceName: "iPhone XS", screenPassword: "2580", issue: "Thay pin", intakeNote: "Màn trầy nhẹ, camera bình thường", quote: 650000, deposit: 200000, status: "Đang sửa" },
   { id: "r2", createdAt: "2026-07-05", customerId: "c1", storeId: "store-1", deviceName: "Samsung A52", screenPassword: "Không có", issue: "Lỗi sạc", intakeNote: "Máy móp góc dưới", quote: 450000, deposit: 0, status: "Đang chờ" },
@@ -853,7 +915,6 @@ export default function Home() {
   const [viewingAccessoryId, setViewingAccessoryId] = useState<string | null>(null);
   /** Ẩn giá nhập + lợi nhuận trên grid/chi tiết phụ kiện. */
   const [isAccessorySensitiveHidden, setIsAccessorySensitiveHidden] = useState(false);
-  const [editingSoftwareId, setEditingSoftwareId] = useState<string | null>(null);
   const [editingOnlineRepairId, setEditingOnlineRepairId] = useState<string | null>(null);
   /** Prefill form khi clone đơn phần mềm (mode tạo mới, không phải sửa). */
   const [cloneOnlineRepairDraft, setCloneOnlineRepairDraft] = useState<OnlineRepair | null>(null);
@@ -868,6 +929,31 @@ export default function Home() {
   /** Chọn nhiều đơn NỢ DAI để thanh toán hàng loạt. */
   const [selectedSoftwareIds, setSelectedSoftwareIds] = useState<string[]>([]);
   const [softwarePaying, setSoftwarePaying] = useState(false);
+
+  // Sửa chữa (menu software) — UI clone Phần mềm, mock only
+  const [shopRepairs, setShopRepairs] = useState<ShopRepairOrder[]>(shopRepairsSeed);
+  const [editingShopRepairId, setEditingShopRepairId] = useState<string | null>(null);
+  const [cloneShopRepairDraft, setCloneShopRepairDraft] = useState<ShopRepairOrder | null>(null);
+  const [cloneShopRepairFormKey, setCloneShopRepairFormKey] = useState(0);
+  const [viewingShopRepairId, setViewingShopRepairId] = useState<string | null>(null);
+  const [isShopRepairModalOpen, setIsShopRepairModalOpen] = useState(false);
+  const [isShopRepairSensitiveHidden, setIsShopRepairSensitiveHidden] = useState(false);
+  const [shopRepairFilter, setShopRepairFilter] = useState("all");
+  const [shopRepairMonth, setShopRepairMonth] = useState(() => vnNowMonth());
+  const [shopRepairDate, setShopRepairDate] = useState(() => vnNowDate());
+  const [selectedShopRepairIds, setSelectedShopRepairIds] = useState<string[]>([]);
+  const [shopRepairSaving, setShopRepairSaving] = useState(false);
+  const [shopRepairCustomerOptions, setShopRepairCustomerOptions] =
+    useState<string[]>(SHOP_REPAIR_CUSTOMER_SEED);
+  const [shopRepairDeviceOptions, setShopRepairDeviceOptions] =
+    useState<string[]>(SHOP_REPAIR_DEVICE_SEED);
+  const [shopRepairQuoteOptions, setShopRepairQuoteOptions] = useState<string[]>(() =>
+    sortMoneyLabelsAsc([...SHOP_REPAIR_QUOTE_SEED])
+  );
+  const [shopRepairFeeOptions, setShopRepairFeeOptions] = useState<string[]>(() =>
+    sortMoneyLabelsAsc([...SHOP_REPAIR_FEE_SEED])
+  );
+
   const [customers, setCustomers] = useState(customersSeed);
   const [phones, setPhones] = useState<PhoneItem[]>([]);
   const [accessories, setAccessories] = useState<Accessory[]>([]);
@@ -902,6 +988,8 @@ export default function Home() {
   /** Popup tạo/sửa phiếu bán — màn sales mặc định chỉ grid. */
   const [isSaleModalOpen, setIsSaleModalOpen] = useState(false);
   const [editingSaleId, setEditingSaleId] = useState<string | null>(null);
+  /** true = mở form giống sửa nhưng chỉ xem (disable hết, không lưu). */
+  const [isSaleReadOnly, setIsSaleReadOnly] = useState(false);
   const [viewingSaleId, setViewingSaleId] = useState<string | null>(null);
   /** Bộ lọc grid bán hàng (giống phần mềm). */
   const [saleMonth, setSaleMonth] = useState(() => vnNowMonth());
@@ -915,7 +1003,6 @@ export default function Home() {
   const [saleTypeFilter, setSaleTypeFilter] = useState<"all" | "Máy" | "Phụ kiện">("all");
   const [saleSearch, setSaleSearch] = useState("");
   const [isSaleSensitiveHidden, setIsSaleSensitiveHidden] = useState(false);
-  const [softwareServices, setSoftwareServices] = useState(softwareServiceSeed);
   const [onlineRepairs, setOnlineRepairs] = useState<OnlineRepair[]>([]);
   const [softwareLoading, setSoftwareLoading] = useState(false);
   const [softwareBackendError, setSoftwareBackendError] = useState("");
@@ -1284,7 +1371,7 @@ export default function Home() {
     return { ...buckets, totalCount, totalAmount, totalProfit };
   }, [filteredSales]);
 
-  const viewingSale = viewingSaleId ? sales.find((s) => s.id === viewingSaleId) ?? null : null;
+
 
   /** Máy trong phiếu đang sửa — vẫn cho chọn lại dù Đã bán. */
   const editingSalePhoneIds = useMemo(() => {
@@ -1486,6 +1573,9 @@ export default function Home() {
     : null;
   const viewingOnlineRepair = viewingOnlineRepairId
     ? onlineRepairs.find((item) => item.id === viewingOnlineRepairId)
+    : null;
+  const viewingShopRepair = viewingShopRepairId
+    ? shopRepairs.find((item) => item.id === viewingShopRepairId)
     : null;
   const inventoryMonthlyReport = useMemo(() => {
     if (supabaseReportMonthly) return supabaseReportMonthly;
@@ -1899,6 +1989,10 @@ export default function Home() {
 
   function openPhoneEditModal(id: string) {
     const phone = phones.find((item) => item.id === id);
+    if (phone?.status === "Đã bán") {
+      showUiToast("error", "Máy đã bán — không sửa được.");
+      return;
+    }
     setInventoryTab("phones");
     setEditingPhoneId(id);
     setClonePhoneDraft(null);
@@ -1912,6 +2006,10 @@ export default function Home() {
   function openPhoneCloneModal(id: string) {
     const source = phones.find((item) => item.id === id);
     if (!source) return;
+    if (source.status === "Đã bán") {
+      showUiToast("error", "Máy đã bán — không nhân bản được.");
+      return;
+    }
 
     const label = `${source.brand} ${source.name}`.trim();
     const imeiHint = source.imei ? ` (…${source.imei.slice(-5)})` : "";
@@ -2130,6 +2228,151 @@ export default function Home() {
     }
   }
 
+  // ——— Sửa chữa mock handlers (UI clone; chưa API/DB) ———
+  function closeShopRepairModal() {
+    if (shopRepairSaving) return;
+    setIsShopRepairModalOpen(false);
+    setEditingShopRepairId(null);
+    setCloneShopRepairDraft(null);
+    setShopRepairSaving(false);
+  }
+
+  function openShopRepairCloneModal(id: string) {
+    const source = shopRepairs.find((item) => item.id === id);
+    if (!source) return;
+    const ok = window.confirm(
+      `Nhân bản đơn sửa "${source.customerName} — ${source.deviceName}"?\n\nForm sẽ điền sẵn. Giờ nhận = hiện tại; thanh toán = NỢ DAI.`
+    );
+    if (!ok) return;
+    setEditingShopRepairId(null);
+    setCloneShopRepairDraft({
+      ...source,
+      id: "",
+      receiveDate: vnNowDateTimeLocal(),
+      completeDate: "",
+      paymentDate: "",
+      paymentStatus: "NỢ DAI",
+      isPaid: false,
+      rewardPoints: 0,
+    });
+    setCloneShopRepairFormKey((k) => k + 1);
+    setIsShopRepairModalOpen(true);
+  }
+
+  function deleteShopRepair(id: string) {
+    const source = shopRepairs.find((item) => item.id === id);
+    if (!source) return;
+    const ok = window.confirm(
+      `Xóa đơn sửa "${source.customerName} — ${source.deviceName}"?\n\n(Mock UI — chưa ghi DB.)`
+    );
+    if (!ok) return;
+    setShopRepairs((prev) => prev.filter((r) => r.id !== id));
+    if (editingShopRepairId === id) closeShopRepairModal();
+    if (viewingShopRepairId === id) setViewingShopRepairId(null);
+    setSelectedShopRepairIds((prev) => prev.filter((x) => x !== id));
+    pushLog("Xóa đơn sửa chữa (mock)", `${source.customerName} — ${source.deviceName}`, currentUser?.storeId ?? "store-1");
+    showUiToast("success", `Đã xóa đơn ${source.customerName} — ${source.deviceName}.`);
+  }
+
+  function markSelectedShopRepairsPaid(debtCandidates: ShopRepairOrder[]) {
+    const selectedSet = new Set(selectedShopRepairIds);
+    const toPay = debtCandidates.filter(
+      (r) => selectedSet.has(r.id) && r.paymentStatus === "NỢ DAI"
+    );
+    if (!toPay.length) {
+      showUiToast("error", "Chưa chọn đơn NỢ DAI nào để thanh toán.");
+      return;
+    }
+    const ok = window.confirm(
+      `Đánh dấu ${toPay.length} đơn NỢ DAI → Đã thanh toán?\n\n(Mock UI — chưa ghi DB.)`
+    );
+    if (!ok) return;
+    const payIds = new Set(toPay.map((r) => r.id));
+    const now = vnNowDateTimeLocal();
+    setShopRepairs((prev) =>
+      prev.map((r) =>
+        payIds.has(r.id)
+          ? {
+              ...r,
+              paymentStatus: "Đã thanh toán" as const,
+              isPaid: true,
+              paymentDate: now,
+            }
+          : r
+      )
+    );
+    setSelectedShopRepairIds([]);
+    pushLog("Thanh toán hàng loạt sửa chữa (mock)", `${toPay.length} đơn`, currentUser?.storeId ?? "store-1");
+    showUiToast("success", `Đã thanh toán ${toPay.length} đơn sửa chữa (mock).`);
+  }
+
+  function saveShopRepairFromForm(form: FormData) {
+    const quote = parseInputMoney(form.get("quote"));
+    const deposit = parseInputMoney(form.get("deposit"));
+    const pStatus = String(form.get("paymentStatus")) as ShopRepairOrder["paymentStatus"];
+    const isEdit = Boolean(editingShopRepairId);
+    const isClone = !isEdit && Boolean(cloneShopRepairDraft);
+    const existing = editingShopRepairId
+      ? shopRepairs.find((r) => r.id === editingShopRepairId)
+      : null;
+    const draft = isClone ? cloneShopRepairDraft : null;
+
+    const d = String(form.get("receiveDatePart") || "").trim();
+    const h = String(form.get("receiveHour") || "").trim().padStart(2, "0");
+    const m = String(form.get("receiveMinute") || "").trim().padStart(2, "0");
+    const t =
+      h && m && /^\d{2}$/.test(h) && /^\d{2}$/.test(m)
+        ? `${h}:${m}`
+        : String(form.get("receiveTimePart") || "").trim();
+    const receiveDate = d && t ? `${d}T${t}` : d || String(form.get("receiveDate") || "");
+
+    const payload: ShopRepairOrder = {
+      id: isEdit && existing ? existing.id : `r${Date.now()}`,
+      createdAt: existing?.createdAt || vnNowDateTimeLocal().replace("T", " "),
+      customerName: String(form.get("customerName") || "").trim() || "Khách lẻ",
+      customerType: (form.get("customerType")
+        ? String(form.get("customerType"))
+        : existing?.customerType || draft?.customerType || "Vãng lai") as ShopRepairOrder["customerType"],
+      deviceName: String(form.get("deviceName") || "").trim() || "Máy",
+      issue: existing?.issue ?? draft?.issue ?? "",
+      quote,
+      deposit,
+      receiveDate,
+      completeDate: existing?.completeDate ?? "",
+      paymentDate:
+        pStatus === "Đã thanh toán"
+          ? existing?.paymentDate || vnNowDateTimeLocal()
+          : existing?.paymentDate ?? "",
+      paymentStatus: pStatus,
+      rewardPoints: existing?.rewardPoints ?? 0,
+      isPaid: pStatus === "Đã thanh toán",
+    };
+
+    setShopRepairSaving(true);
+    // Mock delay nhẹ để thấy loading UI
+    window.setTimeout(() => {
+      setShopRepairs((prev) => {
+        if (isEdit) return prev.map((r) => (r.id === payload.id ? payload : r));
+        return [payload, ...prev];
+      });
+      pushLog(
+        isEdit ? "Sửa đơn sửa chữa (mock)" : isClone ? "Nhân bản đơn sửa chữa (mock)" : "Tạo đơn sửa chữa (mock)",
+        `${payload.customerName} — ${payload.deviceName}`,
+        currentUser?.storeId ?? "store-1"
+      );
+      showUiToast(
+        "success",
+        isEdit
+          ? `Đã sửa đơn ${payload.customerName} — ${payload.deviceName} (mock).`
+          : isClone
+            ? `Đã nhân bản đơn ${payload.customerName} — ${payload.deviceName} (mock).`
+            : `Đã tạo đơn ${payload.customerName} — ${payload.deviceName} (mock).`
+      );
+      setShopRepairSaving(false);
+      closeShopRepairModal();
+    }, 280);
+  }
+
   async function savePhone(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (inventorySaving) return;
@@ -2332,6 +2575,8 @@ export default function Home() {
     setSalePayStatus("Đã thanh toán");
     setSaleSoldAt(vnNowDateTimeLocal());
     setEditingSaleId(null);
+    setIsSaleReadOnly(false);
+    setViewingSaleId(null);
     if (currentUser?.storeId) setSaleStoreId(currentUser.storeId);
   }
 
@@ -2346,13 +2591,10 @@ export default function Home() {
     resetSaleFormDraft();
   }
 
-  function openSaleView(id: string) {
-    setViewingSaleId(id);
-  }
-
-  async function openSaleEditModal(id: string) {
+  /** Load phiếu vào form bán (giống layout sửa). mode view = chỉ xem, disable hết. */
+  async function loadSaleIntoForm(id: string, mode: "edit" | "view") {
     const local = sales.find((s) => s.id === id);
-    if (local?.status === "Đã hủy") {
+    if (mode === "edit" && local?.status === "Đã hủy") {
       window.alert("Không sửa phiếu đã hủy.");
       return;
     }
@@ -2360,7 +2602,6 @@ export default function Home() {
     setSaleSaving(true);
     setViewingSaleId(null);
     try {
-      // Load chi tiết DB (lines + khách + sold_at) — list grid không có lines.
       let detail: Awaited<ReturnType<typeof apiGetSale>> | null = null;
       try {
         detail = await apiGetSale(id);
@@ -2368,7 +2609,7 @@ export default function Home() {
         detail = null;
       }
 
-      if (detail?.status === "Đã hủy") {
+      if (mode === "edit" && detail?.status === "Đã hủy") {
         window.alert("Không sửa phiếu đã hủy.");
         return;
       }
@@ -2379,7 +2620,9 @@ export default function Home() {
         return;
       }
 
-      setEditingSaleId(sale.id);
+      setIsSaleReadOnly(mode === "view");
+      setEditingSaleId(mode === "edit" ? sale.id : null);
+      setViewingSaleId(mode === "view" ? sale.id : null);
       setSaleCustomerId(
         detail?.customerId ||
           (local?.customerId && !local.customerId.startsWith("db") ? local.customerId : null)
@@ -2396,9 +2639,7 @@ export default function Home() {
       const soldLocal =
         detail?.soldAtLocal ||
         (() => {
-          const rawAt = String(
-            detail?.soldAt || local?.createdAt || ""
-          ).trim();
+          const rawAt = String(detail?.soldAt || local?.createdAt || "").trim();
           if (rawAt.length >= 16) return rawAt.slice(0, 16).replace(" ", "T");
           if (rawAt) return `${rawAt.slice(0, 10)}T${vnNowDateTimeLocal().slice(11, 16)}`;
           return vnNowDateTimeLocal();
@@ -2418,7 +2659,8 @@ export default function Home() {
 
       if (lines && lines.length > 0) {
         const hasPhone = lines.some((l) => l.kind === "phone");
-        setSalePhonePickerOpen(hasPhone);
+        // View: chỉ xem giỏ, không mở picker máy. Edit: mở nếu có máy.
+        setSalePhonePickerOpen(mode === "edit" && hasPhone);
         setSaleCart(
           lines.map((line, idx) =>
             line.kind === "phone"
@@ -2452,11 +2694,10 @@ export default function Home() {
           setSaleAccDefaultName("");
         }
       } else {
-        // Fallback seed / thiếu lines — amount API đã short; seed cũ full VND thì ÷1000
         const rawAmt = Number(sale.amount) || 0;
         const amountShort = rawAmt >= 1_000_000 ? Math.round(rawAmt / 1000) : rawAmt;
-        const unitShort = Math.max(1, Math.round(amountShort / Math.max(1, sale.quantity)));
-        setSalePhonePickerOpen(sale.itemType === "Máy");
+        const unitShort = Math.max(0, Math.round(amountShort / Math.max(1, sale.quantity)));
+        setSalePhonePickerOpen(mode === "edit" && sale.itemType === "Máy");
         setSaleCart([
           {
             key: `legacy-${sale.id}`,
@@ -2478,6 +2719,14 @@ export default function Home() {
     } finally {
       setSaleSaving(false);
     }
+  }
+
+  function openSaleView(id: string) {
+    void loadSaleIntoForm(id, "view");
+  }
+
+  async function openSaleEditModal(id: string) {
+    await loadSaleIntoForm(id, "edit");
   }
 
   function selectSaleCustomer(c: Customer) {
@@ -2616,6 +2865,7 @@ export default function Home() {
 
   async function createSale(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isSaleReadOnly) return;
     const hasPhone = saleCart.some((l) => l.kind === "phone");
     const customerName = (saleCustomerName.trim() || (hasPhone ? "" : "Khách lẻ")).trim();
     if (hasPhone && !customerName) {
@@ -3602,16 +3852,33 @@ export default function Home() {
                     <span className="text-base font-bold text-slate-700" key={`batcap-${item.id}`}>{item.batteryCapacity || "—"}</span>,
                     <div className="flex items-center justify-center gap-1.5 text-base font-bold text-amber-600" key={`bat-${item.id}`}>{item.batteryCondition}</div>,
                     <div key={item.id} className="flex flex-nowrap justify-center gap-1.5">
-                      <button onClick={() => setViewingPhoneId(item.id)} title="Chi tiết" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-900">
+                      <button
+                        type="button"
+                        onClick={() => setViewingPhoneId(item.id)}
+                        title="Chi tiết"
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-900"
+                      >
                         <Eye size={18} />
                       </button>
-                      <button onClick={() => openPhoneEditModal(item.id)} title="Sửa" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20">
+                      <button
+                        type="button"
+                        onClick={() => openPhoneEditModal(item.id)}
+                        disabled={item.status === "Đã bán"}
+                        title={item.status === "Đã bán" ? "Máy đã bán — không sửa" : "Sửa"}
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-brand-soft"
+                      >
                         <Edit3 size={18} />
                       </button>
                       <button
+                        type="button"
                         onClick={() => openPhoneCloneModal(item.id)}
-                        title="Nhân bản thêm mới"
-                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100"
+                        disabled={item.status === "Đã bán"}
+                        title={
+                          item.status === "Đã bán"
+                            ? "Máy đã bán — không nhân bản"
+                            : "Nhân bản thêm mới"
+                        }
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-sky-50"
                       >
                         <CopyPlus size={18} />
                       </button>
@@ -4514,167 +4781,6 @@ export default function Home() {
               </div>
             </Panel>
 
-            {/* Chi tiết phiếu */}
-            {viewingSale && (
-              <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-md">
-                <section className="max-h-[92vh] w-full max-w-[640px] overflow-auto rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
-                  <div className="flex items-center justify-between border-b border-slate-200/60 bg-gradient-to-r from-brand/10 to-transparent p-5">
-                    <h2 className="text-xl font-black text-brand">Chi tiết phiếu bán</h2>
-                    <button
-                      type="button"
-                      onClick={() => setViewingSaleId(null)}
-                      className="h-9 rounded-xl border border-slate-200/60 bg-white/50 px-4 text-sm font-bold text-slate-600 backdrop-blur-md transition hover:bg-white hover:text-slate-900"
-                    >
-                      Đóng
-                    </button>
-                  </div>
-                  <div className="grid gap-4 p-5">
-                    <div className="flex items-center gap-3">
-                      <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-brand-soft text-brand">
-                        <ReceiptText size={24} />
-                      </div>
-                      <div>
-                        <strong className="block text-lg">
-                          {viewingSale.customerName ||
-                            customers.find((c) => c.id === viewingSale.customerId)?.name ||
-                            "Khách lẻ"}
-                        </strong>
-                        <span className="text-sm font-semibold text-muted">{viewingSale.itemName}</span>
-                      </div>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <Field label="Ngày bán">
-                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-semibold">
-                          {viewingSale.createdAt}
-                        </div>
-                      </Field>
-                      <Field label="Cửa hàng">
-                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-semibold">
-                          {storeName(viewingSale.storeId)}
-                        </div>
-                      </Field>
-                      <Field label="SĐT">
-                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-semibold">
-                          {viewingSale.customerPhone ||
-                            customers.find((c) => c.id === viewingSale.customerId)?.phone ||
-                            "—"}
-                        </div>
-                      </Field>
-                      <Field label="Địa chỉ">
-                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-semibold">
-                          {viewingSale.customerAddress ||
-                            customers.find((c) => c.id === viewingSale.customerId)?.address ||
-                            "—"}
-                        </div>
-                      </Field>
-                      <Field label="Trạng thái thanh toán">
-                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3">
-                          {(() => {
-                            const payUi = salePayStatusLabel(viewingSale.payment, viewingSale.status);
-                            return (
-                              <span
-                                className={`inline-flex h-8 items-center rounded px-2 text-xs font-bold shadow-sm ${payUi.className}`}
-                              >
-                                {payUi.text}
-                              </span>
-                            );
-                          })()}
-                        </div>
-                      </Field>
-                      <Field label="Hình thức">
-                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-semibold">
-                          {viewingSale.payment === "NỢ DAI" || viewingSale.payment === "Nợ"
-                            ? "—"
-                            : viewingSale.payment === "Thanh toán 1 phần"
-                              ? "—"
-                              : viewingSale.payment}
-                        </div>
-                      </Field>
-                      <Field label="Tổng tiền">
-                        <div className="flex h-12 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-xl font-black text-ink">
-                          {isSaleSensitiveHidden ? "***" : formatMoney(viewingSale.amount)}
-                        </div>
-                      </Field>
-                      <Field label="Lãi">
-                        <div className="flex h-12 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-xl font-black text-emerald-700">
-                          {isSaleSensitiveHidden ? "***" : formatMoney(viewingSale.profit)}
-                        </div>
-                      </Field>
-                    </div>
-                    {viewingSale.lines && viewingSale.lines.length > 0 ? (
-                      <div className="rounded-xl border border-line p-3">
-                        <p className="mb-2 text-sm font-black text-ink">
-                          Dòng hàng ({viewingSale.lines.length})
-                        </p>
-                        <ul className="space-y-2">
-                          {viewingSale.lines.map((line, idx) => (
-                            <li
-                              key={`${viewingSale.id}-line-${idx}`}
-                              className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-line bg-slate-50 px-3 py-2 text-sm"
-                            >
-                              <div className="min-w-0">
-                                {line.kind === "phone" ? (
-                                  <>
-                                    <p className="font-bold text-ink">
-                                      <span className="mr-1.5 rounded-full bg-brand-soft px-2 py-0.5 text-[10px] font-black uppercase text-brand-dark">
-                                        Máy
-                                      </span>
-                                      {line.name}
-                                    </p>
-                                    <p className="text-xs font-semibold text-muted">
-                                      IMEI {line.imei || "—"}
-                                      {line.color ? ` · ${line.color}` : ""}
-                                      {line.storage ? ` · ${line.storage}` : ""}
-                                      {line.condition ? ` · ${line.condition}` : ""}
-                                    </p>
-                                  </>
-                                ) : (
-                                  <p className="font-bold text-ink">
-                                    <span className="mr-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase text-amber-800">
-                                      PK
-                                    </span>
-                                    {line.name}
-                                    <span className="ml-1 font-semibold text-muted">×{line.quantity}</span>
-                                  </p>
-                                )}
-                              </div>
-                              <span className="shrink-0 font-black text-emerald-700">
-                                {isSaleSensitiveHidden
-                                  ? "***"
-                                  : formatMoney(
-                                      line.kind === "phone"
-                                        ? line.unitPrice
-                                        : line.unitPrice * line.quantity
-                                    )}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-                    <div className="flex justify-end gap-2 border-t border-line pt-4">
-                      <button
-                        type="button"
-                        onClick={() => setViewingSaleId(null)}
-                        className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted"
-                      >
-                        Đóng
-                      </button>
-                      {viewingSale.status === "Hoàn tất" ? (
-                        <button
-                          type="button"
-                          onClick={() => void openSaleEditModal(viewingSale.id)}
-                          className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark"
-                        >
-                          <Edit3 size={16} /> Sửa phiếu
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                </section>
-              </div>
-            )}
-
             {isSaleModalOpen && (
               <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/60 p-3 backdrop-blur-md">
                 <section className="relative my-2 max-h-[94vh] w-full max-w-xl overflow-auto rounded-xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl sm:max-w-2xl">
@@ -4682,15 +4788,26 @@ export default function Home() {
                     <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 rounded-xl bg-white/55 backdrop-blur-sm">
                       <Loader2 size={32} className="animate-spin text-brand" />
                       <p className="text-sm font-black text-ink">
-                        {editingSaleId ? "Đang lưu…" : "Đang tạo phiếu…"}
+                        {isSaleReadOnly
+                          ? "Đang tải phiếu…"
+                          : editingSaleId
+                            ? "Đang lưu…"
+                            : "Đang tạo phiếu…"}
                       </p>
                     </div>
                   ) : null}
                   <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-slate-200/60 bg-white/90 px-3 py-2.5 backdrop-blur-md">
                     <div className="min-w-0">
                       <h2 className="text-base font-black text-slate-800 sm:text-lg">
-                        {editingSaleId ? "Sửa phiếu bán" : "Tạo phiếu bán"}
+                        {isSaleReadOnly
+                          ? "Chi tiết phiếu bán"
+                          : editingSaleId
+                            ? "Sửa phiếu bán"
+                            : "Tạo phiếu bán"}
                       </h2>
+                      {isSaleReadOnly ? (
+                        <p className="text-[11px] font-semibold text-muted">Chỉ xem — không chỉnh sửa</p>
+                      ) : null}
                     </div>
                     <button
                       type="button"
@@ -4713,13 +4830,15 @@ export default function Home() {
                           <Users size={13} className="text-muted" />
                           Khách hàng
                         </p>
-                        <button
-                          type="button"
-                          onClick={resetSaleCustomerToWalkIn}
-                          className="rounded-full border border-line bg-white px-2 py-0.5 text-[11px] font-bold text-muted hover:bg-white"
-                        >
-                          Về khách lẻ
-                        </button>
+                        {!isSaleReadOnly ? (
+                          <button
+                            type="button"
+                            onClick={resetSaleCustomerToWalkIn}
+                            className="rounded-full border border-line bg-white px-2 py-0.5 text-[11px] font-bold text-muted hover:bg-white"
+                          >
+                            Về khách lẻ
+                          </button>
+                        ) : null}
                       </div>
                       <div className="grid gap-2 sm:grid-cols-2">
                         <label className="grid gap-0.5">
@@ -4734,16 +4853,22 @@ export default function Home() {
                                 setSaleCustomerId(null);
                                 setSaleCustomerSuggestOpen(true);
                               }}
-                              onFocus={() => setSaleCustomerSuggestOpen(true)}
+                              onFocus={() => {
+                                if (!isSaleReadOnly) setSaleCustomerSuggestOpen(true);
+                              }}
                               onBlur={() => {
                                 window.setTimeout(() => setSaleCustomerSuggestOpen(false), 180);
                               }}
-                              required
-                              className="h-9 w-full rounded-md border border-line bg-white px-2.5 text-sm font-semibold outline-none focus:border-brand"
+                              required={!isSaleReadOnly}
+                              readOnly={isSaleReadOnly}
+                              disabled={isSaleReadOnly}
+                              className={`h-9 w-full rounded-md border border-line px-2.5 text-sm font-semibold outline-none focus:border-brand ${
+                                isSaleReadOnly ? "cursor-default bg-slate-50 text-slate-700" : "bg-white"
+                              }`}
                               placeholder="Bắt buộc — xóa chọn khách cũ / gõ tên"
                               autoComplete="off"
                             />
-                            {saleCustomerSuggestOpen && saleCustomerSuggestions.length > 0 ? (
+                            {!isSaleReadOnly && saleCustomerSuggestOpen && saleCustomerSuggestions.length > 0 ? (
                               <ul className="absolute z-20 mt-1 max-h-44 w-full overflow-auto rounded-lg border border-line bg-white py-1 shadow-panel">
                                 {saleCustomerSuggestions.map((c) => (
                                   <li key={c.id}>
@@ -4774,17 +4899,23 @@ export default function Home() {
                               setSaleCustomerId(null);
                               setSaleCustomerSuggestOpen(true);
                             }}
-                            onFocus={() => setSaleCustomerSuggestOpen(true)}
+                            onFocus={() => {
+                              if (!isSaleReadOnly) setSaleCustomerSuggestOpen(true);
+                            }}
                             onBlur={() => {
                               window.setTimeout(() => setSaleCustomerSuggestOpen(false), 180);
                             }}
-                            className="h-9 w-full rounded-md border border-line bg-white px-2.5 text-sm font-semibold outline-none focus:border-brand"
+                            readOnly={isSaleReadOnly}
+                            disabled={isSaleReadOnly}
+                            className={`h-9 w-full rounded-md border border-line px-2.5 text-sm font-semibold outline-none focus:border-brand ${
+                              isSaleReadOnly ? "cursor-default bg-slate-50 text-slate-700" : "bg-white"
+                            }`}
                             placeholder="Không bắt buộc"
                             autoComplete="off"
                           />
                         </label>
                       </div>
-                      <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
+                      <div className={`mt-2 grid gap-2 ${isSaleReadOnly ? "" : "sm:grid-cols-[1fr_auto]"}`}>
                         <label className="grid gap-0.5">
                           <span className="text-xs font-bold text-slate-700">Địa chỉ</span>
                           <input
@@ -4793,21 +4924,27 @@ export default function Home() {
                               setSaleCustomerAddress(e.target.value);
                               setSaleCustomerId(null);
                             }}
-                            className="h-9 w-full rounded-md border border-line bg-white px-2.5 text-sm font-semibold outline-none focus:border-brand"
+                            readOnly={isSaleReadOnly}
+                            disabled={isSaleReadOnly}
+                            className={`h-9 w-full rounded-md border border-line px-2.5 text-sm font-semibold outline-none focus:border-brand ${
+                              isSaleReadOnly ? "cursor-default bg-slate-50 text-slate-700" : "bg-white"
+                            }`}
                             placeholder="Không bắt buộc"
                             autoComplete="off"
                           />
                         </label>
-                        <div className="flex items-end">
-                          <button
-                            type="button"
-                            onClick={handleSaveSaleCustomer}
-                            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-brand bg-brand-soft px-3 text-sm font-bold text-brand-dark hover:bg-brand hover:text-white"
-                          >
-                            <Users size={14} />
-                            Lưu khách
-                          </button>
-                        </div>
+                        {!isSaleReadOnly ? (
+                          <div className="flex items-end">
+                            <button
+                              type="button"
+                              onClick={handleSaveSaleCustomer}
+                              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-brand bg-brand-soft px-3 text-sm font-bold text-brand-dark hover:bg-brand hover:text-white"
+                            >
+                              <Users size={14} />
+                              Lưu khách
+                            </button>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                     )}
@@ -4816,7 +4953,7 @@ export default function Home() {
                       <div className="grid gap-2 sm:grid-cols-2">
                         <label className="grid gap-0.5">
                           <span className="text-xs font-bold text-slate-700">Cửa hàng</span>
-                          {currentUser?.role === "staff" ? (
+                          {currentUser?.role === "staff" || isSaleReadOnly ? (
                             <>
                               <input type="hidden" value={saleStoreId} readOnly />
                               <div className="flex h-9 items-center rounded-md border border-line bg-slate-50 px-2.5 text-sm font-bold text-ink">
@@ -4849,27 +4986,34 @@ export default function Home() {
                         </label>
                         <label className="grid gap-0.5">
                           <span className="text-xs font-bold text-slate-700">
-                            Ngày bán <span className="text-red-500">*</span>
+                            Ngày bán {!isSaleReadOnly ? <span className="text-red-500">*</span> : null}
                           </span>
                           <input
                             type="datetime-local"
-                            required
+                            required={!isSaleReadOnly}
                             value={saleSoldAt}
                             onChange={(e) => setSaleSoldAt(e.target.value)}
-                            className="h-9 rounded-md border border-line bg-white px-2 text-sm font-semibold outline-none focus:border-brand"
+                            readOnly={isSaleReadOnly}
+                            disabled={isSaleReadOnly}
+                            className={`h-9 rounded-md border border-line px-2 text-sm font-semibold outline-none focus:border-brand ${
+                              isSaleReadOnly ? "cursor-default bg-slate-50 text-slate-700" : "bg-white"
+                            }`}
                           />
                         </label>
                       </div>
                       <div className="grid gap-2 sm:grid-cols-2">
                         <label className="grid gap-0.5">
                           <span className="text-xs font-bold text-slate-700">
-                            Hình thức thanh toán <span className="text-red-500">*</span>
+                            Hình thức thanh toán {!isSaleReadOnly ? <span className="text-red-500">*</span> : null}
                           </span>
                           <select
-                            required
+                            required={!isSaleReadOnly}
                             value={salePayMethod}
                             onChange={(e) => setSalePayMethod(e.target.value as SalePayMethod)}
-                            className="h-9 rounded-md border border-line bg-white px-2.5 text-sm font-semibold"
+                            disabled={isSaleReadOnly}
+                            className={`h-9 rounded-md border border-line px-2.5 text-sm font-semibold ${
+                              isSaleReadOnly ? "cursor-default bg-slate-50 text-slate-700" : "bg-white"
+                            }`}
                           >
                             {SALE_PAY_METHOD_OPTIONS.map((p) => (
                               <option key={p} value={p}>
@@ -4880,13 +5024,16 @@ export default function Home() {
                         </label>
                         <label className="grid gap-0.5">
                           <span className="text-xs font-bold text-slate-700">
-                            Trạng thái thanh toán <span className="text-red-500">*</span>
+                            Trạng thái thanh toán {!isSaleReadOnly ? <span className="text-red-500">*</span> : null}
                           </span>
                           <select
-                            required
+                            required={!isSaleReadOnly}
                             value={salePayStatus}
                             onChange={(e) => setSalePayStatus(e.target.value as SalePayStatus)}
-                            className="h-9 rounded-md border border-line bg-white px-2.5 text-sm font-semibold"
+                            disabled={isSaleReadOnly}
+                            className={`h-9 rounded-md border border-line px-2.5 text-sm font-semibold ${
+                              isSaleReadOnly ? "cursor-default bg-slate-50 text-slate-700" : "bg-white"
+                            }`}
                           >
                             {SALE_PAY_STATUS_OPTIONS.map((p) => (
                               <option key={p} value={p}>
@@ -4898,7 +5045,8 @@ export default function Home() {
                       </div>
                     </div>
 
-                    {/* Phụ kiện — 3 dòng; Thêm máy góc phải cùng mé trên */}
+                    {/* Phụ kiện — ẩn khi chỉ xem (chỉ hiện giỏ) */}
+                    {!isSaleReadOnly ? (
                     <div className="relative overflow-hidden rounded-xl border border-amber-200/80 bg-gradient-to-br from-amber-50 via-orange-50/40 to-white p-2.5 shadow-sm ring-1 ring-amber-100/80">
                       <div className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-amber-200/30 blur-2xl" />
                       <div className="relative mb-1.5 flex items-center justify-between gap-2">
@@ -5002,9 +5150,10 @@ export default function Home() {
                         </div>
                       </div>
                     </div>
+                    ) : null}
 
-                    {/* List máy — chỉ hiện khi bấm Thêm máy (header phụ kiện) */}
-                    {salePhonePickerOpen ? (
+                    {/* List máy — chỉ hiện khi bấm Thêm máy (không hiện ở chế độ chỉ xem) */}
+                    {!isSaleReadOnly && salePhonePickerOpen ? (
                       <div className="space-y-2 rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-2.5 shadow-sm ring-1 ring-slate-100">
                         <div className="flex items-center justify-between gap-2">
                           <p className="text-xs font-black uppercase tracking-wide text-slate-600">
@@ -5099,7 +5248,7 @@ export default function Home() {
                             {saleCart.length}
                           </span>
                         </p>
-                        {saleCart.length > 0 ? (
+                        {!isSaleReadOnly && saleCart.length > 0 ? (
                           <button
                             type="button"
                             onClick={() => setSaleCart([])}
@@ -5147,42 +5296,62 @@ export default function Home() {
                                   </p>
                                 )}
                               </div>
-                              <input
-                                inputMode="numeric"
-                                value={
-                                  line.kind === "accessory" && line.unitPrice === 0
-                                    ? "0"
-                                    : line.unitPrice
-                                      ? formatInputMoney(line.unitPrice)
-                                      : ""
-                                }
-                                onChange={(e) =>
-                                  updateSaleCartUnitPrice(line.key, parseShopMoney(e.target.value))
-                                }
-                                className={`h-8 w-24 rounded-md border px-2 text-right text-sm font-bold outline-none focus:border-brand ${
-                                  line.kind === "accessory" && line.unitPrice === 0
-                                    ? "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-800"
-                                    : "border-line text-emerald-700"
-                                }`}
-                                title={
-                                  line.kind === "accessory"
-                                    ? "Giá bán (0 = tặng kèm)"
-                                    : "Giá bán (đơn vị shop)"
-                                }
-                              />
+                              {isSaleReadOnly ? (
+                                <span
+                                  className={`inline-flex h-8 min-w-[5.5rem] items-center justify-end rounded-md border px-2 text-sm font-bold ${
+                                    line.kind === "accessory" && line.unitPrice === 0
+                                      ? "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-800"
+                                      : "border-line bg-slate-50 text-emerald-700"
+                                  }`}
+                                >
+                                  {isSaleSensitiveHidden
+                                    ? "***"
+                                    : line.kind === "accessory" && line.unitPrice === 0
+                                      ? "0"
+                                      : formatMoney(line.unitPrice)}
+                                </span>
+                              ) : (
+                                <input
+                                  inputMode="numeric"
+                                  value={
+                                    line.kind === "accessory" && line.unitPrice === 0
+                                      ? "0"
+                                      : line.unitPrice
+                                        ? formatInputMoney(line.unitPrice)
+                                        : ""
+                                  }
+                                  onChange={(e) =>
+                                    updateSaleCartUnitPrice(line.key, parseShopMoney(e.target.value))
+                                  }
+                                  className={`h-8 w-24 rounded-md border px-2 text-right text-sm font-bold outline-none focus:border-brand ${
+                                    line.kind === "accessory" && line.unitPrice === 0
+                                      ? "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-800"
+                                      : "border-line text-emerald-700"
+                                  }`}
+                                  title={
+                                    line.kind === "accessory"
+                                      ? "Giá bán (0 = tặng kèm)"
+                                      : "Giá bán (đơn vị shop)"
+                                  }
+                                />
+                              )}
                               {line.kind === "accessory" && line.quantity > 1 ? (
                                 <span className="w-16 shrink-0 text-right text-xs font-black text-ink">
-                                  {formatMoney(line.unitPrice * line.quantity)}
+                                  {isSaleSensitiveHidden
+                                    ? "***"
+                                    : formatMoney(line.unitPrice * line.quantity)}
                                 </span>
                               ) : null}
-                              <button
-                                type="button"
-                                onClick={() => removeSaleCartLine(line.key)}
-                                className="rounded-md bg-red-50 p-1.5 text-danger hover:bg-red-100"
-                                title="Xóa"
-                              >
-                                <Trash2 size={14} />
-                              </button>
+                              {!isSaleReadOnly ? (
+                                <button
+                                  type="button"
+                                  onClick={() => removeSaleCartLine(line.key)}
+                                  className="rounded-md bg-red-50 p-1.5 text-danger hover:bg-red-100"
+                                  title="Xóa"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              ) : null}
                             </li>
                           ))}
                         </ul>
@@ -5192,7 +5361,7 @@ export default function Home() {
                           <p className="text-sm font-semibold text-muted">
                             Tổng:{" "}
                             <strong className="text-base font-black text-ink">
-                              {formatMoney(saleCartTotals.amountShort)}
+                              {isSaleSensitiveHidden ? "***" : formatMoney(saleCartTotals.amountShort)}
                             </strong>
                             {salePayStatus === "NỢ DAI" ? (
                               <span className="ml-2 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600">
@@ -5211,33 +5380,46 @@ export default function Home() {
                           <p className="mt-0.5 text-[11px] font-semibold text-muted">
                             Lãi ước tính:{" "}
                             <strong className="font-bold text-emerald-700">
-                              {formatMoney(saleCartTotals.profitShort)}
+                              {isSaleSensitiveHidden ? "***" : formatMoney(saleCartTotals.profitShort)}
                             </strong>
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-1.5">
-                          <button
-                            type="button"
-                            onClick={closeSaleModal}
-                            disabled={saleSaving}
-                            className="inline-flex h-9 items-center justify-center rounded-lg border border-line bg-white px-3 text-sm font-bold text-muted hover:bg-slate-50 disabled:opacity-60"
-                          >
-                            Hủy
-                          </button>
-                          <button
-                            type="submit"
-                            disabled={saleSaving || saleCart.length === 0}
-                            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand px-3.5 text-sm font-bold text-white hover:bg-brand-dark disabled:opacity-60"
-                          >
-                            {saleSaving ? (
-                              <Loader2 size={16} className="animate-spin" />
-                            ) : editingSaleId ? (
-                              <Edit3 size={16} />
-                            ) : (
-                              <Plus size={16} />
-                            )}
-                            {editingSaleId ? "Lưu thay đổi" : "Lưu phiếu bán"}
-                          </button>
+                          {isSaleReadOnly ? (
+                            <button
+                              type="button"
+                              onClick={closeSaleModal}
+                              disabled={saleSaving}
+                              className="inline-flex h-9 items-center justify-center rounded-lg border border-line bg-white px-4 text-sm font-bold text-muted hover:bg-slate-50 disabled:opacity-60"
+                            >
+                              Đóng
+                            </button>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={closeSaleModal}
+                                disabled={saleSaving}
+                                className="inline-flex h-9 items-center justify-center rounded-lg border border-line bg-white px-3 text-sm font-bold text-muted hover:bg-slate-50 disabled:opacity-60"
+                              >
+                                Hủy
+                              </button>
+                              <button
+                                type="submit"
+                                disabled={saleSaving || saleCart.length === 0}
+                                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand px-3.5 text-sm font-bold text-white hover:bg-brand-dark disabled:opacity-60"
+                              >
+                                {saleSaving ? (
+                                  <Loader2 size={16} className="animate-spin" />
+                                ) : editingSaleId ? (
+                                  <Edit3 size={16} />
+                                ) : (
+                                  <Plus size={16} />
+                                )}
+                                {editingSaleId ? "Lưu thay đổi" : "Lưu phiếu bán"}
+                              </button>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -6058,106 +6240,661 @@ export default function Home() {
         )}
 
         {activePage === "software" && (() => {
-          const today = new Date().toLocaleDateString("vi-VN", {
-            day: "2-digit",
-            timeZone: "Asia/Ho_Chi_Minh",
-          });
-          const currentMonth = vnNowMonth();
-          const monthlyServices = softwareServices.filter((s) => s.createdAt.startsWith(currentMonth));
-          const dailyServices = softwareServices.filter((s) => s.createdAt.includes(vnNowDate()));
-          
+          // UI Sửa chữa — clone layout Phần mềm; mock state (shopRepairs), chưa API/DB.
+          const todayString = vnNowDate();
+          const displayDate = shopRepairDate || todayString;
+          const orderTimeKey = (r: ShopRepairOrder) =>
+            (r.receiveDate || r.createdAt || "").replace("T", " ");
+
+          let filteredRepairs = shopRepairs;
+          if (shopRepairDate) {
+            filteredRepairs = filteredRepairs.filter((r) => orderTimeKey(r).includes(shopRepairDate));
+          } else {
+            filteredRepairs = filteredRepairs.filter((r) => orderTimeKey(r).startsWith(shopRepairMonth));
+          }
+          if (shopRepairFilter !== "all") {
+            filteredRepairs = filteredRepairs.filter((r) =>
+              shopRepairFilter === "paid" ? r.isPaid : !r.isPaid
+            );
+          }
+
+          const debtVisibleRepairs = filteredRepairs.filter((r) => r.paymentStatus === "NỢ DAI");
+          const debtVisibleIds = debtVisibleRepairs.map((r) => r.id);
+          const selectedDebtCount = debtVisibleIds.filter((id) =>
+            selectedShopRepairIds.includes(id)
+          ).length;
+          const allDebtSelected =
+            debtVisibleIds.length > 0 &&
+            debtVisibleIds.every((id) => selectedShopRepairIds.includes(id));
+
+          const monthlyRepairs = shopRepairs.filter((r) =>
+            orderTimeKey(r).startsWith(shopRepairMonth)
+          );
+          const dailyRepairs = shopRepairs.filter((r) =>
+            orderTimeKey(r).includes(displayDate)
+          );
+
           return (
-          <section className="grid gap-4 xl:grid-cols-[420px_1fr]">
-            <Panel title={editingSoftwareId ? "Sửa đơn Sửa chữa" : "Tạo đơn Sửa chữa"}>
-              <form key={editingSoftwareId ?? "new"} onSubmit={(e) => {
-                e.preventDefault();
-                const form = new FormData(e.currentTarget);
-                const revenue = Number(form.get("revenue") || 0);
-                const cost = Number(form.get("cost") || 0);
-                
-                if (editingSoftwareId) {
-                  setSoftwareServices(softwareServices.map(s => s.id === editingSoftwareId ? {
-                    ...s,
-                    customerName: String(form.get("customerName")),
-                    deviceName: String(form.get("deviceName")),
-                    quantity: Number(form.get("quantity") || 1),
-                    revenue,
-                    cost,
-                    profit: revenue - cost,
-                    isPaid: form.get("isPaid") === "on",
-                  } : s));
-                  setEditingSoftwareId(null);
-                } else {
-                  const newService: SoftwareService = {
-                    id: `sw${Date.now()}`,
-                    createdAt: vnNowDateTimeLocal().replace("T", " "),
-                    customerName: String(form.get("customerName")),
-                    deviceName: String(form.get("deviceName")),
-                    quantity: Number(form.get("quantity") || 1),
-                    revenue,
-                    cost,
-                    profit: revenue - cost,
-                    isPaid: form.get("isPaid") === "on",
-                  };
-                  setSoftwareServices([newService, ...softwareServices]);
-                }
-                e.currentTarget.reset();
-              }} className="grid gap-3">
-                <Field label="Tên khách hàng / Thợ" required><input name="customerName" required defaultValue={softwareServices.find(s => s.id === editingSoftwareId)?.customerName} className="h-10 rounded-lg border border-line px-3" placeholder="Ví dụ: Anh Đức FB" /></Field>
-                <Field label="Tên máy sửa / Dịch vụ" required><input name="deviceName" required defaultValue={softwareServices.find(s => s.id === editingSoftwareId)?.deviceName} className="h-10 rounded-lg border border-line px-3" placeholder="Ví dụ: A53s, Bypass..." /></Field>
+          <section className="grid gap-4">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">
+              Sửa chữa đang dùng <strong>UI mock</strong> (clone Phần mềm). Chưa kết nối API/DB — dữ liệu reset khi F5.
+            </div>
+
+            {isShopRepairModalOpen && (() => {
+              const formDefaults = editingShopRepairId
+                ? shopRepairs.find((r) => r.id === editingShopRepairId) ?? null
+                : cloneShopRepairDraft;
+              const isCloneMode = !editingShopRepairId && Boolean(cloneShopRepairDraft);
+              return (
+              <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/60 p-4 backdrop-blur-md">
+                <div className="relative my-auto w-full max-w-4xl rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
+                  {shopRepairSaving ? (
+                    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 rounded-2xl bg-white/55 backdrop-blur-sm">
+                      <Loader2 size={40} className="animate-spin text-brand" />
+                      <p className="text-base font-black text-ink">Đang lưu…</p>
+                    </div>
+                  ) : null}
+                  <div className="flex items-center justify-between border-b border-slate-200/60 bg-white/80 p-4 backdrop-blur-md">
+                    <h2 className="text-xl font-black text-brand">
+                      {editingShopRepairId
+                        ? "Sửa đơn Sửa chữa"
+                        : isCloneMode
+                          ? "Tạo đơn (nhân bản)"
+                          : "Tạo đơn Sửa chữa"}
+                    </h2>
+                    <button
+                      type="button"
+                      onClick={closeShopRepairModal}
+                      disabled={shopRepairSaving}
+                      className="grid h-8 w-8 place-items-center rounded-full bg-slate-200 text-slate-500 hover:bg-slate-300 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+                  <div className={`p-4 ${shopRepairSaving ? "pointer-events-none select-none" : ""}`}>
+                    {isCloneMode ? (
+                      <div className="mb-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800">
+                        Đã copy thông tin đơn mẫu — sửa nếu cần, rồi lưu thành đơn mới (mock).
+                      </div>
+                    ) : null}
+                    <form
+                      key={
+                        editingShopRepairId ??
+                        (isCloneMode ? `clone-${cloneShopRepairFormKey}` : "new")
+                      }
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (shopRepairSaving) return;
+                        saveShopRepairFromForm(new FormData(e.currentTarget));
+                      }}
+                      className="grid gap-3"
+                      autoComplete="off"
+                      spellCheck={false}
+                    >
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Số lượng"><input name="quantity" type="number" min="1" defaultValue={softwareServices.find(s => s.id === editingSoftwareId)?.quantity ?? 1} className="h-10 rounded-lg border border-line px-3" /></Field>
-                  <Field label="Giá (Doanh thu)"><input name="revenue" type="number" min="0" required defaultValue={softwareServices.find(s => s.id === editingSoftwareId)?.revenue ?? 0} className="h-10 rounded-lg border border-line px-3" /></Field>
+                  <ManageableSelect
+                    label="Khách hàng"
+                    name="customerName"
+                    options={shopRepairCustomerOptions}
+                    setOptions={setShopRepairCustomerOptions}
+                    defaultValue={formDefaults?.customerName}
+                    allowManage
+                    allowFreeText
+                    actorUsername={currentUser?.username ?? ""}
+                  />
+                  <ManageableSelect
+                    label="Tên máy"
+                    name="deviceName"
+                    options={shopRepairDeviceOptions}
+                    setOptions={setShopRepairDeviceOptions}
+                    defaultValue={formDefaults?.deviceName}
+                    allowManage
+                    allowFreeText
+                    actorUsername={currentUser?.username ?? ""}
+                  />
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Phí DV (Chi phí)"><input name="cost" type="number" min="0" required defaultValue={softwareServices.find(s => s.id === editingSoftwareId)?.cost ?? 0} className="h-10 rounded-lg border border-line px-3" /></Field>
-                  <label className="flex items-center gap-2 pt-6 font-bold cursor-pointer">
-                    <input name="isPaid" type="checkbox" defaultChecked={softwareServices.find(s => s.id === editingSoftwareId)?.isPaid ?? true} className="h-5 w-5 accent-brand" /> Đã thanh toán
-                  </label>
+                  <ManageableSelect
+                    label="Báo giá"
+                    name="quote"
+                    options={shopRepairQuoteOptions}
+                    setOptions={(next) => setShopRepairQuoteOptions(sortMoneyLabelsAsc(next))}
+                    defaultValue={formatInputMoney(formDefaults?.quote ?? "")}
+                    allowManage
+                    allowFreeText
+                    actorUsername={currentUser?.username ?? ""}
+                  />
+                  <ManageableSelect
+                    label="Phí dịch vụ / cọc"
+                    name="deposit"
+                    options={shopRepairFeeOptions}
+                    setOptions={(next) => setShopRepairFeeOptions(sortMoneyLabelsAsc(next))}
+                    defaultValue={formatInputMoney(
+                      formDefaults != null ? formDefaults.deposit ?? 0 : 0
+                    )}
+                    allowManage
+                    allowFreeText
+                    actorUsername={currentUser?.username ?? ""}
+                  />
                 </div>
-                <div className="flex gap-2">
-                  {editingSoftwareId && <button type="button" onClick={() => setEditingSoftwareId(null)} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-100 px-4 font-bold text-slate-700 hover:bg-slate-200">Hủy</button>}
-                  <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white"><Plus size={18} />{editingSoftwareId ? "Lưu sửa" : "Thêm đơn"}</button>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {(() => {
+                    const raw = formDefaults?.receiveDate || vnNowDateTimeLocal();
+                    const local = String(raw).slice(0, 16).replace(" ", "T");
+                    const [datePart = "", timePart = ""] = local.includes("T")
+                      ? local.split("T")
+                      : [local.slice(0, 10), "00:00"];
+                    const [hourPart = "00", minutePart = "00"] = (timePart || "00:00")
+                      .slice(0, 5)
+                      .split(":");
+                    const hours = Array.from({ length: 24 }, (_, i) =>
+                      String(i).padStart(2, "0")
+                    );
+                    const minutes = Array.from({ length: 60 }, (_, i) =>
+                      String(i).padStart(2, "0")
+                    );
+                    return (
+                      <div className="grid min-w-0 gap-1.5 sm:col-span-1">
+                        <span className="text-base font-black text-slate-950">
+                          Ngày & giờ <span className="ml-1 text-red-500">*</span>
+                        </span>
+                        <div className="grid min-w-0 grid-cols-[minmax(0,1.4fr)_minmax(0,0.7fr)_minmax(0,0.7fr)] gap-2">
+                          <label className="grid min-w-0 gap-1">
+                            <span className="text-xs font-bold text-brand">Ngày</span>
+                            <input
+                              name="receiveDatePart"
+                              type="date"
+                              required
+                              defaultValue={datePart}
+                              className="h-10 w-full min-w-0 rounded-lg border border-line bg-brand-soft/40 px-2 text-sm font-black text-brand outline-none focus:border-brand"
+                            />
+                          </label>
+                          <label className="grid min-w-0 gap-1">
+                            <span className="text-xs font-bold text-amber-800">Giờ</span>
+                            <select
+                              name="receiveHour"
+                              required
+                              defaultValue={hourPart.padStart(2, "0")}
+                              className="h-10 w-full min-w-0 rounded-lg border border-line bg-amber-50 px-1.5 text-sm font-black text-amber-900 outline-none focus:border-amber-500"
+                            >
+                              {hours.map((h) => (
+                                <option key={`h-${h}`} value={h}>{h}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="grid min-w-0 gap-1">
+                            <span className="text-xs font-bold text-amber-800">Phút</span>
+                            <select
+                              name="receiveMinute"
+                              required
+                              defaultValue={minutePart.padStart(2, "0")}
+                              className="h-10 w-full min-w-0 rounded-lg border border-line bg-amber-50 px-1.5 text-sm font-black text-amber-900 outline-none focus:border-amber-500"
+                            >
+                              {minutes.map((m) => (
+                                <option key={`m-${m}`} value={m}>{m}</option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  <Field label="Thanh toán" required>
+                    <select
+                      name="paymentStatus"
+                      required
+                      defaultValue={formDefaults?.paymentStatus ?? "NỢ DAI"}
+                      className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
+                    >
+                      <option value="NỢ DAI">NỢ DAI</option>
+                      <option value="Đã thanh toán">Đã thanh toán</option>
+                    </select>
+                  </Field>
+                </div>
+                <div className="flex justify-end gap-2 border-t border-line pt-4">
+                  <button
+                    type="button"
+                    onClick={closeShopRepairModal}
+                    disabled={shopRepairSaving}
+                    className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted disabled:opacity-50"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={shopRepairSaving}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {shopRepairSaving ? (
+                      <Loader2 size={18} className="animate-spin" />
+                    ) : editingShopRepairId ? (
+                      <Edit3 size={18} />
+                    ) : isCloneMode ? (
+                      <CopyPlus size={18} />
+                    ) : (
+                      <Plus size={18} />
+                    )}
+                    {shopRepairSaving
+                      ? "Đang lưu…"
+                      : editingShopRepairId
+                        ? "Lưu thay đổi"
+                        : isCloneMode
+                          ? "Lưu đơn mới"
+                          : "Tạo đơn"}
+                  </button>
                 </div>
               </form>
-            </Panel>
-            <div className="grid gap-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="rounded-lg border border-brand bg-emerald-50 p-4">
-                  <span className="block text-sm font-bold text-emerald-800">Tháng {Number(vnNowMonth().slice(5, 7))} (Doanh thu)</span>
-                  <strong className="text-3xl text-emerald-700">{formatMoney(monthlyServices.reduce((sum, s) => sum + s.revenue, 0))}</strong>
-                </div>
-                <div className="rounded-lg border border-line bg-white p-4 shadow-sm">
-                  <span className="block text-sm font-bold text-slate-500">Ngày {today} (Doanh thu)</span>
-                  <strong className="text-3xl text-red-600">{formatMoney(dailyServices.reduce((sum, s) => sum + s.revenue, 0))}</strong>
+                  </div>
                 </div>
               </div>
+              );
+            })()}
+
+            <div className="grid gap-4">
+              <div className="rounded-lg bg-gradient-to-br from-emerald-800 via-brand to-teal-700 p-4 sm:p-5 text-white shadow relative overflow-hidden flex flex-col md:flex-row justify-between items-center md:text-left text-center gap-4 mb-4">
+                <div className="absolute top-0 right-0 -mt-16 -mr-16 h-64 w-64 rounded-full bg-white/10 blur-3xl mix-blend-overlay pointer-events-none"></div>
+                <div className="absolute bottom-0 left-0 -mb-16 -ml-16 h-48 w-48 rounded-full bg-white/10 blur-2xl pointer-events-none"></div>
+                <div className="relative z-10 md:w-1/2">
+                  <h1 className="text-lg sm:text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500 drop-shadow-sm uppercase tracking-tight">
+                    Trung Tâm Sửa Chữa Điện Thoại Di Động
+                  </h1>
+                </div>
+                <div className="relative z-10 md:w-1/2 flex flex-col md:items-end gap-1">
+                  <p className="font-bold text-white/95 flex items-center gap-2 text-xs sm:text-sm">
+                    <span className="flex h-1.5 w-1.5 rounded-full bg-yellow-400 shrink-0 hidden md:block"></span>
+                    Nhanh — Uy tín — Bảo hành rõ ràng
+                  </p>
+                  <p className="font-semibold text-white/80 flex items-center gap-2 text-xs sm:text-sm">
+                    <span className="flex h-1.5 w-1.5 rounded-full bg-white/50 shrink-0 hidden md:block"></span>
+                    UI mock · chờ chốt rồi gắn API/DB
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-lg border border-brand bg-emerald-50 p-4">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="block text-sm font-bold text-emerald-800">Lợi nhuận Tháng</span>
+                    <input
+                      type="month"
+                      value={shopRepairMonth}
+                      onChange={(e) => {
+                        setShopRepairMonth(e.target.value);
+                        setSelectedShopRepairIds([]);
+                      }}
+                      className="h-8 rounded border border-emerald-200 bg-white px-2 text-sm font-semibold text-emerald-800"
+                    />
+                  </div>
+                  <strong className="text-3xl text-emerald-700">
+                    {isShopRepairSensitiveHidden
+                      ? "*** ₫"
+                      : formatMoney(monthlyRepairs.reduce((sum, r) => sum + (r.quote - r.deposit), 0))}
+                  </strong>
+                  <div className="mt-2 flex items-center justify-between border-t border-emerald-200/50 pt-2 text-sm font-semibold text-emerald-700/80">
+                    <span>Dư nợ tháng:</span>
+                    <span>
+                      {isShopRepairSensitiveHidden
+                        ? "***"
+                        : formatMoney(
+                            monthlyRepairs
+                              .filter((r) => r.paymentStatus === "NỢ DAI")
+                              .reduce((sum, r) => sum + r.quote, 0)
+                          )}
+                    </span>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-line bg-white p-4 shadow-sm">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="block text-sm font-bold text-slate-500">Lợi nhuận Ngày</span>
+                    <input
+                      type="date"
+                      value={displayDate}
+                      onChange={(e) => setShopRepairDate(e.target.value)}
+                      className="h-8 rounded border border-line bg-slate-50 px-2 text-sm font-semibold text-slate-700"
+                    />
+                  </div>
+                  <strong className="text-3xl text-red-600">
+                    {isShopRepairSensitiveHidden
+                      ? "*** ₫"
+                      : formatMoney(dailyRepairs.reduce((sum, r) => sum + (r.quote - r.deposit), 0))}
+                  </strong>
+                  <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 text-sm font-semibold text-slate-500">
+                    <span>Dư nợ ngày:</span>
+                    <span>
+                      {isShopRepairSensitiveHidden
+                        ? "***"
+                        : formatMoney(
+                            dailyRepairs
+                              .filter((r) => r.paymentStatus === "NỢ DAI")
+                              .reduce((sum, r) => sum + r.quote, 0)
+                          )}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               <Panel title="Danh sách Sửa chữa">
-                <DataTable
-                  headers={["Khách hàng", "Tên máy", "SL", "Giá", "Phí DV", "Tổng", "TT", "Giờ", ""]}
-                  rows={softwareServices.map((item) => [
-                    <span key={item.id} className="font-bold text-brand">{item.customerName}</span>,
-                    <span key={item.id} className="font-semibold text-slate-700">{item.deviceName}</span>,
-                    item.quantity,
-                    formatMoney(item.revenue),
-                    formatMoney(item.cost),
-                    <span key={item.id} className="font-black text-amber-700">{formatMoney(item.profit)}</span>,
-                    <input 
-                      key={item.id} 
-                      type="checkbox" 
-                      checked={item.isPaid} 
-                      onChange={(e) => setSoftwareServices(softwareServices.map(s => s.id === item.id ? {...s, isPaid: e.target.checked} : s))}
-                      className="h-5 w-5 accent-brand cursor-pointer" 
-                    />,
-                    <span key={item.id} className="text-sm font-semibold text-slate-500">{item.createdAt.slice(11, 16)}</span>,
-                    <div key={item.id} className="flex gap-2">
-                      <button onClick={() => { setEditingSoftwareId(item.id); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="text-brand hover:text-brand-dark"><Edit3 size={16} /></button>
-                      <button onClick={() => setSoftwareServices(softwareServices.filter(s => s.id !== item.id))} className="text-danger hover:text-red-700"><Trash2 size={16} /></button>
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={shopRepairFilter}
+                      onChange={(e) => {
+                        setShopRepairFilter(e.target.value);
+                        setSelectedShopRepairIds([]);
+                      }}
+                      className="h-10 rounded-lg border border-line px-3 text-sm font-bold"
+                    >
+                      <option value="all">Tất cả trạng thái</option>
+                      <option value="paid">Đã thanh toán</option>
+                      <option value="unpaid">NỢ DAI</option>
+                    </select>
+                    <div className="flex items-center gap-2 rounded-lg border border-line bg-slate-50 px-2">
+                      <span className="text-sm font-semibold text-slate-500">Lọc ngày:</span>
+                      <input
+                        type="date"
+                        value={shopRepairDate}
+                        onChange={(e) => {
+                          setShopRepairDate(e.target.value);
+                          setSelectedShopRepairIds([]);
+                        }}
+                        className="h-8 rounded border border-line px-2 text-sm"
+                      />
+                      {shopRepairDate ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShopRepairDate("");
+                            setSelectedShopRepairIds([]);
+                          }}
+                          className="text-sm font-bold text-brand hover:underline"
+                        >
+                          Tất cả tháng
+                        </button>
+                      ) : null}
                     </div>
-                  ])}
-                />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={selectedDebtCount === 0}
+                      onClick={() => markSelectedShopRepairsPaid(debtVisibleRepairs)}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      title="Đánh dấu các đơn NỢ DAI đã chọn → Đã thanh toán"
+                    >
+                      <CheckCircle2 size={18} />
+                      {selectedDebtCount > 0
+                        ? `Thanh toán (${selectedDebtCount})`
+                        : "Thanh toán"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsShopRepairSensitiveHidden((v) => !v)}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-line bg-white px-3 font-bold text-slate-600 shadow-sm transition hover:bg-slate-50"
+                    >
+                      {isShopRepairSensitiveHidden ? <EyeOff size={18} /> : <Eye size={18} />}
+                      {isShopRepairSensitiveHidden ? "Hiện" : "Ẩn"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingShopRepairId(null);
+                        setCloneShopRepairDraft(null);
+                        setIsShopRepairModalOpen(true);
+                      }}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white shadow hover:bg-brand-dark"
+                    >
+                      <Plus size={18} /> Tạo đơn mới
+                    </button>
+                  </div>
+                </div>
+                <div className="overflow-x-auto pb-4">
+                  <DataTable
+                    headers={[
+                      "",
+                      "Khách hàng",
+                      "Tên máy",
+                      "Báo giá",
+                      "Phí / cọc",
+                      "Lãi",
+                      "Giờ",
+                      "Trạng thái TT",
+                      "Thao tác",
+                    ]}
+                    rows={filteredRepairs.map((item) => {
+                      const isNợ = item.paymentStatus === "NỢ DAI";
+                      const isDaThanhToan = item.paymentStatus === "Đã thanh toán";
+                      const isChecked = selectedShopRepairIds.includes(item.id);
+                      return [
+                        <div
+                          key={`chk-${item.id}`}
+                          className="flex items-center justify-center"
+                          onClick={(e) => e.stopPropagation()}
+                          onMouseDown={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 accent-brand"
+                            checked={isChecked}
+                            disabled={!isNợ}
+                            title={isNợ ? "Chọn để thanh toán" : "Chỉ chọn được đơn NỢ DAI"}
+                            onChange={(e) => {
+                              const on = e.target.checked;
+                              setSelectedShopRepairIds((prev) => {
+                                if (on) return prev.includes(item.id) ? prev : [...prev, item.id];
+                                return prev.filter((x) => x !== item.id);
+                              });
+                            }}
+                          />
+                        </div>,
+                        <span key={`c-${item.id}`} className="font-bold text-brand whitespace-nowrap">
+                          {item.customerName}
+                        </span>,
+                        <span key={`d-${item.id}`} className="font-semibold text-slate-700 whitespace-nowrap">
+                          {item.deviceName}
+                        </span>,
+                        formatMoney(item.quote),
+                        isShopRepairSensitiveHidden ? "***" : formatMoney(item.deposit),
+                        <span key={`p-${item.id}`} className="font-black text-amber-700">
+                          {isShopRepairSensitiveHidden
+                            ? "***"
+                            : formatMoney(item.quote - item.deposit)}
+                        </span>,
+                        <ColoredDateTime key={`dt-${item.id}`} value={item.receiveDate} />,
+                        <span
+                          key={`st-${item.id}`}
+                          className={`inline-flex h-8 items-center rounded text-xs font-bold px-2 shadow-sm border border-line ${
+                            isNợ
+                              ? "bg-red-50 text-red-600"
+                              : isDaThanhToan
+                                ? "bg-emerald-50 text-emerald-600"
+                                : "bg-slate-50 text-slate-600"
+                          }`}
+                        >
+                          {isDaThanhToan ? "✅ Đã thanh toán" : "❌ NỢ DAI"}
+                        </span>,
+                        <div key={`act-${item.id}`} className="flex flex-nowrap items-center justify-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setViewingShopRepairId(item.id)}
+                            title="Chi tiết"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-900"
+                          >
+                            <Eye size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCloneShopRepairDraft(null);
+                              setEditingShopRepairId(item.id);
+                              setIsShopRepairModalOpen(true);
+                            }}
+                            title="Sửa"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20"
+                          >
+                            <Edit3 size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openShopRepairCloneModal(item.id)}
+                            title="Nhân bản thêm mới"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100"
+                          >
+                            <CopyPlus size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => deleteShopRepair(item.id)}
+                            title="Xóa đơn"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>,
+                      ];
+                    })}
+                  />
+                </div>
+                {debtVisibleIds.length > 0 ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-3 border-t border-line pt-3">
+                    <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-bold text-slate-700">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-brand"
+                        checked={allDebtSelected}
+                        onChange={(e) => {
+                          const on = e.target.checked;
+                          setSelectedShopRepairIds((prev) => {
+                            if (on) {
+                              const set = new Set(prev);
+                              debtVisibleIds.forEach((id) => set.add(id));
+                              return Array.from(set);
+                            }
+                            return prev.filter((id) => !debtVisibleIds.includes(id));
+                          });
+                        }}
+                      />
+                      Chọn tất cả NỢ DAI trên lưới ({debtVisibleIds.length})
+                    </label>
+                    {selectedDebtCount > 0 ? (
+                      <span className="text-sm font-semibold text-muted">
+                        Đã chọn {selectedDebtCount} đơn nợ
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
               </Panel>
             </div>
+
+            {viewingShopRepair && (
+              <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-md">
+                <section className="max-h-[92vh] w-full max-w-[640px] overflow-auto rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
+                  <div className="flex items-center justify-between border-b border-slate-200/60 bg-gradient-to-r from-brand/10 to-transparent p-5">
+                    <h2 className="text-xl font-black text-brand">Chi tiết đơn sửa chữa</h2>
+                    <button
+                      type="button"
+                      onClick={() => setViewingShopRepairId(null)}
+                      className="h-9 rounded-xl border border-slate-200/60 bg-white/50 px-4 text-sm font-bold text-slate-600 backdrop-blur-md transition hover:bg-white hover:text-slate-900"
+                    >
+                      Đóng
+                    </button>
+                  </div>
+                  <div className="grid gap-4 p-5">
+                    <div className="flex items-center gap-3">
+                      <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-brand-soft text-brand">
+                        <Wrench size={24} />
+                      </div>
+                      <div>
+                        <strong className="block text-lg">{viewingShopRepair.customerName}</strong>
+                        <span className="text-sm font-semibold text-muted">{viewingShopRepair.deviceName}</span>
+                      </div>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label="Khách hàng">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-bold text-brand">
+                          {viewingShopRepair.customerName}
+                        </div>
+                      </Field>
+                      <Field label="Loại khách">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">
+                          {viewingShopRepair.customerType || "Vãng lai"}
+                        </div>
+                      </Field>
+                      <Field label="Tên máy">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-semibold text-slate-800">
+                          {viewingShopRepair.deviceName}
+                        </div>
+                      </Field>
+                      <Field label="Trạng thái thanh toán">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3">
+                          <span
+                            className={`inline-flex h-8 items-center rounded px-2 text-xs font-bold ${
+                              viewingShopRepair.paymentStatus === "Đã thanh toán"
+                                ? "bg-emerald-50 text-emerald-600"
+                                : "bg-red-50 text-red-600"
+                            }`}
+                          >
+                            {viewingShopRepair.paymentStatus === "Đã thanh toán"
+                              ? "✅ Đã thanh toán"
+                              : "❌ NỢ DAI"}
+                          </span>
+                        </div>
+                      </Field>
+                      <Field label="Báo giá">
+                        <div className="flex h-12 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-xl font-black text-slate-800">
+                          {formatMoney(viewingShopRepair.quote)}
+                        </div>
+                      </Field>
+                      <Field label="Phí / cọc">
+                        <div className="flex h-12 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-xl font-black text-slate-700">
+                          {formatMoney(viewingShopRepair.deposit)}
+                        </div>
+                      </Field>
+                      <Field label="Lãi">
+                        <div className="flex h-12 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-xl font-black text-amber-700">
+                          {formatMoney(viewingShopRepair.quote - viewingShopRepair.deposit)}
+                        </div>
+                      </Field>
+                      <Field label="Giờ nhận">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3">
+                          <ColoredDateTime value={viewingShopRepair.receiveDate} size="md" />
+                        </div>
+                      </Field>
+                      <Field label="Ghi chú / Lỗi">
+                        <div className="flex min-h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 py-2 text-slate-800 sm:col-span-2">
+                          {viewingShopRepair.issue?.trim() || "Không có"}
+                        </div>
+                      </Field>
+                      <Field label="Mã đơn">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-mono text-xs text-slate-600">
+                          {viewingShopRepair.id}
+                        </div>
+                      </Field>
+                    </div>
+                    <div className="flex justify-end gap-2 border-t border-line pt-4">
+                      <button
+                        type="button"
+                        onClick={() => setViewingShopRepairId(null)}
+                        className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted"
+                      >
+                        Đóng
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setViewingShopRepairId(null);
+                          setCloneShopRepairDraft(null);
+                          setEditingShopRepairId(viewingShopRepair.id);
+                          setIsShopRepairModalOpen(true);
+                        }}
+                        className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark"
+                      >
+                        <Edit3 size={16} /> Sửa đơn
+                      </button>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            )}
           </section>
           );
         })()}
