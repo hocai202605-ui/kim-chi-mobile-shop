@@ -556,10 +556,10 @@ const navItems = [
   { id: "sales", label: "BÁN HÀNG", icon: ReceiptText },
   { id: "online-repairs", label: "PHẦN MỀM", icon: Terminal },
   { id: "inventory", label: "KHO HÀNG", icon: Boxes },
+  { id: "software", label: "SỬA CHỮA", icon: Wrench },
   { id: "parts", label: "LINH KIỆN", icon: Cpu },
   { id: "inbound", label: "NHẬP HÀNG", icon: PackagePlus },
   { id: "inventoryReports", label: "BÁO CÁO KHO HÀNG", icon: FileText },
-  { id: "software", label: "SỬA CHỮA", icon: Wrench },
   { id: "customers", label: "KHÁCH HÀNG", icon: Users },
   { id: "ledger", label: "CÔNG NỢ", icon: CreditCard },
   { id: "logs", label: "NHẬT KÝ", icon: ClipboardList },
@@ -3366,8 +3366,8 @@ export default function Home() {
                 : "border-sky-400/25 bg-sky-500/15 text-sky-100 hover:border-sky-300/40 hover:bg-sky-500/25 hover:text-white"
               : isSoftwarePm
                 ? isActive
-                  ? "border-amber-300/50 bg-amber-600 text-white shadow-[0_10px_24px_rgba(217,119,6,0.35)]"
-                  : "border-amber-400/25 bg-amber-500/15 text-amber-100 hover:border-amber-300/40 hover:bg-amber-500/25 hover:text-white"
+                  ? "border-yellow-300/60 bg-violet-700 text-yellow-300 shadow-[0_10px_24px_rgba(109,40,217,0.4)]"
+                  : "border-violet-400/40 bg-violet-700/90 text-yellow-300 hover:border-yellow-300/50 hover:bg-violet-600 hover:text-yellow-200"
                 : isActive
                   ? "border-emerald-300/40 bg-brand text-white shadow-[0_10px_24px_rgba(15,139,98,0.32)]"
                   : "border-white/5 bg-white/[0.04] text-slate-300 hover:border-emerald-300/25 hover:bg-white/[0.09] hover:text-white";
@@ -3377,8 +3377,8 @@ export default function Home() {
                 : "bg-sky-400/20 text-sky-100 group-hover:bg-sky-400/30"
               : isSoftwarePm
                 ? isActive
-                  ? "bg-white/20 text-white"
-                  : "bg-amber-400/20 text-amber-100 group-hover:bg-amber-400/30"
+                  ? "bg-yellow-300/20 text-yellow-300"
+                  : "bg-yellow-300/15 text-yellow-300 group-hover:bg-yellow-300/25"
                 : isActive
                   ? "bg-white/18 text-white"
                   : "bg-white/[0.06] text-emerald-100 group-hover:bg-white/[0.12]";
