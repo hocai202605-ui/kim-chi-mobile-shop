@@ -6450,7 +6450,7 @@ export default function Home() {
                     actorUsername={currentUser?.username ?? ""}
                   />
                   <ManageableSelect
-                    label="Phí dịch vụ / cọc"
+                    label="Phí dịch vụ"
                     name="deposit"
                     options={shopRepairFeeOptions}
                     setOptions={(next) => setShopRepairFeeOptions(sortMoneyLabelsAsc(next))}
@@ -6741,10 +6741,8 @@ export default function Home() {
                       "Tên máy",
                       "Tình trạng",
                       "Bảo hành",
-                      "IMEI",
-                      "SĐT / Pass",
                       "Báo giá",
-                      "Phí dịch vụ / cọc",
+                      "Phí dịch vụ",
                       "Lãi",
                       "Ngày & giờ",
                       "Thanh toán",
@@ -6787,12 +6785,6 @@ export default function Home() {
                         </span>,
                         <span key={`war-${item.id}`} className="font-semibold text-slate-600 whitespace-nowrap">
                           {item.warranty?.trim() || "—"}
-                        </span>,
-                        <span key={`imei-${item.id}`} className="font-mono text-xs font-semibold text-slate-600 whitespace-nowrap">
-                          {item.imei?.trim() || "—"}
-                        </span>,
-                        <span key={`pp-${item.id}`} className="font-semibold text-slate-600 whitespace-nowrap">
-                          {item.phoneOrPass?.trim() || "—"}
                         </span>,
                         formatMoney(item.quote),
                         isShopRepairSensitiveHidden ? "***" : formatMoney(item.deposit),
@@ -6966,7 +6958,7 @@ export default function Home() {
                           {formatMoney(viewingShopRepair.quote)}
                         </div>
                       </Field>
-                      <Field label="Phí / cọc">
+                      <Field label="Phí dịch vụ">
                         <div className="flex h-12 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-xl font-black text-slate-700">
                           {formatMoney(viewingShopRepair.deposit)}
                         </div>
