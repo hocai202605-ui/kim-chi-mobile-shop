@@ -971,6 +971,11 @@ export default function Home() {
   const [shopRepairFilter, setShopRepairFilter] = useState("all");
   const [shopRepairMonth, setShopRepairMonth] = useState(() => vnNowMonth());
   const [shopRepairDate, setShopRepairDate] = useState(() => vnNowDate());
+  /** Tìm grid sửa chữa: gõ tay + chọn droplist. */
+  const [shopRepairSearchCustomer, setShopRepairSearchCustomer] = useState("");
+  const [shopRepairSearchDevice, setShopRepairSearchDevice] = useState("");
+  const [shopRepairSearchCondition, setShopRepairSearchCondition] = useState("");
+  const [shopRepairSearchWarranty, setShopRepairSearchWarranty] = useState("");
   const [selectedShopRepairIds, setSelectedShopRepairIds] = useState<string[]>([]);
   const [shopRepairSaving, setShopRepairSaving] = useState(false);
   const [shopRepairCustomerOptions, setShopRepairCustomerOptions] =
@@ -6284,6 +6289,9 @@ export default function Home() {
           const orderTimeKey = (r: ShopRepairOrder) =>
             (r.receiveDate || r.createdAt || "").replace("T", " ");
 
+          const includesVi = (hay: string, needle: string) =>
+            hay.toLowerCase().includes(needle.trim().toLowerCase());
+
           let filteredRepairs = shopRepairs;
           if (shopRepairDate) {
             filteredRepairs = filteredRepairs.filter((r) => orderTimeKey(r).includes(shopRepairDate));
@@ -6295,6 +6303,52 @@ export default function Home() {
               shopRepairFilter === "paid" ? r.isPaid : !r.isPaid
             );
           }
+          if (shopRepairSearchCustomer.trim()) {
+            filteredRepairs = filteredRepairs.filter((r) =>
+              includesVi(r.customerName, shopRepairSearchCustomer)
+            );
+          }
+          if (shopRepairSearchDevice.trim()) {
+            filteredRepairs = filteredRepairs.filter((r) =>
+              includesVi(r.deviceName, shopRepairSearchDevice)
+            );
+          }
+          if (shopRepairSearchCondition.trim()) {
+            filteredRepairs = filteredRepairs.filter((r) =>
+              includesVi(r.condition || "", shopRepairSearchCondition)
+            );
+          }
+          if (shopRepairSearchWarranty.trim()) {
+            filteredRepairs = filteredRepairs.filter((r) =>
+              includesVi(r.warranty || "", shopRepairSearchWarranty)
+            );
+          }
+
+          const uniqSorted = (values: string[]) =>
+            Array.from(new Set(values.map((v) => v.trim()).filter(Boolean))).sort((a, b) =>
+              a.localeCompare(b, "vi", { sensitivity: "base" })
+            );
+          const shopRepairSearchCustomerOptions = uniqSorted([
+            ...shopRepairCustomerOptions,
+            ...shopRepairs.map((r) => r.customerName),
+          ]);
+          const shopRepairSearchDeviceOptions = uniqSorted([
+            ...shopRepairDeviceOptions,
+            ...shopRepairs.map((r) => r.deviceName),
+          ]);
+          const shopRepairSearchConditionOptions = uniqSorted([
+            ...shopRepairConditionOptions,
+            ...shopRepairs.map((r) => r.condition),
+          ]);
+          const shopRepairSearchWarrantyOptions = uniqSorted([
+            ...shopRepairWarrantyOptions,
+            ...shopRepairs.map((r) => r.warranty),
+          ]);
+          const hasShopRepairTextSearch =
+            Boolean(shopRepairSearchCustomer.trim()) ||
+            Boolean(shopRepairSearchDevice.trim()) ||
+            Boolean(shopRepairSearchCondition.trim()) ||
+            Boolean(shopRepairSearchWarranty.trim());
 
           const debtVisibleRepairs = filteredRepairs.filter((r) => r.paymentStatus === "NỢ DAI");
           const debtVisibleIds = debtVisibleRepairs.map((r) => r.id);
@@ -6732,6 +6786,104 @@ export default function Home() {
                     </button>
                   </div>
                 </div>
+                <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="relative min-w-0">
+                    <Search className="pointer-events-none absolute left-3 top-2.5 text-muted" size={16} />
+                    <input
+                      list="shop-repair-search-customer"
+                      value={shopRepairSearchCustomer}
+                      onChange={(e) => {
+                        setShopRepairSearchCustomer(e.target.value);
+                        setSelectedShopRepairIds([]);
+                      }}
+                      placeholder="Khách hàng…"
+                      className="h-10 w-full rounded-lg border border-line bg-white py-2 pl-9 pr-3 text-sm font-semibold outline-none focus:border-brand"
+                      autoComplete="off"
+                    />
+                    <datalist id="shop-repair-search-customer">
+                      {shopRepairSearchCustomerOptions.map((name) => (
+                        <option key={`sc-${name}`} value={name} />
+                      ))}
+                    </datalist>
+                  </div>
+                  <div className="relative min-w-0">
+                    <Search className="pointer-events-none absolute left-3 top-2.5 text-muted" size={16} />
+                    <input
+                      list="shop-repair-search-device"
+                      value={shopRepairSearchDevice}
+                      onChange={(e) => {
+                        setShopRepairSearchDevice(e.target.value);
+                        setSelectedShopRepairIds([]);
+                      }}
+                      placeholder="Tên máy…"
+                      className="h-10 w-full rounded-lg border border-line bg-white py-2 pl-9 pr-3 text-sm font-semibold outline-none focus:border-brand"
+                      autoComplete="off"
+                    />
+                    <datalist id="shop-repair-search-device">
+                      {shopRepairSearchDeviceOptions.map((name) => (
+                        <option key={`sd-${name}`} value={name} />
+                      ))}
+                    </datalist>
+                  </div>
+                  <div className="relative min-w-0">
+                    <Search className="pointer-events-none absolute left-3 top-2.5 text-muted" size={16} />
+                    <input
+                      list="shop-repair-search-condition"
+                      value={shopRepairSearchCondition}
+                      onChange={(e) => {
+                        setShopRepairSearchCondition(e.target.value);
+                        setSelectedShopRepairIds([]);
+                      }}
+                      placeholder="Tình trạng…"
+                      className="h-10 w-full rounded-lg border border-line bg-white py-2 pl-9 pr-3 text-sm font-semibold outline-none focus:border-brand"
+                      autoComplete="off"
+                    />
+                    <datalist id="shop-repair-search-condition">
+                      {shopRepairSearchConditionOptions.map((name) => (
+                        <option key={`scond-${name}`} value={name} />
+                      ))}
+                    </datalist>
+                  </div>
+                  <div className="relative min-w-0">
+                    <Search className="pointer-events-none absolute left-3 top-2.5 text-muted" size={16} />
+                    <input
+                      list="shop-repair-search-warranty"
+                      value={shopRepairSearchWarranty}
+                      onChange={(e) => {
+                        setShopRepairSearchWarranty(e.target.value);
+                        setSelectedShopRepairIds([]);
+                      }}
+                      placeholder="Bảo hành…"
+                      className="h-10 w-full rounded-lg border border-line bg-white py-2 pl-9 pr-3 text-sm font-semibold outline-none focus:border-brand"
+                      autoComplete="off"
+                    />
+                    <datalist id="shop-repair-search-warranty">
+                      {shopRepairSearchWarrantyOptions.map((name) => (
+                        <option key={`sw-${name}`} value={name} />
+                      ))}
+                    </datalist>
+                  </div>
+                </div>
+                {hasShopRepairTextSearch ? (
+                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold text-muted">
+                      Đang lọc · {filteredRepairs.length} đơn
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShopRepairSearchCustomer("");
+                        setShopRepairSearchDevice("");
+                        setShopRepairSearchCondition("");
+                        setShopRepairSearchWarranty("");
+                        setSelectedShopRepairIds([]);
+                      }}
+                      className="h-9 rounded-lg border border-line bg-white px-3 text-sm font-bold text-muted hover:bg-slate-50"
+                    >
+                      Xóa tìm kiếm
+                    </button>
+                  </div>
+                ) : null}
                 <div className="overflow-x-auto pb-4">
                   <DataTable
                     compact
