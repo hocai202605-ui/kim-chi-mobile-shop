@@ -71,6 +71,8 @@ export type CreatedSale = {
   quantity: number;
   /** Short shop (DB VND ÷ 1000). */
   amount: number;
+  /** Short shop (DB VND ÷ 1000) — giá nhập / vốn phiếu. */
+  cost: number;
   /** Short shop (DB VND ÷ 1000). */
   profit: number;
   payment: string;
@@ -1320,6 +1322,7 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
       itemType,
       quantity: totalQty,
       amount: vndToShopMoney(totalAmount),
+      cost: vndToShopMoney(totalCost),
       profit: vndToShopMoney(totalProfit),
       payment: paymentToUi(input.payment),
       status: "Hoàn tất" as const,
@@ -1459,6 +1462,7 @@ export async function repoGetSale(saleId: string): Promise<SaleDetail> {
     itemType,
     quantity: lines.reduce((s, l) => s + (l.kind === "phone" ? 1 : l.quantity), 0),
     amount: vndToShopMoney(Number(sale.total_amount) || 0),
+    cost: vndToShopMoney(Number(sale.total_cost) || 0),
     profit: vndToShopMoney(Number(sale.total_profit) || 0),
     payment: paymentToUi(String(sale.payment_method)),
     status: sale.status === "cancelled" ? ("Đã hủy" as const) : ("Hoàn tất" as const),
@@ -1476,7 +1480,7 @@ export async function repoGetSale(saleId: string): Promise<SaleDetail> {
 export async function repoListRecentSales(limit = 80): Promise<CreatedSale[]> {
   const { idToCode } = await loadStoreMaps();
   const { rows } = await getPool().query(
-    `select s.id, s.sold_at, s.store_id, s.total_amount, s.total_profit, s.payment_method, s.status,
+    `select s.id, s.sold_at, s.store_id, s.total_amount, s.total_cost, s.total_profit, s.payment_method, s.status,
             coalesce(c.name, 'Khách lẻ') as customer_name,
             coalesce(c.phone, '') as customer_phone,
             coalesce(c.address, '') as customer_address,
@@ -1534,6 +1538,7 @@ export async function repoListRecentSales(limit = 80): Promise<CreatedSale[]> {
     itemType: row.item_type === "accessory" ? ("Phụ kiện" as const) : ("Máy" as const),
     quantity: Number(row.quantity) || 1,
     amount: vndToShopMoney(Number(row.total_amount) || 0),
+    cost: vndToShopMoney(Number(row.total_cost) || 0),
     profit: vndToShopMoney(Number(row.total_profit) || 0),
     payment: paymentToUi(String(row.payment_method)),
     status: row.status === "cancelled" ? ("Đã hủy" as const) : ("Hoàn tất" as const),
@@ -1623,6 +1628,7 @@ export async function repoCancelSale(
       itemType: "Máy" as const,
       quantity: 0,
       amount: vndToShopMoney(Number(sale.total_amount) || 0),
+      cost: vndToShopMoney(Number(sale.total_cost) || 0),
       profit: vndToShopMoney(Number(sale.total_profit) || 0),
       payment: paymentToUi(String(sale.payment_method)),
       status: "Đã hủy" as const,

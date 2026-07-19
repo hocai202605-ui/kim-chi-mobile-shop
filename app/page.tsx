@@ -335,6 +335,8 @@ type Sale = {
   quantity: number;
   /** Short shop — cùng đơn vị giá kho (nhập 150 → hiện 150). */
   amount: number;
+  /** Short shop — giá nhập / vốn phiếu. */
+  cost?: number;
   /** Short shop. */
   profit: number;
   payment: PaymentMethod;
@@ -586,7 +588,7 @@ const navItems = [
 type PageId = (typeof navItems)[number]["id"];
 
 /** Tab hub Báo cáo / Thống kê (Sprint 1+). */
-type ReportHubTab = "overview" | "sales" | "inventory" | "repair";
+type ReportHubTab = "overview" | "sales" | "inventory" | "repair" | "transfer";
 type ReportPeriod = "day" | "month" | "year";
 
 const REPORT_HUB_TABS: { id: ReportHubTab; label: string }[] = [
@@ -594,6 +596,7 @@ const REPORT_HUB_TABS: { id: ReportHubTab; label: string }[] = [
   { id: "sales", label: "Bán hàng" },
   { id: "inventory", label: "Kho hàng" },
   { id: "repair", label: "Sửa chữa" },
+  { id: "transfer", label: "Chuyển Khoản" },
 ];
 
 const MENU_LABELS: Record<string, string> = {
@@ -1228,6 +1231,10 @@ export default function Home() {
           itemType: r.itemType,
           quantity: r.quantity,
           amount: r.amount,
+          cost:
+            r.cost != null
+              ? r.cost
+              : Math.max(0, Math.round((Number(r.amount) || 0) - (Number(r.profit) || 0))),
           profit: r.profit,
           payment: ((r.payment === "Nợ" ? "NỢ DAI" : r.payment) as PaymentMethod) || "Tiền mặt",
           status: r.status,
@@ -2108,6 +2115,76 @@ export default function Home() {
       profit: toBars(chongProfit, voProfit),
     };
   }, [overviewModules]);
+
+  /**
+   * Tab Chuyển Khoản: gộp phiếu bán CK + đơn sửa đã TT bằng CK.
+   * Phase 1 client-only; repair chưa store_id → không lọc CH cho sửa.
+   */
+  const transferReport = useMemo(() => {
+    type TransferRow = {
+      id: string;
+      source: "sale" | "repair";
+      sourceLabel: string;
+      title: string;
+      amount: number;
+      paidAt: string;
+    };
+
+    const saleRows: TransferRow[] = sales
+      .filter(
+        (s) =>
+          s.status === "Hoàn tất" &&
+          s.payment === "Chuyển khoản" &&
+          (storeFilter === "all" || s.storeId === storeFilter)
+      )
+      .map((s) => ({
+        id: `sale:${s.id}`,
+        source: "sale" as const,
+        sourceLabel: "Bán hàng",
+        title: s.itemName || "Phiếu bán",
+        amount: Number(s.amount) || 0,
+        paidAt: String(s.createdAt || "").slice(0, 10),
+      }));
+
+    const repairRows: TransferRow[] = shopRepairs
+      .filter(
+        (r) =>
+          (r.paymentStatus === "Đã thanh toán" || r.isPaid) &&
+          (r.paymentMethod || "Tiền mặt") === "Chuyển khoản"
+      )
+      .map((r) => {
+        const paidAt = String(r.paymentDate || r.receiveDate || r.createdAt || "").slice(0, 10);
+        const title = [r.customerName, r.deviceName].filter(Boolean).join(" · ") || "Đơn sửa";
+        return {
+          id: `repair:${r.id}`,
+          source: "repair" as const,
+          sourceLabel: "Sửa chữa",
+          title,
+          amount: Number(r.quote) || 0,
+          paidAt,
+        };
+      });
+
+    const rows = [...saleRows, ...repairRows]
+      .filter((row) => matchesReportPeriod(row.paidAt))
+      .sort((a, b) => b.paidAt.localeCompare(a.paidAt) || b.id.localeCompare(a.id));
+
+    const saleInPeriod = rows.filter((r) => r.source === "sale");
+    const repairInPeriod = rows.filter((r) => r.source === "repair");
+    const totalAmount = rows.reduce((sum, r) => sum + r.amount, 0);
+    const saleAmount = saleInPeriod.reduce((sum, r) => sum + r.amount, 0);
+    const repairAmount = repairInPeriod.reduce((sum, r) => sum + r.amount, 0);
+
+    return {
+      rows,
+      totalAmount,
+      totalCount: rows.length,
+      saleCount: saleInPeriod.length,
+      repairCount: repairInPeriod.length,
+      saleAmount,
+      repairAmount,
+    };
+  }, [sales, shopRepairs, storeFilter, matchesReportPeriod]);
 
   function pushLog(action: string, target: string, storeId: Exclude<StoreId, "all">) {
     setLogs((prev) => [
@@ -3439,6 +3516,16 @@ export default function Home() {
     );
   }
 
+  function updateSaleCartCost(key: string, cost: number) {
+    setSaleCart((prev) =>
+      prev.map((l) =>
+        l.key === key
+          ? { ...l, cost: Math.max(0, Math.round(cost) || 0) }
+          : l
+      )
+    );
+  }
+
   async function createSale(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (isSaleReadOnly) return;
@@ -3539,6 +3626,13 @@ export default function Home() {
         itemType: saved.itemType,
         quantity: saved.quantity,
         amount: saved.amount,
+        cost:
+          saved.cost != null
+            ? saved.cost
+            : Math.max(
+                0,
+                Math.round((Number(saved.amount) || 0) - (Number(saved.profit) || 0))
+              ),
         profit: saved.profit,
         payment: (saved.payment as PaymentMethod) || paymentValue,
         status: "Hoàn tất",
@@ -4070,8 +4164,10 @@ export default function Home() {
               </button>
             </div>
 
-            {/* Thanh thời gian — dùng cho Tổng quan / Bán hàng */}
-            {(reportHubTab === "overview" || reportHubTab === "sales") && (
+            {/* Thanh thời gian — Tổng quan / Bán hàng / Chuyển khoản */}
+            {(reportHubTab === "overview" ||
+              reportHubTab === "sales" ||
+              reportHubTab === "transfer") && (
               <div className="flex flex-col gap-2 rounded-xl border border-line bg-white p-3 shadow-sm sm:flex-row sm:flex-wrap sm:items-end sm:gap-3">
                 <div className="flex flex-wrap gap-1 rounded-lg border border-line bg-slate-50 p-1">
                   {(
@@ -4684,6 +4780,109 @@ export default function Home() {
                     </p>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {reportHubTab === "transfer" && (
+              <div className="grid gap-4">
+                <div className="rounded-lg border border-brand/30 bg-brand-soft/60 p-3 text-sm font-semibold text-ink">
+                  Giao dịch <strong>Chuyển khoản</strong> từ Bán hàng + Sửa chữa đã thanh toán ·{" "}
+                  {storeName(storeFilter)}
+                  {reportPeriod === "day"
+                    ? ` · ${reportDay}`
+                    : reportPeriod === "month"
+                      ? ` · ${inventoryReportMonth}`
+                      : ` · ${reportYear}`}
+                  . Đơn sửa chưa gắn cửa hàng — luôn hiển thị khi khớp kỳ.
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
+                    <p className="text-sm font-bold text-muted">Tổng tiền CK</p>
+                    <strong className="mt-3 block text-3xl font-black text-brand">
+                      {isStatsHidden ? "***" : formatMoney(transferReport.totalAmount)}
+                    </strong>
+                    <p className="mt-1 text-xs font-semibold text-muted">Đơn vị shop (bán) / như form (sửa)</p>
+                  </section>
+                  <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
+                    <p className="text-sm font-bold text-muted">Số giao dịch</p>
+                    <strong className="mt-3 block text-3xl font-black text-ink">
+                      {isStatsHidden ? "***" : transferReport.totalCount}
+                    </strong>
+                    <p className="mt-1 text-xs font-semibold text-muted">Bán + Sửa trong kỳ</p>
+                  </section>
+                  <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
+                    <p className="text-sm font-bold text-muted">Từ bán hàng</p>
+                    <strong className="mt-3 block text-2xl font-black text-sky-800">
+                      {isStatsHidden
+                        ? "***"
+                        : `${formatMoney(transferReport.saleAmount)} · ${transferReport.saleCount} GD`}
+                    </strong>
+                  </section>
+                  <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
+                    <p className="text-sm font-bold text-muted">Từ sửa chữa</p>
+                    <strong className="mt-3 block text-2xl font-black text-amber-800">
+                      {isStatsHidden
+                        ? "***"
+                        : `${formatMoney(transferReport.repairAmount)} · ${transferReport.repairCount} GD`}
+                    </strong>
+                  </section>
+                </div>
+
+                <section className="overflow-hidden rounded-xl border border-line bg-white shadow-panel">
+                  <div className="border-b border-line px-4 py-3">
+                    <h2 className="text-lg font-black text-ink">Danh sách chuyển khoản</h2>
+                    <p className="text-xs font-semibold text-muted">
+                      Số tiền · Nguồn thanh toán · Ngày thanh toán (mới → cũ)
+                    </p>
+                  </div>
+                  <div className="max-h-[min(60vh,28rem)] overflow-auto">
+                    <table className="min-w-full border-collapse text-left text-sm">
+                      <thead className="sticky top-0 z-10 bg-slate-50">
+                        <tr className="border-b border-line text-xs font-black uppercase tracking-wide text-muted">
+                          <th className="whitespace-nowrap px-4 py-3">Số tiền</th>
+                          <th className="min-w-[12rem] px-4 py-3">Nguồn thanh toán</th>
+                          <th className="whitespace-nowrap px-4 py-3">Ngày thanh toán</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {transferReport.rows.length === 0 ? (
+                          <tr>
+                            <td colSpan={3} className="px-4 py-10 text-center text-sm font-semibold text-muted">
+                              Không có giao dịch chuyển khoản trong kỳ đã chọn.
+                            </td>
+                          </tr>
+                        ) : (
+                          transferReport.rows.map((row) => (
+                            <tr
+                              key={row.id}
+                              className="border-b border-line/80 last:border-0 hover:bg-slate-50/80"
+                            >
+                              <td className="whitespace-nowrap px-4 py-3 font-black text-ink">
+                                {isStatsHidden ? "***" : formatMoney(row.amount)}
+                              </td>
+                              <td className="px-4 py-3">
+                                <span
+                                  className={`mr-2 inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${
+                                    row.source === "sale"
+                                      ? "bg-sky-50 text-sky-800"
+                                      : "bg-amber-50 text-amber-900"
+                                  }`}
+                                >
+                                  {row.sourceLabel}
+                                </span>
+                                <span className="font-semibold text-slate-700">{row.title}</span>
+                              </td>
+                              <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-700">
+                                {formatDateVi(row.paidAt) || "—"}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
               </div>
             )}
           </div>
@@ -5797,13 +5996,29 @@ export default function Home() {
 
               <div className="overflow-x-auto pb-2">
                 <DataTable
-                  headers={["Ngày", "Khách", "Hàng", "Tổng tiền", "Lãi", "Thanh toán", "Thao tác"]}
+                  headers={[
+                    "Ngày",
+                    "Khách",
+                    "Hàng",
+                    "Tổng tiền",
+                    "Giá nhập",
+                    "Lãi",
+                    "Thanh toán",
+                    "Thao tác",
+                  ]}
                   rows={filteredSales.map((item) => {
                     const custName =
                       item.customerName ||
                       customers.find((c) => c.id === item.customerId)?.name ||
                       "Khách lẻ";
                     const payUi = salePayStatusLabel(item.payment, item.status);
+                    const costShort =
+                      item.cost != null
+                        ? item.cost
+                        : Math.max(
+                            0,
+                            Math.round((Number(item.amount) || 0) - (Number(item.profit) || 0))
+                          );
                     return [
                       item.createdAt,
                       <span key={`c-${item.id}`} className="font-bold text-brand whitespace-nowrap">
@@ -5815,6 +6030,9 @@ export default function Home() {
                       </span>,
                       <span key={`a-${item.id}`} className="font-black text-ink">
                         {isSaleSensitiveHidden ? "***" : formatMoney(item.amount)}
+                      </span>,
+                      <span key={`cost-${item.id}`} className="font-semibold text-slate-600">
+                        {isSaleSensitiveHidden ? "***" : formatMoney(costShort)}
                       </span>,
                       <span key={`p-${item.id}`} className="font-black text-emerald-700">
                         {isSaleSensitiveHidden ? "***" : formatMoney(item.profit)}
@@ -6584,12 +6802,15 @@ export default function Home() {
                         <p className="py-2 text-center text-sm font-semibold text-muted">Giỏ trống</p>
                       ) : (
                         <ul className="space-y-1.5">
-                          {saleCart.map((line) => (
+                          {saleCart.map((line) => {
+                            const lineCost =
+                              line.kind === "phone" ? line.cost : line.cost || 0;
+                            return (
                             <li
                               key={line.key}
-                              className="flex items-center gap-2 rounded-lg border border-line bg-white px-2.5 py-1.5"
+                              className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-white px-2.5 py-1.5"
                             >
-                              <div className="min-w-0 flex-1">
+                              <div className="min-w-0 flex-1 basis-[10rem]">
                                 {line.kind === "phone" ? (
                                   <p className="truncate text-sm font-bold text-ink">
                                     <span className="mr-1 font-black text-indigo-700">{line.name}</span>
@@ -6618,36 +6839,59 @@ export default function Home() {
                                   </p>
                                 )}
                               </div>
-                              {line.kind === "accessory" && line.unitPrice === 0 ? (
-                                <span
-                                  className="inline-flex h-8 min-w-[5.5rem] items-center justify-end rounded-md border border-fuchsia-200 bg-fuchsia-50 px-2 text-sm font-bold text-fuchsia-800"
-                                  title={`Vốn tặng: ${formatMoney(line.cost || 0)} (trừ lãi)`}
-                                >
-                                  {isSaleSensitiveHidden
-                                    ? "***"
-                                    : line.cost > 0
-                                      ? `−${formatMoney(line.cost)}`
-                                      : "0"}
-                                </span>
-                              ) : isSaleReadOnly ? (
-                                <span className="inline-flex h-8 min-w-[5.5rem] items-center justify-end rounded-md border border-line bg-slate-50 px-2 text-sm font-bold text-emerald-700">
-                                  {isSaleSensitiveHidden ? "***" : formatMoney(line.unitPrice)}
-                                </span>
-                              ) : (
-                                <input
-                                  inputMode="numeric"
-                                  value={
-                                    line.unitPrice ? formatInputMoney(line.unitPrice) : ""
-                                  }
-                                  onChange={(e) =>
-                                    updateSaleCartUnitPrice(line.key, parseShopMoney(e.target.value))
-                                  }
-                                  className="h-8 w-24 rounded-md border border-line px-2 text-right text-sm font-bold text-emerald-700 outline-none focus:border-brand"
-                                  title="Giá bán (đơn vị shop)"
-                                />
-                              )}
+                              {/* Giá nhập */}
+                              <div className="flex shrink-0 flex-col items-end gap-0.5">
+                                <span className="text-[10px] font-bold text-muted">Giá nhập</span>
+                                {isSaleReadOnly || line.kind === "phone" ? (
+                                  <span
+                                    className="inline-flex h-8 min-w-[4.5rem] items-center justify-end rounded-md border border-line bg-slate-50 px-2 text-sm font-bold text-slate-700"
+                                    title="Giá nhập (đơn vị shop)"
+                                  >
+                                    {isSaleSensitiveHidden ? "***" : formatMoney(lineCost)}
+                                  </span>
+                                ) : (
+                                  <input
+                                    inputMode="numeric"
+                                    value={lineCost ? formatInputMoney(lineCost) : ""}
+                                    onChange={(e) =>
+                                      updateSaleCartCost(line.key, parseShopMoney(e.target.value))
+                                    }
+                                    className="h-8 w-20 rounded-md border border-line px-2 text-right text-sm font-bold text-slate-700 outline-none focus:border-brand"
+                                    title="Giá nhập (đơn vị shop)"
+                                    placeholder="0"
+                                  />
+                                )}
+                              </div>
+                              {/* Giá bán */}
+                              <div className="flex shrink-0 flex-col items-end gap-0.5">
+                                <span className="text-[10px] font-bold text-muted">Giá bán</span>
+                                {line.kind === "accessory" && line.unitPrice === 0 ? (
+                                  <span
+                                    className="inline-flex h-8 min-w-[4.5rem] items-center justify-end rounded-md border border-fuchsia-200 bg-fuchsia-50 px-2 text-sm font-bold text-fuchsia-800"
+                                    title="Giá bán 0 (tặng)"
+                                  >
+                                    {isSaleSensitiveHidden ? "***" : "0"}
+                                  </span>
+                                ) : isSaleReadOnly ? (
+                                  <span className="inline-flex h-8 min-w-[4.5rem] items-center justify-end rounded-md border border-line bg-slate-50 px-2 text-sm font-bold text-emerald-700">
+                                    {isSaleSensitiveHidden ? "***" : formatMoney(line.unitPrice)}
+                                  </span>
+                                ) : (
+                                  <input
+                                    inputMode="numeric"
+                                    value={
+                                      line.unitPrice ? formatInputMoney(line.unitPrice) : ""
+                                    }
+                                    onChange={(e) =>
+                                      updateSaleCartUnitPrice(line.key, parseShopMoney(e.target.value))
+                                    }
+                                    className="h-8 w-20 rounded-md border border-line px-2 text-right text-sm font-bold text-emerald-700 outline-none focus:border-brand"
+                                    title="Giá bán (đơn vị shop)"
+                                  />
+                                )}
+                              </div>
                               {line.kind === "accessory" && line.quantity > 1 ? (
-                                <span className="w-16 shrink-0 text-right text-xs font-black text-ink">
+                                <span className="w-16 shrink-0 self-end pb-1 text-right text-xs font-black text-ink">
                                   {isSaleSensitiveHidden
                                     ? "***"
                                     : formatMoney(line.unitPrice * line.quantity)}
@@ -6657,14 +6901,15 @@ export default function Home() {
                                 <button
                                   type="button"
                                   onClick={() => removeSaleCartLine(line.key)}
-                                  className="rounded-md bg-red-50 p-1.5 text-danger hover:bg-red-100"
+                                  className="self-end rounded-md bg-red-50 p-1.5 text-danger hover:bg-red-100"
                                   title="Xóa"
                                 >
                                   <Trash2 size={14} />
                                 </button>
                               ) : null}
                             </li>
-                          ))}
+                            );
+                          })}
                         </ul>
                       )}
                       <div className="mt-3 flex flex-wrap items-end justify-between gap-2 border-t border-line pt-3">
@@ -6689,6 +6934,11 @@ export default function Home() {
                             )}
                           </p>
                           <p className="mt-0.5 text-[11px] font-semibold text-muted">
+                            Giá nhập:{" "}
+                            <strong className="font-bold text-slate-700">
+                              {isSaleSensitiveHidden ? "***" : formatMoney(saleCartTotals.costShort)}
+                            </strong>
+                            <span className="mx-1.5 text-line">·</span>
                             Lãi ước tính:{" "}
                             <strong className="font-bold text-emerald-700">
                               {isSaleSensitiveHidden ? "***" : formatMoney(saleCartTotals.profitShort)}

@@ -10,6 +10,8 @@ export type SaleRow = {
   quantity: number;
   /** Short shop (VD nhập 150 → hiện 150). */
   amount: number;
+  /** Short shop — giá nhập / vốn phiếu. */
+  cost?: number;
   /** Short shop. */
   profit: number;
   payment: string;
