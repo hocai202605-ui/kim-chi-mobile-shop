@@ -5254,135 +5254,153 @@ export default function Home() {
               </div>
 
               {isPartFormOpen ? (
-                <section className="rounded-xl border border-line bg-white p-4 shadow-panel sm:p-5">
-                  <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-                    <div>
-                      <h3 className="text-lg font-black text-ink">
-                        {isEditMode ? "Sửa phiếu nhập" : "Form nhập hàng"}
-                      </h3>
-                      <p className="text-xs font-semibold text-muted">
-                        Lưu vào cửa hàng:{" "}
-                        <strong className="text-brand">{storeName(storeIdForForm)}</strong>
-                        {storeFilter === "all" ? " (header «Tất cả» → CH mặc định user)" : ""}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={closePartInboundForm}
-                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line bg-white px-3 text-sm font-bold text-muted hover:bg-slate-50"
-                    >
-                      <X size={16} />
-                      Đóng
-                    </button>
-                  </div>
-
-                  <form key={partFormKey} onSubmit={handleSavePartInbound} className="grid gap-3">
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                      <ManageableSelect
-                        label="Nhà phân phối"
-                        name="distributor"
-                        options={partDistributorOptions}
-                        setOptions={setPartDistributorOptions}
-                        defaultValue={partDistributor}
-                        required
-                        allowFreeText
-                        allowManage
-                        actorUsername={currentUser?.username ?? ""}
-                        onValueChange={applyPartDistributorCascade}
-                      />
-                      <ManageableSelect
-                        key={`part-addr-${partCascadeKey}`}
-                        label="Địa chỉ"
-                        name="address"
-                        options={partAddressOptions}
-                        setOptions={setPartAddressOptions}
-                        defaultValue={partAddress}
-                        required={false}
-                        allowFreeText
-                        allowManage
-                        actorUsername={currentUser?.username ?? ""}
-                        onValueChange={setPartAddress}
-                      />
-                      <Field label="SĐT">
-                        <input
-                          key={`part-phone-${partCascadeKey}`}
-                          name="phone"
-                          value={partPhone}
-                          onChange={(e) => setPartPhone(e.target.value)}
-                          autoComplete="off"
-                          inputMode="tel"
-                          placeholder="Tự điền khi chọn NPP · có thể sửa"
-                          className="h-11 w-full rounded-lg border border-line px-3 text-sm font-semibold outline-none ring-brand/30 focus:ring-2"
-                        />
-                      </Field>
-                      <ManageableSelect
-                        key={`part-type-${partCascadeKey}`}
-                        label="Loại linh kiện"
-                        name="partType"
-                        options={partTypeOptions}
-                        setOptions={setPartTypeOptions}
-                        defaultValue={partType}
-                        required
-                        allowFreeText
-                        allowManage
-                        actorUsername={currentUser?.username ?? ""}
-                        onValueChange={setPartType}
-                      />
-                      <Field label="Tên linh kiện" required>
-                        <input
-                          name="partName"
-                          required
-                          value={partName}
-                          onChange={(e) => setPartName(e.target.value)}
-                          autoComplete="off"
-                          placeholder="Tên / model linh kiện"
-                          className="h-11 w-full rounded-lg border border-line px-3 text-sm font-semibold outline-none ring-brand/30 focus:ring-2"
-                        />
-                      </Field>
-                      <Field label="SL" required>
-                        <input
-                          name="quantity"
-                          required
-                          value={partQuantity}
-                          onChange={(e) => setPartQuantity(e.target.value)}
-                          autoComplete="off"
-                          inputMode="numeric"
-                          placeholder="Số lượng"
-                          className="h-11 w-full rounded-lg border border-line px-3 text-sm font-semibold outline-none ring-brand/30 focus:ring-2"
-                        />
-                      </Field>
-                    </div>
-                    <p className="text-xs font-semibold text-muted">
-                      Chọn <strong>Nhà phân phối</strong> đã có → tự điền Địa chỉ, SĐT, Loại linh
-                      kiện (theo phiếu mới nhất).
-                    </p>
-                    <div className="flex flex-wrap items-center gap-2 pt-1">
-                      <button
-                        type="submit"
-                        className="inline-flex h-11 items-center gap-2 rounded-lg bg-brand px-5 text-sm font-bold text-white hover:bg-brand-dark"
-                      >
-                        {isEditMode ? (
-                          <>
-                            <Edit3 size={18} />
-                            Cập nhật phiếu
-                          </>
-                        ) : (
-                          <>
-                            <Plus size={18} />
-                            Lưu phiếu nhập
-                          </>
-                        )}
-                      </button>
+                <div
+                  className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-md"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="part-inbound-modal-title"
+                  onClick={closePartInboundForm}
+                >
+                  <section
+                    className="max-h-[92vh] w-full max-w-3xl overflow-auto rounded-2xl border border-white/20 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.4)]"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="flex items-start justify-between gap-3 border-b border-line bg-gradient-to-r from-brand/10 to-transparent p-4 sm:p-5">
+                      <div>
+                        <h3
+                          id="part-inbound-modal-title"
+                          className="text-lg font-black text-ink sm:text-xl"
+                        >
+                          {isEditMode ? "Sửa phiếu nhập" : "Nhập hàng"}
+                        </h3>
+                        <p className="mt-0.5 text-xs font-semibold text-muted sm:text-sm">
+                          Lưu vào cửa hàng:{" "}
+                          <strong className="text-brand">{storeName(storeIdForForm)}</strong>
+                          {storeFilter === "all" ? " (header «Tất cả» → CH mặc định user)" : ""}
+                        </p>
+                      </div>
                       <button
                         type="button"
                         onClick={closePartInboundForm}
-                        className="inline-flex h-11 items-center rounded-lg border border-line bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-line bg-white text-muted transition hover:bg-slate-50 hover:text-ink"
+                        title="Đóng"
                       >
-                        Hủy
+                        <X size={18} />
                       </button>
                     </div>
-                  </form>
-                </section>
+
+                    <form
+                      key={partFormKey}
+                      onSubmit={handleSavePartInbound}
+                      className="grid gap-4 p-4 sm:p-5"
+                    >
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <ManageableSelect
+                          label="Nhà phân phối"
+                          name="distributor"
+                          options={partDistributorOptions}
+                          setOptions={setPartDistributorOptions}
+                          defaultValue={partDistributor}
+                          required
+                          allowFreeText
+                          allowManage
+                          actorUsername={currentUser?.username ?? ""}
+                          onValueChange={applyPartDistributorCascade}
+                        />
+                        <ManageableSelect
+                          key={`part-addr-${partCascadeKey}`}
+                          label="Địa chỉ"
+                          name="address"
+                          options={partAddressOptions}
+                          setOptions={setPartAddressOptions}
+                          defaultValue={partAddress}
+                          required={false}
+                          allowFreeText
+                          allowManage
+                          actorUsername={currentUser?.username ?? ""}
+                          onValueChange={setPartAddress}
+                        />
+                        <Field label="SĐT">
+                          <input
+                            key={`part-phone-${partCascadeKey}`}
+                            name="phone"
+                            value={partPhone}
+                            onChange={(e) => setPartPhone(e.target.value)}
+                            autoComplete="off"
+                            inputMode="tel"
+                            placeholder="Tự điền khi chọn NPP · có thể sửa"
+                            className="h-11 w-full rounded-lg border border-line px-3 text-sm font-semibold outline-none ring-brand/30 focus:ring-2"
+                          />
+                        </Field>
+                        <ManageableSelect
+                          key={`part-type-${partCascadeKey}`}
+                          label="Loại linh kiện"
+                          name="partType"
+                          options={partTypeOptions}
+                          setOptions={setPartTypeOptions}
+                          defaultValue={partType}
+                          required
+                          allowFreeText
+                          allowManage
+                          actorUsername={currentUser?.username ?? ""}
+                          onValueChange={setPartType}
+                        />
+                        <Field label="Tên linh kiện" required>
+                          <input
+                            name="partName"
+                            required
+                            value={partName}
+                            onChange={(e) => setPartName(e.target.value)}
+                            autoComplete="off"
+                            placeholder="Tên / model linh kiện"
+                            className="h-11 w-full rounded-lg border border-line px-3 text-sm font-semibold outline-none ring-brand/30 focus:ring-2"
+                          />
+                        </Field>
+                        <Field label="SL" required>
+                          <input
+                            name="quantity"
+                            required
+                            value={partQuantity}
+                            onChange={(e) => setPartQuantity(e.target.value)}
+                            autoComplete="off"
+                            inputMode="numeric"
+                            placeholder="Số lượng"
+                            className="h-11 w-full rounded-lg border border-line px-3 text-sm font-semibold outline-none ring-brand/30 focus:ring-2"
+                          />
+                        </Field>
+                      </div>
+                      <p className="text-xs font-semibold text-muted">
+                        Chọn <strong>Nhà phân phối</strong> đã có → tự điền Địa chỉ, SĐT, Loại linh
+                        kiện (theo phiếu mới nhất).
+                      </p>
+                      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line pt-4">
+                        <button
+                          type="button"
+                          onClick={closePartInboundForm}
+                          className="inline-flex h-11 items-center rounded-lg border border-line bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                        >
+                          Hủy
+                        </button>
+                        <button
+                          type="submit"
+                          className="inline-flex h-11 items-center gap-2 rounded-lg bg-brand px-5 text-sm font-bold text-white hover:bg-brand-dark"
+                        >
+                          {isEditMode ? (
+                            <>
+                              <Edit3 size={18} />
+                              Cập nhật phiếu
+                            </>
+                          ) : (
+                            <>
+                              <Plus size={18} />
+                              Lưu phiếu nhập
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </form>
+                  </section>
+                </div>
               ) : null}
 
               <section className="overflow-hidden rounded-xl border border-line bg-white shadow-panel">
