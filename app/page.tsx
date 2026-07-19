@@ -4236,11 +4236,11 @@ export default function Home() {
                                         ))}
                                       </Pie>
                                       <Tooltip
-                                        formatter={(value: number, name: string) => [
+                                        formatter={(value, name) => [
                                           isStatsHidden
                                             ? "***"
                                             : formatMoney(Number(value) || 0),
-                                          name,
+                                          String(name ?? ""),
                                         ]}
                                         contentStyle={{
                                           borderRadius: "8px",
