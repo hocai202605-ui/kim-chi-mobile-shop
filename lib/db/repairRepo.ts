@@ -8,11 +8,33 @@ export type RepairOrderUpsertInput = Omit<ShopRepairOrder, "id" | "createdAt" | 
   isPaid?: boolean;
   /** Username app_accounts — ghi created_by / updated_by. */
   actorUsername?: string;
+  /** store-1|2|3 — gắn cửa hàng đơn. */
+  storeId?: string;
 };
 
 function normalizeActorUsername(value?: string | null): string | null {
   const t = String(value ?? "").trim();
   return t || null;
+}
+
+async function resolveStoreUuid(storeCode?: string | null): Promise<string | null> {
+  const code = String(storeCode || "").trim();
+  if (!code || code === "all") return null;
+  const { rows } = await getPool().query<{ id: string }>(
+    `select id from public.stores where code = $1 and is_active = true limit 1`,
+    [code]
+  );
+  return rows[0]?.id ?? null;
+}
+
+async function resolveActorStoreCode(actorUsername?: string | null): Promise<string> {
+  const u = normalizeActorUsername(actorUsername);
+  if (!u) return "store-1";
+  const { rows } = await getPool().query<{ store_code: string }>(
+    `select store_code from public.app_accounts where lower(username) = lower($1) limit 1`,
+    [u]
+  );
+  return rows[0]?.store_code?.trim() || "store-1";
 }
 
 type DbRow = {
@@ -101,11 +123,36 @@ function mapRow(row: DbRow): ShopRepairOrder {
   };
 }
 
-export async function repoListRepairOrders(): Promise<ShopRepairOrder[]> {
+/**
+ * Liệt kê đơn sửa.
+ * - storeCode null/"all" → toàn bộ (chỉ gọi khi đã xác thực owner)
+ * - store-1|2|3 → CHỈ đơn `store_id` đúng CH (không fallback lỏng)
+ */
+export async function repoListRepairOrders(
+  storeCode?: string | null
+): Promise<ShopRepairOrder[]> {
+  const store =
+    storeCode && storeCode !== "all" ? String(storeCode).trim() : null;
+  if (!store) {
+    const { rows } = await getPool().query<DbRow>(
+      `select *
+       from public.repair_orders
+       order by receive_at desc nulls last, created_at desc`
+    );
+    return rows.map(mapRow);
+  }
+
+  const storeUuid = await resolveStoreUuid(store);
+  if (!storeUuid) {
+    // Mã CH không hợp lệ → không trả data (tránh lọt full list)
+    return [];
+  }
   const { rows } = await getPool().query<DbRow>(
-    `select *
-     from public.repair_orders
-     order by receive_at desc nulls last, created_at desc`
+    `select ro.*
+     from public.repair_orders ro
+     where ro.store_id = $1::uuid
+     order by ro.receive_at desc nulls last, ro.created_at desc`,
+    [storeUuid]
   );
   return rows.map(mapRow);
 }
@@ -120,8 +167,11 @@ export async function repoUpsertRepairOrder(
     toIsoOrNull(input.paymentDate) ??
     (paymentStatus === "paid" ? new Date().toISOString() : null);
   const actor = normalizeActorUsername(input.actorUsername);
-
   const paymentMethod = paymentMethodToDb(input.paymentMethod);
+  const storeCode =
+    (input.storeId && input.storeId !== "all" ? input.storeId : null) ||
+    (await resolveActorStoreCode(actor));
+  const storeUuid = await resolveStoreUuid(storeCode);
 
   if (input.id) {
     const { rows } = await getPool().query<DbRow>(
@@ -143,8 +193,9 @@ export async function repoUpsertRepairOrder(
         reward_points = $15,
         payment_method = $16,
         updated_by = coalesce($17, updated_by),
+        store_id = coalesce($18::uuid, store_id),
         updated_at = now()
-      where id = $18
+      where id = $19
       returning *`,
       [
         input.customerName.trim() || "Khách lẻ",
@@ -164,6 +215,7 @@ export async function repoUpsertRepairOrder(
         Math.round(Number(input.rewardPoints) || 0),
         paymentMethod,
         actor,
+        storeUuid,
         input.id,
       ]
     );
@@ -177,10 +229,10 @@ export async function repoUpsertRepairOrder(
       device_condition, warranty, imei, phone_or_pass,
       quote, deposit, receive_at, complete_at, payment_at,
       payment_status, reward_points, payment_method,
-      created_by, updated_by
+      created_by, updated_by, store_id
     ) values (
       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
-      $11::timestamptz,$12::timestamptz,$13::timestamptz,$14,$15,$16,$17,$17
+      $11::timestamptz,$12::timestamptz,$13::timestamptz,$14,$15,$16,$17,$17,$18::uuid
     ) returning *`,
     [
       input.customerName.trim() || "Khách lẻ",
@@ -200,6 +252,7 @@ export async function repoUpsertRepairOrder(
       Math.round(Number(input.rewardPoints) || 0),
       paymentMethod,
       actor,
+      storeUuid,
     ]
   );
   return mapRow(rows[0]);

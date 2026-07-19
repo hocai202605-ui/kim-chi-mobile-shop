@@ -463,6 +463,7 @@ type PartInbound = {
   status: "Hiệu lực" | "Đã hủy";
 };
 
+/** Demo seed chỉ Kim Chi (store-1) — caobac/kieuvy không thấy. */
 const partsInboundSeed: PartInbound[] = [
   {
     id: "pk1",
@@ -474,18 +475,6 @@ const partsInboundSeed: PartInbound[] = [
     partType: "Màn hình",
     partName: "LCD iPhone 11 zin",
     quantity: 5,
-    status: "Hiệu lực",
-  },
-  {
-    id: "pk2",
-    createdAt: "2026-07-12",
-    storeId: "store-2",
-    distributor: "Kho pin B",
-    address: "88 Lê Lợi, Q3",
-    phone: "0912345678",
-    partType: "Pin",
-    partName: "Pin iPhone 12 dung lượng cao",
-    quantity: 10,
     status: "Hiệu lực",
   },
 ];
@@ -1107,7 +1096,8 @@ export default function Home() {
   const [customers, setCustomers] = useState(customersSeed);
   const [phones, setPhones] = useState<PhoneItem[]>([]);
   const [accessories, setAccessories] = useState<Accessory[]>([]);
-  const [sales, setSales] = useState(salesSeed);
+  /** Không seed multi-store — chỉ load từ DB (lọc CH ở UI). */
+  const [sales, setSales] = useState<Sale[]>([]);
   /** Form bán hàng */
   const [saleStoreId, setSaleStoreId] = useState<Exclude<StoreId, "all">>("store-1");
   const [salePayMethod, setSalePayMethod] = useState<SalePayMethod>("Tiền mặt");
@@ -1232,35 +1222,77 @@ export default function Home() {
     }
   }, [refreshDashboardSummary]);
 
-  /** Phần mềm: load từ Postgres qua API — không mock. */
+  /** Phạm vi CH khi tải PM/Sửa: staff luôn store gán; owner theo filter header. */
+  const dataScopeStore = useMemo((): StoreId | "all" => {
+    if (!currentUser) return "all";
+    if (currentUser.role === "staff") return currentUser.storeId;
+    return storeFilter;
+  }, [currentUser, storeFilter]);
+
+  /** Phần mềm: load theo CH + actor (server khóa staff). */
   const reloadSoftwareFromDb = useCallback(async () => {
+    if (!currentUser) {
+      setOnlineRepairs([]);
+      return;
+    }
+    // Xóa list cũ ngay — tránh giữ data Kim Chi khi đổi sang caobac/kieuvy
+    setOnlineRepairs([]);
     setSoftwareLoading(true);
     setSoftwareBackendError("");
     try {
-      const rows = await apiListSoftwareOrders();
-      setOnlineRepairs(rows);
+      // Staff: bắt buộc storeId gán; thiếu storeId → không gọi full list
+      const scope =
+        currentUser.role === "staff"
+          ? currentUser.storeId || null
+          : dataScopeStore === "all"
+            ? null
+            : dataScopeStore;
+      if (currentUser.role === "staff" && !scope) {
+        setOnlineRepairs([]);
+        setSoftwareBackendError("Tài khoản staff thiếu cửa hàng gán.");
+        return;
+      }
+      const rows = await apiListSoftwareOrders(scope, currentUser.username);
+      setOnlineRepairs(Array.isArray(rows) ? rows : []);
     } catch (err) {
       setOnlineRepairs([]);
       setSoftwareBackendError(toUiError(err));
     } finally {
       setSoftwareLoading(false);
     }
-  }, []);
+  }, [currentUser, dataScopeStore]);
 
-  /** Sửa chữa: load từ Postgres qua /api/repairs. */
+  /** Sửa chữa: load theo CH + actor (server khóa staff). */
   const reloadShopRepairsFromDb = useCallback(async () => {
+    if (!currentUser) {
+      setShopRepairs([]);
+      return;
+    }
+    // Xóa list cũ ngay — không để data CH khác còn trên UI khi reload
+    setShopRepairs([]);
     setShopRepairLoading(true);
     setShopRepairBackendError("");
     try {
-      const rows = await apiListRepairOrders();
-      setShopRepairs(rows);
+      const scope =
+        currentUser.role === "staff"
+          ? currentUser.storeId || null
+          : dataScopeStore === "all"
+            ? null
+            : dataScopeStore;
+      if (currentUser.role === "staff" && !scope) {
+        setShopRepairs([]);
+        setShopRepairBackendError("Tài khoản staff thiếu cửa hàng gán.");
+        return;
+      }
+      const rows = await apiListRepairOrders(scope, currentUser.username);
+      setShopRepairs(Array.isArray(rows) ? rows : []);
     } catch (err) {
       setShopRepairs([]);
       setShopRepairBackendError(toUiError(err));
     } finally {
       setShopRepairLoading(false);
     }
-  }, []);
+  }, [currentUser, dataScopeStore]);
 
   const reloadSalesFromDb = useCallback(async () => {
     try {
@@ -1314,6 +1346,7 @@ export default function Home() {
   useEffect(() => {
     if (!currentUser) return;
     // Sequential: inventory first, then software/repairs — fewer concurrent DB slots
+    // dataScopeStore đổi (owner đổi CH) → tải lại PM/Sửa theo cửa hàng
     void (async () => {
       await reloadInventoryFromDb();
       await reloadSoftwareFromDb();
@@ -1323,6 +1356,7 @@ export default function Home() {
     })();
   }, [
     currentUser,
+    dataScopeStore,
     reloadInventoryFromDb,
     reloadSoftwareFromDb,
     reloadShopRepairsFromDb,
@@ -2298,18 +2332,18 @@ export default function Home() {
     setPartFormKey((k) => k + 1);
   }
 
-  function cancelPartInbound(id: string) {
+  function deletePartInbound(id: string) {
     const row = partInbounds.find((p) => p.id === id);
-    if (!row || row.status === "Đã hủy") return;
-    if (currentUser?.role !== "owner") {
-      window.alert("Chỉ chủ cửa hàng được hủy phiếu nhập linh kiện.");
+    if (!row) return;
+    if (
+      !window.confirm(
+        `Xóa phiếu nhập «${row.partName}»?\n\nThao tác này xóa hẳn khỏi danh sách, không hoàn tác.`
+      )
+    ) {
       return;
     }
-    if (!window.confirm(`Hủy phiếu nhập «${row.partName}»?`)) return;
-    setPartInbounds((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, status: "Đã hủy" as const } : p))
-    );
-    pushLog("Hủy nhập linh kiện", `${row.partType} — ${row.partName}`, row.storeId);
+    setPartInbounds((prev) => prev.filter((p) => p.id !== id));
+    pushLog("Xóa nhập linh kiện", `${row.partType} — ${row.partName} ×${row.quantity}`, row.storeId);
   }
 
   useEffect(() => {
@@ -2500,6 +2534,12 @@ export default function Home() {
       } catch {
         /* ignore */
       }
+      // Xóa data CH cũ trước khi gán user mới (tránh caobac/kieuvy còn list Kim Chi)
+      setOnlineRepairs([]);
+      setShopRepairs([]);
+      setSales([]);
+      setPhones([]);
+      setAccessories([]);
       setCurrentUser(user);
       saveSession(user);
       setStoreFilter(defaultStoreFilterForUser(user));
@@ -2522,6 +2562,10 @@ export default function Home() {
     setInventoryBackendError("");
     setPhones([]);
     setAccessories([]);
+    setSales([]);
+    setOnlineRepairs([]);
+    setShopRepairs([]);
+    setPartInbounds(partsInboundSeed);
     setAccountsList([]);
     setAccountsDraft({});
     clearSession();
@@ -3063,6 +3107,12 @@ export default function Home() {
       rewardPoints: existing?.rewardPoints ?? 0,
       isPaid: pStatus === "Đã thanh toán",
       actorUsername: currentUser.username,
+      storeId:
+        currentUser.role === "staff"
+          ? currentUser.storeId
+          : dataScopeStore !== "all"
+            ? dataScopeStore
+            : currentUser.storeId,
     };
 
     setShopRepairSaving(true);
@@ -5020,10 +5070,8 @@ export default function Home() {
               return hay.includes(q);
             })
             .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
-          const activeCount = list.filter((p) => p.status === "Hiệu lực").length;
-          const totalQty = list
-            .filter((p) => p.status === "Hiệu lực")
-            .reduce((s, p) => s + p.quantity, 0);
+          const activeCount = list.length;
+          const totalQty = list.reduce((s, p) => s + p.quantity, 0);
 
           return (
             <section className="grid gap-4">
@@ -5036,7 +5084,7 @@ export default function Home() {
                     <h2 className="text-xl font-black text-ink">Linh kiện</h2>
                     <p className="text-sm font-semibold text-muted">
                       Nhập linh kiện free text · {storeName(storeFilter)} ·{" "}
-                      {activeCount} phiếu / {totalQty} cái (hiệu lực)
+                      {activeCount} phiếu / {totalQty} cái
                     </p>
                   </div>
                 </div>
@@ -5163,7 +5211,6 @@ export default function Home() {
                         <th className="whitespace-nowrap px-3 py-3">Loại</th>
                         <th className="min-w-[9rem] px-3 py-3">Tên LK</th>
                         <th className="whitespace-nowrap px-3 py-3 text-right">SL</th>
-                        <th className="whitespace-nowrap px-3 py-3">TT</th>
                         <th className="whitespace-nowrap px-3 py-3 text-center">Thao tác</th>
                       </tr>
                     </thead>
@@ -5171,7 +5218,7 @@ export default function Home() {
                       {list.length === 0 ? (
                         <tr>
                           <td
-                            colSpan={10}
+                            colSpan={9}
                             className="px-4 py-10 text-center text-sm font-semibold text-muted"
                           >
                             Chưa có phiếu nhập linh kiện phù hợp.
@@ -5181,9 +5228,7 @@ export default function Home() {
                         list.map((row) => (
                           <tr
                             key={row.id}
-                            className={`border-b border-line/80 last:border-0 hover:bg-slate-50/80 ${
-                              row.status === "Đã hủy" ? "opacity-60" : ""
-                            }`}
+                            className="border-b border-line/80 last:border-0 hover:bg-slate-50/80"
                           >
                             <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">
                               {formatDateVi(row.createdAt)}
@@ -5207,23 +5252,14 @@ export default function Home() {
                             <td className="whitespace-nowrap px-3 py-2.5 text-right font-black text-ink">
                               {row.quantity.toLocaleString("vi-VN")}
                             </td>
-                            <td className="whitespace-nowrap px-3 py-2.5">
-                              <StatusBadge tone={row.status === "Hiệu lực" ? "ok" : "danger"}>
-                                {row.status}
-                              </StatusBadge>
-                            </td>
                             <td className="px-3 py-2.5 text-center">
-                              {row.status === "Hiệu lực" && currentUser?.role === "owner" ? (
-                                <button
-                                  type="button"
-                                  onClick={() => cancelPartInbound(row.id)}
-                                  className="rounded-lg bg-red-50 px-2.5 py-1.5 text-xs font-bold text-danger hover:bg-red-100"
-                                >
-                                  Hủy
-                                </button>
-                              ) : (
-                                <span className="text-xs font-semibold text-muted">—</span>
-                              )}
+                              <button
+                                type="button"
+                                onClick={() => deletePartInbound(row.id)}
+                                className="rounded-lg bg-red-50 px-2.5 py-1.5 text-xs font-bold text-danger hover:bg-red-100"
+                              >
+                                Xóa
+                              </button>
                             </td>
                           </tr>
                         ))
@@ -9209,6 +9245,12 @@ export default function Home() {
                           rewardPoints: existing?.rewardPoints ?? 0,
                           isPaid: pStatus === "Đã thanh toán",
                           actorUsername: currentUser.username,
+                          storeId:
+                            currentUser.role === "staff"
+                              ? currentUser.storeId
+                              : dataScopeStore !== "all"
+                                ? dataScopeStore
+                                : currentUser.storeId,
                         };
 
                         setSoftwareSaving(true);

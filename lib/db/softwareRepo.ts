@@ -8,11 +8,34 @@ export type SoftwareOrderUpsertInput = Omit<OnlineRepair, "id" | "createdAt" | "
   isPaid?: boolean;
   /** Username app_accounts — ghi created_by / updated_by. */
   actorUsername?: string;
+  /** store-1|2|3 — gắn cửa hàng đơn (staff/owner CH). */
+  storeId?: string;
 };
 
 function normalizeActorUsername(value?: string | null): string | null {
   const t = String(value ?? "").trim();
   return t || null;
+}
+
+async function resolveStoreUuid(storeCode?: string | null): Promise<string | null> {
+  const code = String(storeCode || "").trim();
+  if (!code || code === "all") return null;
+  const { rows } = await getPool().query<{ id: string }>(
+    `select id from public.stores where code = $1 and is_active = true limit 1`,
+    [code]
+  );
+  return rows[0]?.id ?? null;
+}
+
+/** CH của actor (app_accounts.store_code); fallback store-1. */
+async function resolveActorStoreCode(actorUsername?: string | null): Promise<string> {
+  const u = normalizeActorUsername(actorUsername);
+  if (!u) return "store-1";
+  const { rows } = await getPool().query<{ store_code: string }>(
+    `select store_code from public.app_accounts where lower(username) = lower($1) limit 1`,
+    [u]
+  );
+  return rows[0]?.store_code?.trim() || "store-1";
 }
 
 type DbRow = {
@@ -29,6 +52,8 @@ type DbRow = {
   payment_status: "paid" | "debt";
   reward_points: number;
   created_at: Date | string;
+  store_id?: string | null;
+  created_by?: string | null;
 };
 
 /** DB timestamptz → datetime-local wall clock Vietnam. */
@@ -75,11 +100,33 @@ function mapRow(row: DbRow): OnlineRepair {
   };
 }
 
-export async function repoListSoftwareOrders(): Promise<OnlineRepair[]> {
+/**
+ * Liệt kê đơn PM.
+ * - null/"all" → toàn bộ (chỉ gọi khi đã xác thực owner)
+ * - store-1|2|3 → CHỈ đơn `store_id` đúng CH
+ */
+export async function repoListSoftwareOrders(
+  storeCode?: string | null
+): Promise<OnlineRepair[]> {
+  const store =
+    storeCode && storeCode !== "all" ? String(storeCode).trim() : null;
+  if (!store) {
+    const { rows } = await getPool().query<DbRow>(
+      `select *
+       from public.software_orders
+       order by receive_at desc nulls last, created_at desc`
+    );
+    return rows.map(mapRow);
+  }
+
+  const storeUuid = await resolveStoreUuid(store);
+  if (!storeUuid) return [];
   const { rows } = await getPool().query<DbRow>(
-    `select *
-     from public.software_orders
-     order by receive_at desc nulls last, created_at desc`
+    `select so.*
+     from public.software_orders so
+     where so.store_id = $1::uuid
+     order by so.receive_at desc nulls last, so.created_at desc`,
+    [storeUuid]
   );
   return rows.map(mapRow);
 }
@@ -94,6 +141,10 @@ export async function repoUpsertSoftwareOrder(
     toIsoOrNull(input.paymentDate) ??
     (paymentStatus === "paid" ? new Date().toISOString() : null);
   const actor = normalizeActorUsername(input.actorUsername);
+  const storeCode =
+    (input.storeId && input.storeId !== "all" ? input.storeId : null) ||
+    (await resolveActorStoreCode(actor));
+  const storeUuid = await resolveStoreUuid(storeCode);
 
   if (input.id) {
     const { rows } = await getPool().query<DbRow>(
@@ -110,8 +161,9 @@ export async function repoUpsertSoftwareOrder(
         payment_status = $10,
         reward_points = $11,
         updated_by = coalesce($12, updated_by),
+        store_id = coalesce($13::uuid, store_id),
         updated_at = now()
-      where id = $13
+      where id = $14
       returning *`,
       [
         input.customerName.trim(),
@@ -126,6 +178,7 @@ export async function repoUpsertSoftwareOrder(
         paymentStatus,
         Math.round(Number(input.rewardPoints) || 0),
         actor,
+        storeUuid,
         input.id,
       ]
     );
@@ -138,9 +191,9 @@ export async function repoUpsertSoftwareOrder(
       customer_name, customer_type, device_name, issue,
       quote, deposit, receive_at, complete_at, payment_at,
       payment_status, reward_points,
-      created_by, updated_by
+      created_by, updated_by, store_id
     ) values (
-      $1,$2,$3,$4,$5,$6,$7::timestamptz,$8::timestamptz,$9::timestamptz,$10,$11,$12,$12
+      $1,$2,$3,$4,$5,$6,$7::timestamptz,$8::timestamptz,$9::timestamptz,$10,$11,$12,$12,$13::uuid
     ) returning *`,
     [
       input.customerName.trim(),
@@ -155,6 +208,7 @@ export async function repoUpsertSoftwareOrder(
       paymentStatus,
       Math.round(Number(input.rewardPoints) || 0),
       actor,
+      storeUuid,
     ]
   );
   return mapRow(rows[0]);

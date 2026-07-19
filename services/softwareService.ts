@@ -8,9 +8,19 @@ async function parseJson<T>(res: Response): Promise<T> {
   return body.data as T;
 }
 
-/** Always from DB via Next API (no client mock). */
-export async function listSoftwareOrders(): Promise<OnlineRepair[]> {
-  const res = await fetch("/api/software", { cache: "no-store" });
+/**
+ * Always from DB via Next API.
+ * `store`: all | store-1|2|3 — staff phải kèm `actor` để server khóa CH.
+ */
+export async function listSoftwareOrders(
+  store?: string | null,
+  actorUsername?: string | null
+): Promise<OnlineRepair[]> {
+  const params = new URLSearchParams();
+  if (store && store !== "all") params.set("store", store);
+  if (actorUsername?.trim()) params.set("actor", actorUsername.trim());
+  const q = params.toString() ? `?${params.toString()}` : "";
+  const res = await fetch(`/api/software${q}`, { cache: "no-store" });
   return parseJson<OnlineRepair[]>(res);
 }
 
