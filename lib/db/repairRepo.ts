@@ -31,9 +31,26 @@ type DbRow = {
   complete_at: Date | string | null;
   payment_at: Date | string | null;
   payment_status: "paid" | "debt";
+  payment_method?: string | null;
   reward_points: number;
   created_at: Date | string;
 };
+
+function paymentMethodToUi(
+  raw: string | null | undefined
+): NonNullable<ShopRepairOrder["paymentMethod"]> {
+  const t = String(raw ?? "").trim();
+  if (t === "Chuyển khoản" || t.toLowerCase() === "transfer") return "Chuyển khoản";
+  return "Tiền mặt";
+}
+
+function paymentMethodToDb(
+  raw: ShopRepairOrder["paymentMethod"] | string | undefined
+): "Tiền mặt" | "Chuyển khoản" {
+  const t = String(raw ?? "").trim();
+  if (t === "Chuyển khoản" || t.toLowerCase() === "transfer") return "Chuyển khoản";
+  return "Tiền mặt";
+}
 
 /** DB timestamptz → datetime-local wall clock Vietnam. */
 function toLocalDateTimeString(value: Date | string | null | undefined): string {
@@ -78,6 +95,7 @@ function mapRow(row: DbRow): ShopRepairOrder {
     completeDate: toLocalDateTimeString(row.complete_at).replace(" ", "T"),
     paymentDate: toLocalDateTimeString(row.payment_at).replace(" ", "T"),
     paymentStatus,
+    paymentMethod: paymentMethodToUi(row.payment_method),
     rewardPoints: Number(row.reward_points ?? 0),
     isPaid: paymentStatus === "Đã thanh toán",
   };
@@ -103,6 +121,8 @@ export async function repoUpsertRepairOrder(
     (paymentStatus === "paid" ? new Date().toISOString() : null);
   const actor = normalizeActorUsername(input.actorUsername);
 
+  const paymentMethod = paymentMethodToDb(input.paymentMethod);
+
   if (input.id) {
     const { rows } = await getPool().query<DbRow>(
       `update public.repair_orders set
@@ -121,9 +141,10 @@ export async function repoUpsertRepairOrder(
         payment_at = $13::timestamptz,
         payment_status = $14,
         reward_points = $15,
-        updated_by = coalesce($16, updated_by),
+        payment_method = $16,
+        updated_by = coalesce($17, updated_by),
         updated_at = now()
-      where id = $17
+      where id = $18
       returning *`,
       [
         input.customerName.trim() || "Khách lẻ",
@@ -141,6 +162,7 @@ export async function repoUpsertRepairOrder(
         paymentAt,
         paymentStatus,
         Math.round(Number(input.rewardPoints) || 0),
+        paymentMethod,
         actor,
         input.id,
       ]
@@ -154,11 +176,11 @@ export async function repoUpsertRepairOrder(
       customer_name, customer_type, device_name, issue,
       device_condition, warranty, imei, phone_or_pass,
       quote, deposit, receive_at, complete_at, payment_at,
-      payment_status, reward_points,
+      payment_status, reward_points, payment_method,
       created_by, updated_by
     ) values (
       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
-      $11::timestamptz,$12::timestamptz,$13::timestamptz,$14,$15,$16,$16
+      $11::timestamptz,$12::timestamptz,$13::timestamptz,$14,$15,$16,$17,$17
     ) returning *`,
     [
       input.customerName.trim() || "Khách lẻ",
@@ -176,6 +198,7 @@ export async function repoUpsertRepairOrder(
       paymentAt,
       paymentStatus,
       Math.round(Number(input.rewardPoints) || 0),
+      paymentMethod,
       actor,
     ]
   );

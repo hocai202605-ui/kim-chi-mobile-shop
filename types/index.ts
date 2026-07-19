@@ -169,4 +169,6 @@ export type ShopRepairOrder = OnlineRepair & {
   imei: string;
   /** SĐT khách / mật khẩu máy (free text, tùy chọn). */
   phoneOrPass: string;
+  /** Hình thức TT: Tiền mặt | Chuyển khoản. */
+  paymentMethod?: "Tiền mặt" | "Chuyển khoản";
 };

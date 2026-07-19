@@ -6,8 +6,6 @@ import {
   CartesianGrid,
   Cell,
   Legend,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -461,6 +459,8 @@ type ShopRepairOrder = OnlineRepair & {
   imei: string;
   /** SĐT khách / mật khẩu máy (free text, tùy chọn). */
   phoneOrPass: string;
+  /** Hình thức TT: Tiền mặt | Chuyển khoản. */
+  paymentMethod?: "Tiền mặt" | "Chuyển khoản";
 };
 
 const repairsSeed: Repair[] = [
@@ -2002,9 +2002,10 @@ export default function Home() {
   ]);
 
   /**
-   * Biểu đồ tròn Tổng quan:
+   * Biểu đồ cột Tổng quan (Chồng vs Vợ):
    * - Chồng = Phần mềm
    * - Vợ = Sửa chữa + Bán hàng
+   * Cảnh báo: % thấp → cố gắng; % cao hơn hẳn → vinh danh.
    */
   const overviewCoupleCharts = useMemo(() => {
     const chongRevenue = overviewModules.phanMem.revenue;
@@ -2014,31 +2015,70 @@ export default function Home() {
     const voProfit =
       overviewModules.suaChua.profit + overviewModules.banHang.profit;
 
-    const toPie = (chong: number, vo: number) => {
+    /** % thấp hơn ngưỡng này → «Cần cố gắng hơn nữa» */
+    const LOW_PCT = 40;
+    /** % cao hơn hẳn → «Vinh Danh trụ cột kinh tế gia đình» */
+    const HIGH_PCT = 60;
+
+    const toBars = (chong: number, vo: number) => {
       const c = Math.max(0, Number(chong) || 0);
       const v = Math.max(0, Number(vo) || 0);
       const total = c + v;
-      return [
-        {
-          key: "chong",
-          name: "Chồng (Phần mềm)",
-          value: c,
-          pct: total > 0 ? (c / total) * 100 : 0,
-        },
-        {
-          key: "vo",
-          name: "Vợ (Sửa chữa + Bán hàng)",
-          value: v,
-          pct: total > 0 ? (v / total) * 100 : 0,
-        },
-      ];
+      const chongPct = total > 0 ? (c / total) * 100 : 0;
+      const voPct = total > 0 ? (v / total) * 100 : 0;
+      return {
+        rows: [
+          {
+            key: "chong",
+            name: "Chồng",
+            short: "Phần mềm",
+            value: c,
+            pct: chongPct,
+            fill: "#0ea5e9",
+          },
+          {
+            key: "vo",
+            name: "Vợ",
+            short: "Sửa + Bán hàng",
+            value: v,
+            pct: voPct,
+            fill: "#10b981",
+          },
+        ],
+        total,
+        chongPct,
+        voPct,
+        /** Banner dưới chart */
+        banners: [
+          ...(total > 0 && chongPct < LOW_PCT
+            ? [{ tone: "warn" as const, text: "Chồng: Cần cố gắng hơn nữa" }]
+            : []),
+          ...(total > 0 && voPct < LOW_PCT
+            ? [{ tone: "warn" as const, text: "Vợ: Cần cố gắng hơn nữa" }]
+            : []),
+          ...(total > 0 && chongPct >= HIGH_PCT
+            ? [
+                {
+                  tone: "honor" as const,
+                  text: "Chồng: Vinh danh trụ cột kinh tế gia đình",
+                },
+              ]
+            : []),
+          ...(total > 0 && voPct >= HIGH_PCT
+            ? [
+                {
+                  tone: "honor" as const,
+                  text: "Vợ: Vinh danh trụ cột kinh tế gia đình",
+                },
+              ]
+            : []),
+        ],
+      };
     };
 
     return {
-      revenue: toPie(chongRevenue, voRevenue),
-      profit: toPie(chongProfit, voProfit),
-      revenueTotal: Math.max(0, chongRevenue) + Math.max(0, voRevenue),
-      profitTotal: Math.max(0, chongProfit) + Math.max(0, voProfit),
+      revenue: toBars(chongRevenue, voRevenue),
+      profit: toBars(chongProfit, voProfit),
     };
   }, [overviewModules]);
 
@@ -2763,6 +2803,9 @@ export default function Home() {
     }
     const deposit = parseInputMoney(depositRaw);
     const pStatus = String(form.get("paymentStatus")) as ShopRepairOrder["paymentStatus"];
+    const payMethodRaw = String(form.get("paymentMethod") || "").trim();
+    const paymentMethod: NonNullable<ShopRepairOrder["paymentMethod"]> =
+      payMethodRaw === "Chuyển khoản" ? "Chuyển khoản" : "Tiền mặt";
     const isEdit = Boolean(editingShopRepairId);
     const isClone = !isEdit && Boolean(cloneShopRepairDraft);
     const existing = editingShopRepairId
@@ -2800,6 +2843,7 @@ export default function Home() {
           ? existing?.paymentDate || vnNowDateTimeLocal()
           : existing?.paymentDate ?? "",
       paymentStatus: pStatus,
+      paymentMethod,
       rewardPoints: existing?.rewardPoints ?? 0,
       isPaid: pStatus === "Đã thanh toán",
       actorUsername: currentUser.username,
@@ -4161,7 +4205,7 @@ export default function Home() {
                   />
                 </div>
 
-                {/* Biểu đồ tròn: Chồng (PM) vs Vợ (Sửa + Bán) — ẩn số chỉ che tiền, vẫn hiện % */}
+                {/* Biểu đồ cột: Chồng (PM) vs Vợ (Sửa + Bán) + cảnh báo / vinh danh */}
                 <section className="rounded-xl border border-line bg-white p-4 shadow-panel">
                   <div className="mb-4">
                     <h2 className="text-lg font-black text-ink">Chia sẻ doanh thu & lợi nhuận</h2>
@@ -4172,6 +4216,10 @@ export default function Home() {
                         : reportPeriod === "month"
                           ? ` · ${inventoryReportMonth}`
                           : ` · ${reportYear}`}
+                      {" · "}
+                      <span className="text-slate-500">
+                        &lt;40% cố gắng · ≥60% vinh danh trụ cột
+                      </span>
                     </p>
                   </div>
                   <div className="grid gap-6 lg:grid-cols-2">
@@ -4180,23 +4228,24 @@ export default function Home() {
                         {
                           id: "revenue",
                           title: "Doanh thu",
-                          data: overviewCoupleCharts.revenue,
-                          total: overviewCoupleCharts.revenueTotal,
+                          pack: overviewCoupleCharts.revenue,
                           colorChong: "#0ea5e9",
                           colorVo: "#10b981",
                         },
                         {
                           id: "profit",
                           title: "Lợi nhuận",
-                          data: overviewCoupleCharts.profit,
-                          total: overviewCoupleCharts.profitTotal,
+                          pack: overviewCoupleCharts.profit,
                           colorChong: "#6366f1",
                           colorVo: "#f59e0b",
                         },
                       ] as const
                     ).map((chart) => {
-                      const colors = [chart.colorChong, chart.colorVo];
-                      const hasData = chart.total > 0;
+                      const rows = chart.pack.rows.map((r) => ({
+                        ...r,
+                        fill: r.key === "chong" ? chart.colorChong : chart.colorVo,
+                      }));
+                      const hasData = chart.pack.total > 0;
                       return (
                         <div
                           key={chart.id}
@@ -4207,46 +4256,70 @@ export default function Home() {
                             <span className="text-sm font-bold text-muted">
                               Tổng:{" "}
                               <strong className="text-base text-ink">
-                                {isStatsHidden ? "***" : formatMoney(chart.total)}
+                                {isStatsHidden
+                                  ? "***"
+                                  : formatMoney(chart.pack.total)}
                               </strong>
                             </span>
                           </div>
                           {!hasData ? (
-                            <p className="flex h-[200px] items-center justify-center text-sm font-semibold text-muted">
+                            <p className="flex h-[220px] items-center justify-center text-sm font-semibold text-muted">
                               Chưa có dữ liệu trong kỳ
                             </p>
                           ) : (
-                            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:gap-2">
-                              <div className="flex min-h-[240px] flex-[2] items-center justify-center sm:min-h-[280px]">
-                                <div className="h-[220px] w-full max-w-[280px] sm:h-[260px] sm:max-w-none">
-                                  <ResponsiveContainer width="100%" height="100%">
-                                    <PieChart>
-                                      <Pie
-                                        data={chart.data}
-                                        dataKey="value"
-                                        nameKey="name"
-                                        cx="50%"
-                                        cy="50%"
-                                        innerRadius="48%"
-                                        outerRadius="78%"
-                                        paddingAngle={2}
-                                      >
-                                        {chart.data.map((entry, idx) => (
-                                          <Cell
-                                            key={entry.key}
-                                            fill={colors[idx % colors.length]}
-                                            stroke="#fff"
-                                            strokeWidth={2}
-                                          />
-                                        ))}
-                                      </Pie>
-                                      <Tooltip
-                                        formatter={(value, name) => [
+                            <>
+                              <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:gap-2">
+                                <div className="min-h-[240px] flex-[2] sm:min-h-[280px]">
+                                  <ResponsiveContainer width="100%" height={260}>
+                                    <BarChart
+                                      data={rows}
+                                      margin={{ top: 12, right: 8, left: 0, bottom: 4 }}
+                                      barCategoryGap="28%"
+                                    >
+                                      <CartesianGrid
+                                        strokeDasharray="3 3"
+                                        vertical={false}
+                                        stroke="#e2e8f0"
+                                      />
+                                      <XAxis
+                                        dataKey="name"
+                                        axisLine={false}
+                                        tickLine={false}
+                                        tick={{
+                                          fill: "#334155",
+                                          fontSize: 13,
+                                          fontWeight: 800,
+                                        }}
+                                      />
+                                      <YAxis
+                                        axisLine={false}
+                                        tickLine={false}
+                                        tickFormatter={(v) =>
                                           isStatsHidden
                                             ? "***"
-                                            : formatMoney(Number(value) || 0),
-                                          String(name ?? ""),
-                                        ]}
+                                            : Number(v) >= 1000
+                                              ? `${Math.round(Number(v) / 1000)}k`
+                                              : String(v)
+                                        }
+                                        tick={{
+                                          fill: "#64748b",
+                                          fontSize: 11,
+                                          fontWeight: 600,
+                                        }}
+                                        width={48}
+                                      />
+                                      <Tooltip
+                                        formatter={(value, _name, item) => {
+                                          const pct = Number(
+                                            (item?.payload as { pct?: number })?.pct ?? 0
+                                          );
+                                          return [
+                                            isStatsHidden
+                                              ? `*** (${pct.toFixed(0)}%)`
+                                              : `${formatMoney(Number(value) || 0)} · ${pct.toFixed(0)}%`,
+                                            chart.title,
+                                          ];
+                                        }}
                                         contentStyle={{
                                           borderRadius: "8px",
                                           border: "1px solid #e2e8f0",
@@ -4254,40 +4327,62 @@ export default function Home() {
                                           fontSize: 12,
                                         }}
                                       />
-                                    </PieChart>
+                                      <Bar dataKey="value" radius={[8, 8, 0, 0]} maxBarSize={72}>
+                                        {rows.map((entry) => (
+                                          <Cell key={entry.key} fill={entry.fill} />
+                                        ))}
+                                      </Bar>
+                                    </BarChart>
                                   </ResponsiveContainer>
                                 </div>
-                              </div>
-                              <div className="flex flex-[1] flex-col justify-center gap-2 sm:max-w-[34%] sm:pl-0 sm:pr-0.5">
-                                {chart.data.map((row, idx) => (
-                                  <div
-                                    key={row.key}
-                                    className="rounded-lg border border-slate-100 bg-white px-2.5 py-2 shadow-sm"
-                                  >
-                                    <div className="flex items-center gap-1.5">
-                                      <span
-                                        className="h-2.5 w-2.5 shrink-0 rounded-full"
-                                        style={{ backgroundColor: colors[idx] }}
-                                      />
-                                      <span className="text-sm font-black text-slate-800">
-                                        {row.key === "chong" ? "Chồng" : "Vợ"}
-                                      </span>
-                                      <span className="ml-auto text-sm font-black tabular-nums text-brand">
-                                        {row.pct.toFixed(0)}%
-                                      </span>
+                                <div className="flex flex-[1] flex-col justify-center gap-2 sm:max-w-[34%]">
+                                  {rows.map((row) => (
+                                    <div
+                                      key={row.key}
+                                      className="rounded-lg border border-slate-100 bg-white px-2.5 py-2 shadow-sm"
+                                    >
+                                      <div className="flex items-center gap-1.5">
+                                        <span
+                                          className="h-2.5 w-2.5 shrink-0 rounded-full"
+                                          style={{ backgroundColor: row.fill }}
+                                        />
+                                        <span className="text-sm font-black text-slate-800">
+                                          {row.name}
+                                        </span>
+                                        <span className="ml-auto text-sm font-black tabular-nums text-brand">
+                                          {row.pct.toFixed(0)}%
+                                        </span>
+                                      </div>
+                                      <p className="mt-0.5 text-xs font-semibold text-muted">
+                                        {row.short}
+                                      </p>
+                                      <p className="text-base font-black tabular-nums text-ink">
+                                        {isStatsHidden
+                                          ? "***"
+                                          : formatMoney(row.value)}
+                                      </p>
                                     </div>
-                                    <p className="mt-0.5 text-xs font-semibold leading-tight text-muted">
-                                      {row.key === "chong"
-                                        ? "Phần mềm"
-                                        : "Sửa + Bán hàng"}
-                                    </p>
-                                    <p className="text-base font-black tabular-nums text-ink">
-                                      {isStatsHidden ? "***" : formatMoney(row.value)}
-                                    </p>
-                                  </div>
-                                ))}
+                                  ))}
+                                </div>
                               </div>
-                            </div>
+                              {chart.pack.banners.length > 0 ? (
+                                <div className="mt-3 grid gap-1.5">
+                                  {chart.pack.banners.map((b) => (
+                                    <div
+                                      key={b.text}
+                                      className={`rounded-lg px-3 py-2 text-sm font-bold ${
+                                        b.tone === "honor"
+                                          ? "border border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50 text-amber-900"
+                                          : "border border-orange-200 bg-orange-50 text-orange-900"
+                                      }`}
+                                    >
+                                      {b.tone === "honor" ? "🏆 " : "⚠️ "}
+                                      {b.text}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </>
                           )}
                         </div>
                       );
@@ -7454,6 +7549,39 @@ export default function Home() {
             debtVisibleIds.length > 0 &&
             debtVisibleIds.every((id) => selectedShopRepairIds.includes(id));
 
+          /** Tổng ngoài grid — TM / CK / Nợ (giống bán hàng). */
+          const repairPayTotals = (() => {
+            const buckets = {
+              cash: { count: 0, amount: 0, profit: 0 },
+              transfer: { count: 0, amount: 0, profit: 0 },
+              debt: { count: 0, amount: 0, profit: 0 },
+            };
+            let totalCount = 0;
+            let totalAmount = 0;
+            let totalProfit = 0;
+            for (const r of filteredRepairs) {
+              const amt = Number(r.quote) || 0;
+              const prof = amt - (Number(r.deposit) || 0);
+              totalCount += 1;
+              totalAmount += amt;
+              totalProfit += prof;
+              if (r.paymentStatus === "NỢ DAI") {
+                buckets.debt.count += 1;
+                buckets.debt.amount += amt;
+                buckets.debt.profit += prof;
+              } else if ((r.paymentMethod || "Tiền mặt") === "Chuyển khoản") {
+                buckets.transfer.count += 1;
+                buckets.transfer.amount += amt;
+                buckets.transfer.profit += prof;
+              } else {
+                buckets.cash.count += 1;
+                buckets.cash.amount += amt;
+                buckets.cash.profit += prof;
+              }
+            }
+            return { ...buckets, totalCount, totalAmount, totalProfit };
+          })();
+
           const monthlyRepairs = shopRepairs.filter((r) =>
             orderTimeKey(r).startsWith(shopRepairMonth)
           );
@@ -7711,7 +7839,7 @@ export default function Home() {
                       </div>
                     );
                   })()}
-                  <Field label="Thanh toán" required>
+                  <Field label="Trạng thái TT" required>
                     <select
                       name="paymentStatus"
                       required
@@ -7720,6 +7848,22 @@ export default function Home() {
                     >
                       <option value="NỢ DAI">NỢ DAI</option>
                       <option value="Đã thanh toán">Đã thanh toán</option>
+                    </select>
+                  </Field>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Hình thức thanh toán" required>
+                    <select
+                      name="paymentMethod"
+                      required
+                      defaultValue={formDefaults?.paymentMethod ?? "Tiền mặt"}
+                      className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
+                    >
+                      {SALE_PAY_METHOD_OPTIONS.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
                     </select>
                   </Field>
                 </div>
@@ -7767,18 +7911,18 @@ export default function Home() {
                 <div className="absolute top-0 right-0 -mt-16 -mr-16 h-64 w-64 rounded-full bg-white/10 blur-3xl mix-blend-overlay pointer-events-none"></div>
                 <div className="absolute bottom-0 left-0 -mb-16 -ml-16 h-48 w-48 rounded-full bg-white/10 blur-2xl pointer-events-none"></div>
                 <div className="relative z-10 md:w-1/2">
-                  <h1 className="text-lg sm:text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500 drop-shadow-sm uppercase tracking-tight">
-                    Trung Tâm Sửa Chữa Điện Thoại Di Động
+                  <h1 className="text-lg sm:text-xl font-black uppercase tracking-tight text-white drop-shadow-sm">
+                    Trung Tâm Sửa Chữa Điện Thoại Kim Chi
                   </h1>
                 </div>
                 <div className="relative z-10 md:w-1/2 flex flex-col md:items-end gap-1">
-                  <p className="font-bold text-white/95 flex items-center gap-2 text-xs sm:text-sm">
-                    <span className="flex h-1.5 w-1.5 rounded-full bg-yellow-400 shrink-0 hidden md:block"></span>
+                  <p className="flex items-center gap-2 text-xs font-bold text-white sm:text-sm">
+                    <span className="hidden h-1.5 w-1.5 shrink-0 rounded-full bg-white md:block"></span>
                     Nhanh — Uy tín — Bảo hành rõ ràng
                   </p>
-                  <p className="font-semibold text-white/90 flex items-center gap-2 text-xs sm:text-sm">
-                    <span className="flex h-1.5 w-1.5 rounded-full bg-white/50 shrink-0 hidden md:block"></span>
-                    Địa chỉ: Phường Nam Sách, TP. Hải Phòng
+                  <p className="flex items-center gap-2 text-xs font-semibold text-white sm:text-sm">
+                    <span className="hidden h-1.5 w-1.5 shrink-0 rounded-full bg-white md:block"></span>
+                    Nơi Trao trọn niềm tin số 1 của khách hàng Tại Phường Nam Sách, TP. Hải Phòng
                   </p>
                 </div>
               </div>
@@ -7964,12 +8108,14 @@ export default function Home() {
                       "Lãi",
                       "Ngày & giờ",
                       "Thanh toán",
+                      "Hình thức TT",
                       "Thao tác",
                     ]}
                     rows={filteredRepairs.map((item) => {
                       const isNợ = item.paymentStatus === "NỢ DAI";
                       const isDaThanhToan = item.paymentStatus === "Đã thanh toán";
                       const isChecked = selectedShopRepairIds.includes(item.id);
+                      const payMethod = item.paymentMethod?.trim() || "Tiền mặt";
                       return [
                         <div
                           key={`chk-${item.id}`}
@@ -8023,6 +8169,12 @@ export default function Home() {
                           }`}
                         >
                           {isDaThanhToan ? "✅ Đã thanh toán" : "❌ NỢ DAI"}
+                        </span>,
+                        <span
+                          key={`pm-${item.id}`}
+                          className="whitespace-nowrap text-sm font-bold text-slate-700"
+                        >
+                          {payMethod}
                         </span>,
                         <div key={`act-${item.id}`} className="flex flex-nowrap items-center justify-center gap-1.5">
                           <button
@@ -8094,6 +8246,54 @@ export default function Home() {
                     ) : null}
                   </div>
                 ) : null}
+
+                {/* Tổng theo hình thức TT — giống bán hàng */}
+                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-lg border border-line bg-slate-50/80 px-3 py-2 text-xs font-semibold">
+                  <span className="font-black text-ink">Theo TT:</span>
+                  <span className="text-emerald-700">
+                    TM{" "}
+                    <strong className="tabular-nums">
+                      {isShopRepairSensitiveHidden
+                        ? "***"
+                        : formatMoney(repairPayTotals.cash.amount)}
+                    </strong>
+                    <span className="ml-1 text-muted">({repairPayTotals.cash.count})</span>
+                  </span>
+                  <span className="text-sky-700">
+                    CK{" "}
+                    <strong className="tabular-nums">
+                      {isShopRepairSensitiveHidden
+                        ? "***"
+                        : formatMoney(repairPayTotals.transfer.amount)}
+                    </strong>
+                    <span className="ml-1 text-muted">({repairPayTotals.transfer.count})</span>
+                  </span>
+                  <span className="text-red-700">
+                    Nợ{" "}
+                    <strong className="tabular-nums">
+                      {isShopRepairSensitiveHidden
+                        ? "***"
+                        : formatMoney(repairPayTotals.debt.amount)}
+                    </strong>
+                    <span className="ml-1 text-muted">({repairPayTotals.debt.count})</span>
+                  </span>
+                  <span className="ml-auto text-muted">
+                    Tổng{" "}
+                    <strong className="tabular-nums text-ink">
+                      {isShopRepairSensitiveHidden
+                        ? "***"
+                        : formatMoney(repairPayTotals.totalAmount)}
+                    </strong>
+                    <span className="ml-1">({repairPayTotals.totalCount})</span>
+                    <span className="mx-1.5 text-line">·</span>
+                    Lãi{" "}
+                    <strong className="tabular-nums text-emerald-700">
+                      {isShopRepairSensitiveHidden
+                        ? "***"
+                        : formatMoney(repairPayTotals.totalProfit)}
+                    </strong>
+                  </span>
+                </div>
               </Panel>
             </div>
 
@@ -8169,6 +8369,11 @@ export default function Home() {
                               ? "✅ Đã thanh toán"
                               : "❌ NỢ DAI"}
                           </span>
+                        </div>
+                      </Field>
+                      <Field label="Hình thức thanh toán">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-semibold text-slate-800">
+                          {viewingShopRepair.paymentMethod?.trim() || "Tiền mặt"}
                         </div>
                       </Field>
                       <Field label="Báo giá">
@@ -8607,18 +8812,18 @@ export default function Home() {
                 <div className="absolute top-0 right-0 -mt-16 -mr-16 h-64 w-64 rounded-full bg-white/10 blur-3xl mix-blend-overlay pointer-events-none"></div>
                 <div className="absolute bottom-0 left-0 -mb-16 -ml-16 h-48 w-48 rounded-full bg-white/10 blur-2xl pointer-events-none"></div>
                 <div className="relative z-10 md:w-1/2">
-                  <h1 className="text-lg sm:text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 to-yellow-400 drop-shadow-sm uppercase tracking-tight">
-                    Trung Tâm Giải Mã Phần Mềm Điện Thoại Di Động Nam Sách
+                  <h1 className="text-lg sm:text-xl font-black uppercase tracking-tight text-white drop-shadow-sm">
+                    Trung Tâm Giải Mã Phần Mềm Điện Thoại Nam Sách
                   </h1>
                 </div>
                 <div className="relative z-10 md:w-1/2 flex flex-col md:items-end gap-1">
-                  <p className="font-bold text-white/95 flex items-center gap-2 text-xs sm:text-sm">
-                    <span className="flex h-1.5 w-1.5 rounded-full bg-yellow-400 shrink-0 hidden md:block"></span>
+                  <p className="flex items-center gap-2 text-xs font-bold text-white sm:text-sm">
+                    <span className="hidden h-1.5 w-1.5 shrink-0 rounded-full bg-white md:block"></span>
                     Chuyên Nghiệp - Nhanh Chóng - Giá Thành Hợp Lý
                   </p>
-                  <p className="font-semibold text-white/80 flex items-center gap-2 text-xs sm:text-sm">
-                    <span className="flex h-1.5 w-1.5 rounded-full bg-white/50 shrink-0 hidden md:block"></span>
-                    Địa chỉ tin cậy và uy tín số 1 TP. Hải Phòng
+                  <p className="flex items-center gap-2 text-xs font-semibold text-white sm:text-sm">
+                    <span className="hidden h-1.5 w-1.5 shrink-0 rounded-full bg-white md:block"></span>
+                    Địa chỉ tin cậy và uy tín tại số 1 TP. Hải Phòng
                   </p>
                 </div>
               </div>
