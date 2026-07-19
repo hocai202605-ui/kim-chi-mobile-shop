@@ -58,6 +58,14 @@ export const ACCESSORY_LOOKUP_CATEGORIES = {
 export type AccessoryLookupCategoryCode =
   (typeof ACCESSORY_LOOKUP_CATEGORIES)[keyof typeof ACCESSORY_LOOKUP_CATEGORIES];
 
+/** Droplist form bán hàng (per-store lookup_items). */
+export const SALE_LOOKUP_CATEGORIES = {
+  warranty: "sale_warranty",
+} as const;
+
+export type SaleLookupCategoryCode =
+  (typeof SALE_LOOKUP_CATEGORIES)[keyof typeof SALE_LOOKUP_CATEGORIES];
+
 async function parseJson<T>(res: Response): Promise<T> {
   const body = await res.json();
   if (!res.ok) {

@@ -17,6 +17,8 @@ export type SaleRow = {
   customerName?: string;
   customerPhone?: string;
   customerAddress?: string;
+  /** Ghi chú phiếu (vd: bảo hành). */
+  note?: string;
   lineCount?: number;
 };
 
@@ -117,6 +119,7 @@ export type SaleDetailLine =
 export type SaleDetail = SaleRow & {
   soldAtLocal?: string;
   customerId?: string;
+  note?: string;
   lines: SaleDetailLine[];
 };
 

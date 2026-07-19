@@ -78,6 +78,8 @@ export type CreatedSale = {
   customerName?: string;
   customerPhone?: string;
   customerAddress?: string;
+  /** Ghi chú phiếu (vd: bảo hành bán máy). */
+  note?: string;
   lineCount?: number;
 };
 
@@ -1444,6 +1446,7 @@ export async function repoGetSale(saleId: string): Promise<SaleDetail> {
     customerName: String(sale.customer_name || "Khách lẻ"),
     customerPhone: String(sale.customer_phone || ""),
     customerAddress: String(sale.customer_address || ""),
+    note: sale.note ? String(sale.note) : "",
     lineCount: lines.length,
     lines,
   };

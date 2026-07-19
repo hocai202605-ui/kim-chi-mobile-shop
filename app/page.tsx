@@ -55,6 +55,7 @@ import {
   ACCESSORY_LOOKUP_CATEGORIES,
   PHONE_LOOKUP_CATEGORIES,
   REPAIR_LOOKUP_CATEGORIES,
+  SALE_LOOKUP_CATEGORIES,
   SOFTWARE_LOOKUP_CATEGORIES,
   addLookupItem as apiAddLookupItem,
   deactivateLookupItem as apiDeactivateLookupItem,
@@ -927,6 +928,9 @@ export default function Home() {
   const [saleCustomerPhone, setSaleCustomerPhone] = useState("");
   const [saleCustomerAddress, setSaleCustomerAddress] = useState("");
   const [saleCustomerSuggestOpen, setSaleCustomerSuggestOpen] = useState(false);
+  /** Bảo hành bán máy — lưu vào sales.note. */
+  const [saleWarranty, setSaleWarranty] = useState("");
+  const [saleWarrantyKey, setSaleWarrantyKey] = useState(0);
   const [saleCart, setSaleCart] = useState<SaleCartLine[]>([]);
   const [salePhoneSearch, setSalePhoneSearch] = useState("");
   /** Tab form bán: phụ kiện (mặc định) | máy. */
@@ -938,6 +942,9 @@ export default function Home() {
   const [saleAccDefaultName, setSaleAccDefaultName] = useState("");
   /** Options local fallback khi lookup store trống. */
   const [saleAccNameLocal, setSaleAccNameLocal] = useState<string[]>(SALE_ACC_NAME_SEED);
+  /** Tặng PK (tab Bán Máy): remount tên + ô giá. */
+  const [saleGiftFormKey, setSaleGiftFormKey] = useState(0);
+  const [saleGiftCost, setSaleGiftCost] = useState("");
   const [saleSaving, setSaleSaving] = useState(false);
   /** Popup tạo/sửa phiếu bán — màn sales mặc định chỉ grid. */
   const [isSaleModalOpen, setIsSaleModalOpen] = useState(false);
@@ -1563,6 +1570,18 @@ export default function Home() {
   const setSaleAccCostOptions = useCallback(
     (next: string[]) => {
       setFormLookupOptions(ACCESSORY_LOOKUP_CATEGORIES.cost, saleStoreId)(next);
+    },
+    [saleStoreId, setFormLookupOptions]
+  );
+
+  /** Bảo hành bán máy — lookup store. */
+  const saleWarrantyOptions = useMemo(
+    () => lookupsByStore[saleStoreId]?.[SALE_LOOKUP_CATEGORIES.warranty] ?? [],
+    [lookupsByStore, saleStoreId]
+  );
+  const setSaleWarrantyOptions = useCallback(
+    (next: string[]) => {
+      setFormLookupOptions(SALE_LOOKUP_CATEGORIES.warranty, saleStoreId)(next);
     },
     [saleStoreId, setFormLookupOptions]
   );
@@ -2615,12 +2634,16 @@ export default function Home() {
 
   function resetSaleFormDraft() {
     resetSaleCustomerToWalkIn();
+    setSaleWarranty("");
+    setSaleWarrantyKey((k) => k + 1);
     setSaleCart([]);
     setSalePhoneSearch("");
     setSaleModalTab("accessory");
     setSaleAccQty(1);
     setSaleAccFormKey((k) => k + 1);
     setSaleAccDefaultName("");
+    setSaleGiftFormKey((k) => k + 1);
+    setSaleGiftCost("");
     setSalePayMethod("Tiền mặt");
     setSalePayStatus("Đã thanh toán");
     setSaleSoldAt(vnNowDateTimeLocal());
@@ -2861,12 +2884,12 @@ export default function Home() {
       return;
     }
     const quantity = Math.max(1, Math.round(Number(saleAccQty) || 1));
-    // Giá bán / giá nhập từ ManageableSelect (FormData) — cho phép 0 = tặng kèm.
+    // Giá bán / giá nhập từ ManageableSelect (FormData).
     const saleAccPriceRaw = String(fd?.get("saleAccPrice") ?? "").trim();
     const saleAccCostRaw = String(fd?.get("saleAccCost") ?? "").trim();
     const priceDigits = saleAccPriceRaw.replace(/\D/g, "");
     if (!priceDigits) {
-      window.alert("Chọn hoặc nhập giá bán phụ kiện (0 = tặng kèm).");
+      window.alert("Chọn hoặc nhập giá bán phụ kiện.");
       return;
     }
     const unitPrice = parseShopMoney(saleAccPriceRaw); // "0" → 0
@@ -2886,14 +2909,6 @@ export default function Home() {
         cost,
       },
     ]);
-    if (unitPrice === 0) {
-      showUiToast(
-        "success",
-        cost > 0
-          ? `Đã thêm PK tặng: ${name} (vốn ${formatMoney(cost)}/cái).`
-          : `Đã thêm PK tặng: ${name}.`
-      );
-    }
     setSaleAccQty(1);
     setSaleAccDefaultName("");
     // Remount tên + giá bán + giá nhập (xóa giá trị đã chọn)
@@ -5107,11 +5122,10 @@ export default function Home() {
                                 <div className="grid min-w-0 gap-1.5">
                                   <span className="text-sm font-bold text-amber-950">
                                     Giá bán <span className="text-red-500">*</span>
-                                    <span className="ml-1 text-[11px] font-semibold text-muted">(0 = tặng)</span>
                                   </span>
                                   <div
                                     className="min-w-0 [&_label>span]:hidden"
-                                    title="Giá bán (đơn vị shop). Nhập 0 = phụ kiện tặng kèm — vẫn trừ vốn/lãi."
+                                    title="Giá bán (đơn vị shop)"
                                   >
                                     <ManageableSelect
                                       key={`sale-acc-price-${saleAccFormKey}-${saleStoreId}`}
@@ -5135,7 +5149,7 @@ export default function Home() {
                                   <span className="text-sm font-bold text-amber-950">Giá nhập</span>
                                   <div
                                     className="min-w-0 [&_label>span]:hidden"
-                                    title="Giá nhập (đơn vị shop). Khi tặng (giá bán 0) vẫn nên nhập để trừ lãi."
+                                    title="Giá nhập (đơn vị shop)"
                                   >
                                     <ManageableSelect
                                       key={`sale-acc-cost-${saleAccFormKey}-${saleStoreId}`}
@@ -5444,11 +5458,6 @@ export default function Home() {
                                     </span>
                                     {line.name}
                                     <span className="ml-1 font-semibold text-muted">×{line.quantity}</span>
-                                    {line.unitPrice === 0 ? (
-                                      <span className="ml-1 rounded bg-fuchsia-50 px-1 py-0.5 text-[10px] font-black uppercase text-fuchsia-700 ring-1 ring-fuchsia-200">
-                                        Tặng
-                                      </span>
-                                    ) : null}
                                   </p>
                                 )}
                               </div>
@@ -5484,11 +5493,7 @@ export default function Home() {
                                       ? "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-800"
                                       : "border-line text-emerald-700"
                                   }`}
-                                  title={
-                                    line.kind === "accessory"
-                                      ? "Giá bán (0 = tặng kèm)"
-                                      : "Giá bán (đơn vị shop)"
-                                  }
+                                  title="Giá bán (đơn vị shop)"
                                 />
                               )}
                               {line.kind === "accessory" && line.quantity > 1 ? (

@@ -30,6 +30,7 @@ const BOOTSTRAP_LOOKUP_CODES = [
   "repair_warranty",
   "repair_quote",
   "repair_fee",
+  "sale_warranty",
 ];
 
 export async function GET() {
