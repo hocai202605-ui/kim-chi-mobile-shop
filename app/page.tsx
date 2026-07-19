@@ -2745,7 +2745,7 @@ export default function Home() {
         const rawAmt = Number(sale.amount) || 0;
         const amountShort = rawAmt >= 1_000_000 ? Math.round(rawAmt / 1000) : rawAmt;
         const unitShort = Math.max(0, Math.round(amountShort / Math.max(1, sale.quantity)));
-        setSalePhonePickerOpen(mode === "edit" && sale.itemType === "Máy");
+        setSaleModalTab(mode === "edit" && sale.itemType === "Máy" ? "phone" : "accessory");
         setSaleCart([
           {
             key: `legacy-${sale.id}`,
