@@ -113,7 +113,10 @@ export async function POST(req: NextRequest) {
       customerPhone: body?.customerPhone != null ? String(body.customerPhone) : undefined,
       customerAddress: body?.customerAddress != null ? String(body.customerAddress) : undefined,
       soldAt: body?.soldAt != null ? String(body.soldAt) : undefined,
-      note: body?.note ? String(body.note) : undefined,
+      note:
+        body?.note != null && String(body.note).trim()
+          ? String(body.note).trim()
+          : undefined,
       actorUsername: body?.actorUsername ? String(body.actorUsername) : undefined,
       lines,
       itemType: lines ? undefined : legacyItemType,

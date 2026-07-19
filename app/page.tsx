@@ -316,6 +316,8 @@ type Sale = {
   customerPhone?: string;
   customerAddress?: string;
   customerNote?: string;
+  /** Ghi chú phiếu (vd: bảo hành bán máy). */
+  note?: string;
   storeId: Exclude<StoreId, "all">;
   itemName: string;
   itemType: "Máy" | "Phụ kiện";
@@ -2706,11 +2708,7 @@ export default function Home() {
       setSaleCustomerAddress(sale.customerAddress || "");
       setSaleCustomerSuggestOpen(false);
       {
-        const rawNote = String(
-          (detail as { note?: string } | null)?.note ??
-            (local as { note?: string } | undefined)?.note ??
-            ""
-        ).trim();
+        const rawNote = String(detail?.note ?? local?.note ?? "").trim();
         // note có thể là "Bảo hành: 6 tháng" hoặc chỉ "6 tháng"
         const warranty = rawNote.replace(/^bảo\s*hành\s*:\s*/i, "").trim();
         setSaleWarranty(warranty);
@@ -2982,6 +2980,18 @@ export default function Home() {
   async function createSale(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (isSaleReadOnly) return;
+    // Đọc FormData TRƯỚC mọi await — event.currentTarget mất sau async.
+    const formEl = event.currentTarget;
+    const fd = new FormData(formEl);
+    const warrantyFromForm = String(fd.get("saleWarranty") || "").trim();
+    // Ưu tiên form (đang mở tab Máy); fallback state (đã sync onValueChange / đổi tab).
+    const warrantyNote = (warrantyFromForm || saleWarranty).trim();
+    const saleNote = warrantyNote
+      ? /^bảo\s*hành/i.test(warrantyNote)
+        ? warrantyNote
+        : `Bảo hành: ${warrantyNote}`
+      : "";
+
     const hasPhone = saleCart.some((l) => l.kind === "phone");
     const customerName = (saleCustomerName.trim() || (hasPhone ? "" : "Khách lẻ")).trim();
     if (hasPhone && !customerName) {
@@ -3025,10 +3035,6 @@ export default function Home() {
         }
       }
 
-      const formEl = event.currentTarget;
-      const fd = new FormData(formEl);
-      // ManageableSelect bảo hành (chỉ có trên tab Máy) — fallback state khi view/load.
-      const warrantyNote = String(fd.get("saleWarranty") ?? saleWarranty ?? "").trim();
       const saved = await apiCreateSale({
         storeId: saleStoreId,
         payment: paymentValue,
@@ -3036,11 +3042,7 @@ export default function Home() {
         customerPhone: saleCustomerPhone.trim(),
         customerAddress: saleCustomerAddress.trim(),
         soldAt: saleSoldAt || vnNowDateTimeLocal(),
-        note: warrantyNote
-          ? /^bảo\s*hành/i.test(warrantyNote)
-            ? warrantyNote
-            : `Bảo hành: ${warrantyNote}`
-          : undefined,
+        note: saleNote || undefined,
         actorUsername: currentUser?.username,
         lines: saleCart.map((line) =>
           line.kind === "phone"
@@ -3069,6 +3071,7 @@ export default function Home() {
         customerName: saved.customerName || customerName || "Khách lẻ",
         customerPhone: saleCustomerPhone.trim(),
         customerAddress: saleCustomerAddress.trim(),
+        note: saleNote || saved.note || "",
         storeId: saved.storeId,
         itemName: saved.itemName,
         itemType: saved.itemType,
@@ -5332,8 +5335,8 @@ export default function Home() {
                                   />
                                 </label>
                               </div>
-                              <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
-                                <label className="grid gap-0.5">
+                              <div className="mt-2 grid min-w-0 gap-2 sm:grid-cols-2">
+                                <label className="grid min-w-0 gap-0.5">
                                   <span className="text-xs font-bold text-slate-700">Địa chỉ</span>
                                   <input
                                     value={saleCustomerAddress}
@@ -5346,36 +5349,37 @@ export default function Home() {
                                     autoComplete="off"
                                   />
                                 </label>
-                                <div className="flex items-end">
-                                  <button
-                                    type="button"
-                                    onClick={handleSaveSaleCustomer}
-                                    className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-brand bg-brand-soft px-3 text-sm font-bold text-brand-dark hover:bg-brand hover:text-white"
-                                  >
-                                    <Users size={14} />
-                                    Lưu khách
-                                  </button>
+                                <div className="grid min-w-0 gap-0.5">
+                                  <span className="text-xs font-bold text-slate-700">Bảo hành</span>
+                                  <div className="min-w-0 [&_label>span]:hidden">
+                                    <ManageableSelect
+                                      key={`sale-warranty-${saleWarrantyKey}-${saleStoreId}`}
+                                      label="Bảo hành"
+                                      name="saleWarranty"
+                                      options={saleWarrantyOptions}
+                                      setOptions={setSaleWarrantyOptions}
+                                      defaultValue={saleWarranty}
+                                      required={false}
+                                      categoryCode={SALE_LOOKUP_CATEGORIES.warranty}
+                                      storeId={saleStoreId}
+                                      allowManage
+                                      allowFreeText
+                                      actorUsername={currentUser?.username ?? ""}
+                                      onValueChange={setSaleWarranty}
+                                      onManageNotify={(type, message) => showUiToast(type, message)}
+                                    />
+                                  </div>
                                 </div>
                               </div>
-                              <div className="mt-2 grid min-w-0 gap-1.5">
-                                <span className="text-xs font-bold text-slate-700">Bảo hành</span>
-                                <div className="min-w-0 [&_label>span]:hidden">
-                                  <ManageableSelect
-                                    key={`sale-warranty-${saleWarrantyKey}-${saleStoreId}`}
-                                    label="Bảo hành"
-                                    name="saleWarranty"
-                                    options={saleWarrantyOptions}
-                                    setOptions={setSaleWarrantyOptions}
-                                    defaultValue={saleWarranty}
-                                    required={false}
-                                    categoryCode={SALE_LOOKUP_CATEGORIES.warranty}
-                                    storeId={saleStoreId}
-                                    allowManage
-                                    allowFreeText
-                                    actorUsername={currentUser?.username ?? ""}
-                                    onManageNotify={(type, message) => showUiToast(type, message)}
-                                  />
-                                </div>
+                              <div className="mt-2 flex justify-end">
+                                <button
+                                  type="button"
+                                  onClick={handleSaveSaleCustomer}
+                                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-brand bg-brand-soft px-3 text-sm font-bold text-brand-dark hover:bg-brand hover:text-white"
+                                >
+                                  <Users size={14} />
+                                  Lưu khách
+                                </button>
                               </div>
                             </div>
 
@@ -5549,27 +5553,31 @@ export default function Home() {
                             />
                           </label>
                         </div>
-                        {saleCustomerAddress ? (
-                          <label className="mt-2 grid gap-0.5">
-                            <span className="text-xs font-bold text-slate-700">Địa chỉ</span>
-                            <input
-                              value={saleCustomerAddress}
-                              readOnly
-                              disabled
-                              className="h-9 w-full cursor-default rounded-md border border-line bg-slate-50 px-2.5 text-sm font-semibold text-slate-700"
-                            />
-                          </label>
-                        ) : null}
-                        {saleWarranty ? (
-                          <label className="mt-2 grid gap-0.5">
-                            <span className="text-xs font-bold text-slate-700">Bảo hành</span>
-                            <input
-                              value={saleWarranty}
-                              readOnly
-                              disabled
-                              className="h-9 w-full cursor-default rounded-md border border-line bg-slate-50 px-2.5 text-sm font-semibold text-slate-700"
-                            />
-                          </label>
+                        {saleCustomerAddress || saleWarranty ? (
+                          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                            {saleCustomerAddress ? (
+                              <label className="grid gap-0.5">
+                                <span className="text-xs font-bold text-slate-700">Địa chỉ</span>
+                                <input
+                                  value={saleCustomerAddress}
+                                  readOnly
+                                  disabled
+                                  className="h-9 w-full cursor-default rounded-md border border-line bg-slate-50 px-2.5 text-sm font-semibold text-slate-700"
+                                />
+                              </label>
+                            ) : null}
+                            {saleWarranty ? (
+                              <label className="grid gap-0.5">
+                                <span className="text-xs font-bold text-slate-700">Bảo hành</span>
+                                <input
+                                  value={saleWarranty}
+                                  readOnly
+                                  disabled
+                                  className="h-9 w-full cursor-default rounded-md border border-line bg-slate-50 px-2.5 text-sm font-semibold text-slate-700"
+                                />
+                              </label>
+                            ) : null}
+                          </div>
                         ) : null}
                       </div>
                     ) : null}
@@ -8470,6 +8478,8 @@ function ManageableSelect({
   allowFreeText = true,
   /** Toast / feedback ngoài (vd form bán) — optional, không bắt buộc kho/PM. */
   onManageNotify,
+  /** Đồng bộ giá trị ra parent (form bán: bảo hành…). */
+  onValueChange,
 }: {
   label: string;
   name: string;
@@ -8496,8 +8506,14 @@ function ManageableSelect({
   allowFreeText?: boolean;
   /** Gọi khi thêm/sửa/xóa option (persist hoặc local). */
   onManageNotify?: (type: "success" | "error", message: string) => void;
+  /** Gọi mỗi khi giá trị combobox đổi (gõ tay / chọn / + / sửa / xóa). */
+  onValueChange?: (value: string) => void;
 }) {
-  const [value, setValue] = useState(defaultValue ?? "");
+  const [value, setValueState] = useState(defaultValue ?? "");
+  const setValue = (next: string) => {
+    setValueState(next);
+    onValueChange?.(next);
+  };
   const [busy, setBusy] = useState(false);
   /** Inline editor — tránh window.prompt (thường bị chặn / mất focus trong modal). */
   const [editMode, setEditMode] = useState<null | "add" | "edit">(null);

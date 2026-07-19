@@ -1305,6 +1305,7 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
       payment: paymentToUi(input.payment),
       status: "Hoàn tất" as const,
       customerName,
+      note: input.note ?? "",
       lineCount: lines.length,
     };
   });
