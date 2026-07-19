@@ -13,7 +13,10 @@ export function storeName(id: StoreId) {
 
 export const PAYMENT_METHODS = ["Tiền mặt", "Chuyển khoản", "Thẻ", "Khác"] as const;
 
-/** Sidebar page ids — sync with navItems + app_accounts.allowed_menus */
+/**
+ * Sidebar page ids — sync with navItems + app_accounts.allowed_menus.
+ * `inventoryReports` giữ để tương thích DB cũ (đã gộp vào dashboard = Báo cáo / Thống kê).
+ */
 export const ALL_MENU_IDS = [
   "sales",
   "online-repairs",

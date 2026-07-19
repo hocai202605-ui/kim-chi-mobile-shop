@@ -1632,12 +1632,25 @@ export async function repoCancelSale(
   });
 }
 
-/** Dashboard KPIs: stock from phones/accessories + lifetime sales profit/revenue. */
+/**
+ * Dashboard / báo cáo kho KPIs:
+ * - Tồn máy/PK + vốn đầu tư (cost tồn)
+ * - Máy đã bán (lifetime)
+ * - DT/lãi tạm tính từ giá bán dự kiến tồn (chưa bán)
+ * - DT/lãi lifetime từ sales completed (VND DB)
+ */
 export async function repoDashboardSummary(storeCode?: StoreId): Promise<{
   phonesInStock: number;
+  phonesSold: number;
+  /** Máy trạng thái pending (Chưa xử lý). */
+  phonesPending: number;
   accessoryQty: number;
   capitalShort: number;
   capitalVnd: number;
+  /** Σ giá bán dự kiến máy tồn + giá PK tồn (short). */
+  provisionalRevenueShort: number;
+  /** Σ (giá bán − vốn) trên tồn (short). */
+  provisionalProfitShort: number;
   profit: number;
   revenue: number;
 }> {
@@ -1649,13 +1662,22 @@ export async function repoDashboardSummary(storeCode?: StoreId): Promise<{
   }
 
   const [phonesRes, accRes, salesRes] = await Promise.all([
-    pool.query<{ status: string; cost: string | number }>(
-      `select status, cost from public.phones
+    pool.query<{
+      status: string;
+      cost: string | number;
+      expected_price: string | number;
+    }>(
+      `select status, cost, expected_price from public.phones
        where ($1::uuid is null or store_id = $1)`,
       [storeId]
     ),
-    pool.query<{ status: string; quantity: string | number; cost: string | number }>(
-      `select status, quantity, cost from public.accessories
+    pool.query<{
+      status: string;
+      quantity: string | number;
+      cost: string | number;
+      price: string | number;
+    }>(
+      `select status, quantity, cost, price from public.accessories
        where ($1::uuid is null or store_id = $1)`,
       [storeId]
     ),
@@ -1671,27 +1693,53 @@ export async function repoDashboardSummary(storeCode?: StoreId): Promise<{
   ]);
 
   let phonesInStock = 0;
+  let phonesSold = 0;
+  let phonesPending = 0;
   let capitalShort = 0;
+  let provisionalRevenueShort = 0;
+  let provisionalProfitShort = 0;
+
   for (const row of phonesRes.rows) {
+    if (row.status === "sold") {
+      phonesSold += 1;
+      continue;
+    }
+    if (row.status === "pending") {
+      phonesPending += 1;
+      continue;
+    }
     if (row.status !== "in_stock") continue;
     phonesInStock += 1;
-    capitalShort += toShopMoney(Number(row.cost));
+    const cost = toShopMoney(Number(row.cost));
+    const sell = toShopMoney(Number(row.expected_price));
+    capitalShort += cost;
+    provisionalRevenueShort += sell;
+    provisionalProfitShort += sell - cost;
   }
 
   let accessoryQty = 0;
   for (const row of accRes.rows) {
     if (row.status === "cancelled") continue;
     const qty = Math.max(0, Number(row.quantity) || 0);
+    if (qty <= 0) continue;
     accessoryQty += qty;
-    capitalShort += toShopMoney(Number(row.cost)) * qty;
+    const cost = toShopMoney(Number(row.cost));
+    const sell = toShopMoney(Number(row.price));
+    capitalShort += cost * qty;
+    provisionalRevenueShort += sell * qty;
+    provisionalProfitShort += (sell - cost) * qty;
   }
 
   const sales = salesRes.rows[0] ?? { profit: 0, revenue: 0 };
   return {
     phonesInStock,
+    phonesSold,
+    phonesPending,
     accessoryQty,
     capitalShort,
     capitalVnd: capitalShort * 1000,
+    provisionalRevenueShort,
+    provisionalProfitShort,
     profit: Number(sales.profit ?? 0),
     revenue: Number(sales.revenue ?? 0),
   };

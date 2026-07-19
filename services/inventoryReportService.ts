@@ -52,9 +52,19 @@ export function toYearlyChartRows(rows: YearlyInventoryRow[]) {
 
 export type DashboardSummary = {
   phonesInStock: number;
+  /** Tổng máy đã bán (lifetime, status sold). */
+  phonesSold: number;
+  /** Máy chưa xử lý (status pending). */
+  phonesPending: number;
   accessoryQty: number;
+  /** Vốn đầu tư = Σ cost tồn (máy + PK) · short shop. */
   capitalShort: number;
   capitalVnd: number;
+  /** Doanh thu tạm tính nếu bán hết tồn theo giá dự kiến · short. */
+  provisionalRevenueShort: number;
+  /** Lãi tạm tính = DT tạm − vốn đầu tư · short. */
+  provisionalProfitShort: number;
+  /** Lifetime sales (VND DB). */
   profit: number;
   revenue: number;
 };

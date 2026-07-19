@@ -1,6 +1,18 @@
 "use client";
 
-import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import {
   Activity,
   ArrowUpDown,
@@ -564,23 +576,38 @@ const navItems = [
   { id: "software", label: "SỬA CHỮA", icon: Wrench },
   { id: "parts", label: "LINH KIỆN", icon: Cpu },
   { id: "inbound", label: "NHẬP HÀNG", icon: PackagePlus },
-  { id: "inventoryReports", label: "BÁO CÁO KHO HÀNG", icon: FileText },
   { id: "customers", label: "KHÁCH HÀNG", icon: Users },
   { id: "ledger", label: "CÔNG NỢ", icon: CreditCard },
   { id: "logs", label: "NHẬT KÝ", icon: ClipboardList },
   { id: "accounts", label: "TÀI KHOẢN", icon: UserCog },
-  { id: "dashboard", label: "DASHBOARD", icon: LayoutDashboard },
+  { id: "dashboard", label: "BÁO CÁO / THỐNG KÊ", icon: LayoutDashboard },
 ] as const;
 
 type PageId = (typeof navItems)[number]["id"];
 
-const MENU_LABELS: Record<string, string> = Object.fromEntries(
-  navItems.map((item) => [item.id, item.label])
-);
+/** Tab hub Báo cáo / Thống kê (Sprint 1+). */
+type ReportHubTab = "overview" | "sales" | "inventory" | "repair";
+type ReportPeriod = "day" | "month" | "year";
+
+const REPORT_HUB_TABS: { id: ReportHubTab; label: string }[] = [
+  { id: "overview", label: "Tổng quan" },
+  { id: "sales", label: "Bán hàng" },
+  { id: "inventory", label: "Kho hàng" },
+  { id: "repair", label: "Sửa chữa" },
+];
+
+const MENU_LABELS: Record<string, string> = {
+  ...Object.fromEntries(navItems.map((item) => [item.id, item.label])),
+  /** Menu cũ — gộp vào dashboard; giữ label cho màn Tài khoản. */
+  inventoryReports: "BÁO CÁO / THỐNG KÊ",
+};
 
 function canAccessMenu(user: User, pageId: string): boolean {
   if (user.role === "owner") return true;
-  return user.allowedMenus.includes(pageId);
+  if (user.allowedMenus.includes(pageId)) return true;
+  // Menu cũ «Báo cáo kho» → hub mới
+  if (pageId === "dashboard" && user.allowedMenus.includes("inventoryReports")) return true;
+  return false;
 }
 
 function accountToUser(a: AccountUser): User {
@@ -755,6 +782,12 @@ function shopMoneyToVnd(short: number): number {
   return Math.round(short) * 1000;
 }
 
+/** VND thật (sales DB) → short shop UI. */
+function vndToShopMoney(vnd: number): number {
+  if (!Number.isFinite(vnd)) return 0;
+  return Math.round(vnd / 1000);
+}
+
 /**
  * Inventory grid price buckets on **real VND** (after ×1000 from short).
  * Boundaries non-overlapping.
@@ -840,6 +873,78 @@ function StatCard({ label, value, hint, icon }: { label: string; value: string; 
   );
 }
 
+/** Ô module Tổng quan (gọn) — mỗi module 1 palette màu.
+ *  hideMoney: chỉ ẩn DT / vốn / lãi — dòng đếm (máy, phiếu, HĐ…) vẫn hiện. */
+function OverviewModuleCard({
+  title,
+  icon,
+  theme,
+  lines,
+  revenue,
+  capital,
+  profit,
+  revenueLabel = "Tổng doanh thu",
+  capitalLabel = "Chi phí vốn",
+  profitLabel = "Tổng lợi nhuận",
+  hideMoney,
+}: {
+  title: string;
+  icon: ReactNode;
+  /** border + nền nhẹ + icon + title */
+  theme: {
+    card: string;
+    icon: string;
+    title: string;
+  };
+  lines?: string[];
+  revenue: string;
+  capital: string;
+  profit: string;
+  revenueLabel?: string;
+  capitalLabel?: string;
+  profitLabel?: string;
+  /** true = che DT, vốn, lãi */
+  hideMoney?: boolean;
+}) {
+  return (
+    <section className={`rounded-lg border p-3 shadow-sm ${theme.card}`}>
+      <div className="mb-2 flex items-center justify-between gap-1.5">
+        <h3 className={`text-sm font-black uppercase tracking-wide ${theme.title}`}>{title}</h3>
+        <span className={`grid h-8 w-8 place-items-center rounded-md ${theme.icon}`}>{icon}</span>
+      </div>
+      {lines && lines.length > 0 ? (
+        <ul className="mb-2 space-y-0.5">
+          {lines.map((line) => (
+            <li key={line} className="text-xs font-bold leading-snug text-slate-700">
+              {line}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <div className="grid gap-1.5 border-t border-black/5 pt-2">
+        <div className="flex items-baseline justify-between gap-1.5">
+          <span className="text-xs font-bold text-slate-500">{revenueLabel}</span>
+          <strong className="text-base font-black tabular-nums text-amber-800">
+            {hideMoney ? "***" : revenue}
+          </strong>
+        </div>
+        <div className="flex items-baseline justify-between gap-1.5">
+          <span className="text-xs font-bold text-slate-500">{capitalLabel}</span>
+          <strong className="text-base font-black tabular-nums text-slate-700">
+            {hideMoney ? "***" : capital}
+          </strong>
+        </div>
+        <div className="flex items-baseline justify-between gap-1.5">
+          <span className="text-xs font-bold text-slate-500">{profitLabel}</span>
+          <strong className="text-base font-black tabular-nums text-emerald-700">
+            {hideMoney ? "***" : profit}
+          </strong>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function Home() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
@@ -859,6 +964,10 @@ export default function Home() {
   const [hideReportSold, setHideReportSold] = useState(false);
   const [hideReportRevenue, setHideReportRevenue] = useState(false);
   const [hideReportProfit, setHideReportProfit] = useState(false);
+  /** Hub Báo cáo / Thống kê */
+  const [reportHubTab, setReportHubTab] = useState<ReportHubTab>("overview");
+  const [reportPeriod, setReportPeriod] = useState<ReportPeriod>("month");
+  const [reportDay, setReportDay] = useState(() => vnNowDate());
   const [activePage, setActivePage] = useState<PageId>("inventory");
   const [storeFilter, setStoreFilter] = useState<StoreId>("all");
   const [query, setQuery] = useState("");
@@ -1637,10 +1746,25 @@ export default function Home() {
   const dashboard = useMemo(() => {
     // Fallback local from bootstrap when summary API not ready
     const activePhones = phones.filter((item) => item.status === "Còn hàng" && (storeFilter === "all" || item.storeId === storeFilter));
+    const soldPhonesLocal = phones.filter(
+      (item) => item.status === "Đã bán" && (storeFilter === "all" || item.storeId === storeFilter)
+    );
+    const pendingPhonesLocal = phones.filter(
+      (item) => item.status === "Chưa xử lý" && (storeFilter === "all" || item.storeId === storeFilter)
+    );
     const activeAccessories = accessories.filter((item) => item.status !== "Đã hủy" && (storeFilter === "all" || item.storeId === storeFilter));
     const localCapitalShort =
       activePhones.reduce((sum, item) => sum + item.cost, 0) +
       activeAccessories.reduce((sum, item) => sum + item.cost * item.quantity, 0);
+    const localProvRevenue =
+      activePhones.reduce((sum, item) => sum + item.expectedPrice, 0) +
+      activeAccessories.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const localProvProfit =
+      activePhones.reduce((sum, item) => sum + (item.expectedPrice - item.cost), 0) +
+      activeAccessories.reduce(
+        (sum, item) => sum + (item.price - item.cost) * item.quantity,
+        0
+      );
     const activeLedger = ledger.filter((item) => item.status === "Hiệu lực" && (storeFilter === "all" || item.storeId === storeFilter));
     const mockRepairsActive = repairs.filter(
       (item) => item.status !== "Đã trả khách" && item.status !== "Đã hủy" && (storeFilter === "all" || item.storeId === storeFilter)
@@ -1649,15 +1773,28 @@ export default function Home() {
     const onlineRepairsActive = onlineRepairs.filter((item) => !item.isPaid || item.paymentStatus === "NỢ DAI").length;
 
     const phonesCount = dashboardSummary?.phonesInStock ?? activePhones.length;
+    const phonesSold = dashboardSummary?.phonesSold ?? soldPhonesLocal.length;
+    const phonesPending = dashboardSummary?.phonesPending ?? pendingPhonesLocal.length;
     const accessoryQty = dashboardSummary?.accessoryQty ?? activeAccessories.reduce((sum, item) => sum + item.quantity, 0);
+    const capitalShort =
+      dashboardSummary?.capitalShort ?? localCapitalShort;
     const capitalVnd = dashboardSummary?.capitalVnd ?? shopMoneyToVnd(localCapitalShort);
+    const provisionalRevenueShort =
+      dashboardSummary?.provisionalRevenueShort ?? localProvRevenue;
+    const provisionalProfitShort =
+      dashboardSummary?.provisionalProfitShort ?? localProvProfit;
     const profit = dashboardSummary?.profit ?? 0;
     const revenue = dashboardSummary?.revenue ?? 0;
 
     return {
       phones: phonesCount,
+      phonesSold,
+      phonesPending,
       accessories: accessoryQty,
+      capitalShort,
       capital: capitalVnd,
+      provisionalRevenueShort,
+      provisionalProfitShort,
       profit,
       revenue,
       income: activeLedger.filter((item) => item.type === "Thu").reduce((sum, item) => sum + item.amount, 0),
@@ -1694,6 +1831,215 @@ export default function Home() {
   }, [sales, reportYear, storeFilter]);
 
   const chartYearlyData = supabaseYearlyChart ?? yearlyReportData;
+
+  /** Khớp ngày/tháng/năm trên hub báo cáo. */
+  const matchesReportPeriod = useCallback(
+    (raw: string | undefined | null) => {
+      const d = String(raw || "").trim().slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+      if (reportPeriod === "day") return d === reportDay;
+      if (reportPeriod === "month") return d.startsWith(inventoryReportMonth);
+      return d.startsWith(reportYear);
+    },
+    [reportPeriod, reportDay, inventoryReportMonth, reportYear]
+  );
+
+  /** KPI bán theo kỳ (short shop) — Tổng quan / tab Bán hàng. */
+  const reportPeriodSales = useMemo(() => {
+    const completed = sales.filter(
+      (s) => s.status === "Hoàn tất" && (storeFilter === "all" || s.storeId === storeFilter)
+    );
+    if (reportPeriod === "day") {
+      const rows = completed.filter((s) => String(s.createdAt).slice(0, 10) === reportDay);
+      return {
+        soldPhones: rows
+          .filter((s) => s.itemType === "Máy")
+          .reduce((sum, s) => sum + s.quantity, 0),
+        revenue: rows.reduce((sum, s) => sum + s.amount, 0),
+        profit: rows.reduce((sum, s) => sum + s.profit, 0),
+        saleCount: rows.length,
+        source: "day" as const,
+      };
+    }
+    if (reportPeriod === "month") {
+      // API monthly trả VND → short; fallback local short.
+      if (supabaseReportMonthly) {
+        return {
+          soldPhones: supabaseReportMonthly.soldPhones,
+          revenue: vndToShopMoney(supabaseReportMonthly.revenue),
+          profit: vndToShopMoney(supabaseReportMonthly.profit),
+          saleCount: null as number | null,
+          source: "month-db" as const,
+        };
+      }
+      return {
+        soldPhones: inventoryMonthlyReport.soldPhones,
+        revenue: inventoryMonthlyReport.revenue,
+        profit: inventoryMonthlyReport.profit,
+        saleCount: null as number | null,
+        source: "month-local" as const,
+      };
+    }
+    // year — chart/API yearly VND
+    const yearRows = chartYearlyData;
+    const revenueVnd = yearRows.reduce((s, r) => s + (Number(r.revenue) || 0), 0);
+    const profitVnd = yearRows.reduce((s, r) => s + (Number(r.profit) || 0), 0);
+    const sold = yearRows.reduce((s, r) => s + (Number(r.sold) || 0), 0);
+    // yearlyReportData local is short; supabase chart is VND. Detect by magnitude.
+    const looksVnd = revenueVnd >= 1_000_000 || profitVnd >= 1_000_000;
+    return {
+      soldPhones: sold,
+      revenue: looksVnd ? vndToShopMoney(revenueVnd) : revenueVnd,
+      profit: looksVnd ? vndToShopMoney(profitVnd) : profitVnd,
+      saleCount: null as number | null,
+      source: "year" as const,
+    };
+  }, [
+    sales,
+    storeFilter,
+    reportPeriod,
+    reportDay,
+    supabaseReportMonthly,
+    inventoryMonthlyReport,
+    chartYearlyData,
+  ]);
+
+  /** KPI 4 module Tổng quan. */
+  const overviewModules = useMemo(() => {
+    const softwareInPeriod = onlineRepairs.filter((r) =>
+      matchesReportPeriod(r.receiveDate || r.createdAt)
+    );
+    const repairInPeriod = shopRepairs.filter((r) =>
+      matchesReportPeriod(r.receiveDate || r.createdAt)
+    );
+    const salesInPeriod = sales.filter(
+      (s) =>
+        s.status === "Hoàn tất" &&
+        (storeFilter === "all" || s.storeId === storeFilter) &&
+        matchesReportPeriod(s.createdAt)
+    );
+    // Bán hàng: vốn ≈ DT − lãi (cùng đơn vị short)
+    const banHangCapital = Math.max(
+      0,
+      Math.round(reportPeriodSales.revenue - reportPeriodSales.profit)
+    );
+    const soldPhones = salesInPeriod
+      .filter((s) => s.itemType === "Máy")
+      .reduce((sum, s) => sum + Math.max(1, s.quantity || 0), 0);
+    // Phụ kiện: quantity trên dòng PK; phiếu hỗn hợp đếm theo quantity dòng (UI 1 dòng tóm tắt)
+    const soldAccessories = salesInPeriod
+      .filter((s) => s.itemType === "Phụ kiện")
+      .reduce((sum, s) => sum + Math.max(1, s.quantity || 0), 0);
+    // Phiếu «Máy» có thể kèm tặng PK — vẫn đếm máy ở trên; phụ kiện pure ở itemType PK
+    const saleCount = salesInPeriod.length;
+
+    const pmRevenue = softwareInPeriod.reduce((sum, r) => sum + (Number(r.quote) || 0), 0);
+    const pmCapital = softwareInPeriod.reduce((sum, r) => sum + (Number(r.deposit) || 0), 0);
+    const pmPaid = softwareInPeriod.filter(
+      (r) => r.paymentStatus === "Đã thanh toán" || r.isPaid
+    ).length;
+    const pmDebt = softwareInPeriod.filter(
+      (r) => r.paymentStatus === "NỢ DAI" || (!r.isPaid && r.paymentStatus !== "Đã thanh toán")
+    ).length;
+
+    const scRevenue = repairInPeriod.reduce((sum, r) => sum + (Number(r.quote) || 0), 0);
+    const scCapital = repairInPeriod.reduce((sum, r) => sum + (Number(r.deposit) || 0), 0);
+    const scPaid = repairInPeriod.filter(
+      (r) => r.paymentStatus === "Đã thanh toán" || r.isPaid
+    ).length;
+    const scDebt = repairInPeriod.filter(
+      (r) => r.paymentStatus === "NỢ DAI" || (!r.isPaid && r.paymentStatus !== "Đã thanh toán")
+    ).length;
+
+    return {
+      kho: {
+        phonesSold: dashboard.phonesSold,
+        phonesInStock: dashboard.phones,
+        phonesPending: dashboard.phonesPending,
+        revenue: dashboard.provisionalRevenueShort,
+        capital: dashboard.capitalShort,
+        profit: dashboard.provisionalProfitShort,
+      },
+      banHang: {
+        revenue: reportPeriodSales.revenue,
+        capital: banHangCapital,
+        profit: reportPeriodSales.profit,
+        soldPhones,
+        soldAccessories,
+        saleCount,
+      },
+      phanMem: {
+        revenue: pmRevenue,
+        capital: pmCapital,
+        profit: pmRevenue - pmCapital,
+        paidCount: pmPaid,
+        debtCount: pmDebt,
+        orderCount: softwareInPeriod.length,
+      },
+      suaChua: {
+        revenue: scRevenue,
+        capital: scCapital,
+        profit: scRevenue - scCapital,
+        paidCount: scPaid,
+        debtCount: scDebt,
+        orderCount: repairInPeriod.length,
+      },
+    };
+  }, [
+    onlineRepairs,
+    shopRepairs,
+    sales,
+    storeFilter,
+    matchesReportPeriod,
+    dashboard.phonesSold,
+    dashboard.phones,
+    dashboard.phonesPending,
+    dashboard.provisionalRevenueShort,
+    dashboard.provisionalProfitShort,
+    dashboard.capitalShort,
+    reportPeriodSales,
+  ]);
+
+  /**
+   * Biểu đồ tròn Tổng quan:
+   * - Chồng = Phần mềm
+   * - Vợ = Sửa chữa + Bán hàng
+   */
+  const overviewCoupleCharts = useMemo(() => {
+    const chongRevenue = overviewModules.phanMem.revenue;
+    const chongProfit = overviewModules.phanMem.profit;
+    const voRevenue =
+      overviewModules.suaChua.revenue + overviewModules.banHang.revenue;
+    const voProfit =
+      overviewModules.suaChua.profit + overviewModules.banHang.profit;
+
+    const toPie = (chong: number, vo: number) => {
+      const c = Math.max(0, Number(chong) || 0);
+      const v = Math.max(0, Number(vo) || 0);
+      const total = c + v;
+      return [
+        {
+          key: "chong",
+          name: "Chồng (Phần mềm)",
+          value: c,
+          pct: total > 0 ? (c / total) * 100 : 0,
+        },
+        {
+          key: "vo",
+          name: "Vợ (Sửa chữa + Bán hàng)",
+          value: v,
+          pct: total > 0 ? (v / total) * 100 : 0,
+        },
+      ];
+    };
+
+    return {
+      revenue: toPie(chongRevenue, voRevenue),
+      profit: toPie(chongProfit, voProfit),
+      revenueTotal: Math.max(0, chongRevenue) + Math.max(0, voRevenue),
+      profitTotal: Math.max(0, chongProfit) + Math.max(0, voProfit),
+    };
+  }, [overviewModules]);
 
   function pushLog(action: string, target: string, storeId: Exclude<StoreId, "all">) {
     setLogs((prev) => [
@@ -1828,6 +2174,12 @@ export default function Home() {
 
   useEffect(() => {
     if (!currentUser) return;
+    // Menu cũ «Báo cáo kho» đã gộp → hub Báo cáo / Thống kê
+    if ((activePage as string) === "inventoryReports") {
+      setActivePage("dashboard");
+      setReportHubTab("sales");
+      return;
+    }
     const pageExists = navItems.some((item) => item.id === activePage);
     if (!pageExists || !canAccessMenu(currentUser, activePage)) {
       const first = navItems.find((item) => canAccessMenu(currentUser, item.id));
@@ -3613,175 +3965,585 @@ export default function Home() {
 
         {activePage === "dashboard" && (
           <div className="grid gap-4">
-            <div className="rounded-lg border border-brand/30 bg-brand-soft/60 p-3 text-sm font-semibold text-ink">
-              {dashboardSummaryLoading
-                ? "Đang đồng bộ dashboard từ DB…"
-                : dashboard.fromDb
-                  ? `Đã đồng bộ kho + phiếu bán (${storeName(storeFilter)}). Vốn quy ra ₫ (giá kho ×1.000). Thu/chi vẫn là dữ liệu demo.`
-                  : dashboardSummaryError
-                    ? `Chưa đồng bộ DB: ${dashboardSummaryError}`
-                    : "Dashboard đang dùng cache local — mở lại hoặc đổi cửa hàng để tải summary."}
-            </div>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <StatCard label="Máy còn hàng" value={isStatsHidden || dashboardSummaryLoading ? "***" : `${dashboard.phones}`} hint={`${storeName(storeFilter)} · kho DB`} icon={<Smartphone size={20} />} />
-              <StatCard label="Phụ kiện tồn" value={isStatsHidden || dashboardSummaryLoading ? "***" : `${dashboard.accessories}`} hint="Tổng SL · kho DB" icon={<PackagePlus size={20} />} />
-              <StatCard label="Tổng vốn" value={isStatsHidden || dashboardSummaryLoading ? "***" : formatMoney(dashboard.capital)} hint="Máy + PK tồn · ₫ thật" icon={<Store size={20} />} />
-              <StatCard label="Lãi đã ghi" value={isStatsHidden || dashboardSummaryLoading ? "***" : formatMoney(dashboard.profit)} hint="Σ profit phiếu bán completed" icon={<Activity size={20} />} />
-              <StatCard label="Tổng thu" value={isStatsHidden ? "***" : formatMoney(dashboard.income)} hint="Demo sổ thu chi" icon={<ReceiptText size={20} />} />
-              <StatCard label="Tổng chi" value={isStatsHidden ? "***" : formatMoney(dashboard.expense)} hint="Demo sổ thu chi" icon={<CreditCard size={20} />} />
-              <StatCard label="Máy đang sửa" value={isStatsHidden ? "***" : `${dashboard.repairs}`} hint={onlineRepairs.length > 0 ? "Phiếu online (còn nợ/chưa TT)" : "Demo sửa chữa"} icon={<Wrench size={20} />} />
-              <StatCard label="Dòng tiền ròng" value={isStatsHidden ? "***" : formatMoney(dashboard.income - dashboard.expense)} hint="Thu − chi (demo)" icon={<FileText size={20} />} />
-            </div>
-
-            <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
-              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="text-lg font-black">Tháng này (đồng bộ báo cáo kho)</h2>
-                  <p className="text-sm font-semibold text-muted">Cùng API với màn Báo cáo kho · {inventoryReportMonth}</p>
-                </div>
-                <Field label="Tháng" className="w-full sm:w-44">
-                  <input
-                    type="month"
-                    value={inventoryReportMonth}
-                    onChange={(event) => setInventoryReportMonth(event.target.value)}
-                    className="h-10 rounded-lg border border-line px-3 font-bold"
-                  />
-                </Field>
+            {/* Tabs hub */}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap gap-1 rounded-xl border border-line bg-slate-100/80 p-1">
+                {REPORT_HUB_TABS.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setReportHubTab(tab.id)}
+                    className={`h-10 rounded-lg px-3 text-sm font-black transition sm:px-4 ${
+                      reportHubTab === tab.id
+                        ? "bg-brand text-white shadow-sm"
+                        : "bg-transparent text-slate-600 hover:bg-white hover:text-brand"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
-              <div className="grid gap-3 md:grid-cols-3">
-                <div className="rounded-lg border border-line bg-slate-50 p-4">
-                  <p className="text-sm font-bold text-muted">Bán được</p>
-                  <strong className="mt-2 block text-2xl text-sky-800">
-                    {isStatsHidden || !supabaseReportMonthly ? "***" : `${supabaseReportMonthly.soldPhones} con`}
-                  </strong>
-                </div>
-                <div className="rounded-lg border border-line bg-slate-50 p-4">
-                  <p className="text-sm font-bold text-muted">Doanh thu tháng</p>
-                  <strong className="mt-2 block text-2xl text-amber-700">
-                    {isStatsHidden || !supabaseReportMonthly ? "***" : formatMoney(supabaseReportMonthly.revenue)}
-                  </strong>
-                </div>
-                <div className="rounded-lg border border-line bg-slate-50 p-4">
-                  <p className="text-sm font-bold text-muted">Lãi tháng</p>
-                  <strong className="mt-2 block text-2xl text-emerald-700">
-                    {isStatsHidden || !supabaseReportMonthly ? "***" : formatMoney(supabaseReportMonthly.profit)}
-                  </strong>
-                </div>
-              </div>
-            </section>
-          </div>
-        )}
-
-        {activePage === "inventoryReports" && (
-          <section className="grid gap-4">
-            <div className="rounded-lg border border-amber-200 bg-white p-5 shadow-panel">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <h2 className="text-3xl font-black">Báo cáo kho hàng</h2>
-                </div>
-                <div className="flex items-center gap-4">
-                  <div className="hidden rounded-lg border border-line bg-slate-50 px-4 py-3 sm:block">
-                    <p className="text-xs font-bold text-muted">Đang xem</p>
-                    <strong className="text-base">{storeName(storeFilter)}</strong>
-                  </div>
-                </div>
-              </div>
+              <button
+                type="button"
+                onClick={() => setIsStatsHidden((v) => !v)}
+                className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-50"
+              >
+                {isStatsHidden ? <EyeOff size={17} /> : <Eye size={17} />}
+                {isStatsHidden ? "Hiện số" : "Ẩn số"}
+              </button>
             </div>
 
-            <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <h2 className="text-xl font-black">Báo cáo theo tháng</h2>
-                  <p className="text-sm font-semibold text-muted">Thống kê từ phiếu bán hoàn tất trong tháng đã chọn.</p>
+            {/* Thanh thời gian — dùng cho Tổng quan / Bán hàng */}
+            {(reportHubTab === "overview" || reportHubTab === "sales") && (
+              <div className="flex flex-col gap-2 rounded-xl border border-line bg-white p-3 shadow-sm sm:flex-row sm:flex-wrap sm:items-end sm:gap-3">
+                <div className="flex flex-wrap gap-1 rounded-lg border border-line bg-slate-50 p-1">
+                  {(
+                    [
+                      { id: "day" as const, label: "Ngày" },
+                      { id: "month" as const, label: "Tháng" },
+                      { id: "year" as const, label: "Năm" },
+                    ] as const
+                  ).map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setReportPeriod(p.id)}
+                      className={`h-9 rounded-md px-3 text-sm font-bold transition ${
+                        reportPeriod === p.id
+                          ? "bg-white text-brand shadow-sm ring-1 ring-brand/20"
+                          : "text-muted hover:text-ink"
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
                 </div>
-                <div className="flex items-end gap-2">
-                  <Field label="Chọn tháng" className="w-full lg:w-56">
+                {reportPeriod === "day" ? (
+                  <label className="grid gap-0.5">
+                    <span className="text-xs font-bold text-muted">Chọn ngày</span>
+                    <input
+                      type="date"
+                      value={reportDay}
+                      onChange={(e) => setReportDay(e.target.value)}
+                      className="h-10 rounded-lg border border-line px-3 text-sm font-bold"
+                    />
+                  </label>
+                ) : null}
+                {reportPeriod === "month" ? (
+                  <label className="grid gap-0.5">
+                    <span className="text-xs font-bold text-muted">Chọn tháng</span>
                     <input
                       type="month"
                       value={inventoryReportMonth}
-                      onChange={(event) => setInventoryReportMonth(event.target.value)}
-                      className="h-10 rounded-lg border border-line px-3 font-bold"
+                      onChange={(e) => setInventoryReportMonth(e.target.value)}
+                      className="h-10 rounded-lg border border-line px-3 text-sm font-bold"
                     />
-                  </Field>
-                  <button onClick={() => setIsStatsHidden(!isStatsHidden)} className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-50">
-                    {isStatsHidden ? <EyeOff size={17} /> : <Eye size={17} />}
-                    {isStatsHidden ? "Đã ẩn" : "Hiện số"}
-                  </button>
-                </div>
+                  </label>
+                ) : null}
+                {reportPeriod === "year" ? (
+                  <label className="grid gap-0.5">
+                    <span className="text-xs font-bold text-muted">Chọn năm</span>
+                    <select
+                      value={reportYear}
+                      onChange={(e) => setReportYear(e.target.value)}
+                      className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold"
+                    >
+                      <option value="2024">2024</option>
+                      <option value="2025">2025</option>
+                      <option value="2026">2026</option>
+                    </select>
+                  </label>
+                ) : null}
+                <p className="text-xs font-semibold text-muted sm:ml-auto sm:self-center">
+                  {storeName(storeFilter)}
+                  {reportPeriod === "day"
+                    ? ` · ${reportDay}`
+                    : reportPeriod === "month"
+                      ? ` · ${inventoryReportMonth}`
+                      : ` · ${reportYear}`}
+                </p>
               </div>
-              {supabaseReportMonthly &&
-              inventoryMonthlyReport.revenue === 0 &&
-              inventoryMonthlyReport.soldPhones === 0 ? (
-                <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">
-                  Chưa có phiếu bán trong tháng {inventoryReportMonth} trên DB. Vào <strong>Phiếu bán</strong> tạo phiếu (ghi DB) rồi quay lại — doanh thu sẽ đồng bộ.
-                </div>
-              ) : null}
-              <div className="mt-4 grid gap-4 md:grid-cols-3">
-                <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
-                  <p className="text-sm font-bold text-muted">Bán được</p>
-                  <div className="mt-4 flex items-center justify-between">
-                    <strong className="text-3xl text-sky-800">{isStatsHidden || hideReportSold ? "***" : `${inventoryMonthlyReport.soldPhones} con`}</strong>
-                    <button onClick={() => setHideReportSold(!hideReportSold)} className="grid h-11 w-11 place-items-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100"><Smartphone size={20} /></button>
-                  </div>
-                  <p className="mt-4 text-sm font-semibold text-muted">Số máy bán trong tháng (DB)</p>
-                </section>
-                <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
-                  <p className="text-sm font-bold text-muted">Tổng doanh thu tháng</p>
-                  <div className="mt-4 flex items-center justify-between">
-                    <strong className="text-3xl text-amber-700">{isStatsHidden || hideReportRevenue ? "***" : formatMoney(inventoryMonthlyReport.revenue)}</strong>
-                    <button onClick={() => setHideReportRevenue(!hideReportRevenue)} className="grid h-11 w-11 place-items-center rounded-lg bg-amber-50 text-amber-700 transition hover:bg-amber-100"><ReceiptText size={20} /></button>
-                  </div>
-                  <p className="mt-4 text-sm font-semibold text-muted">Từ public.sales (completed)</p>
-                </section>
-                <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
-                  <p className="text-sm font-bold text-muted">Tổng lợi nhuận tháng</p>
-                  <div className="mt-4 flex items-center justify-between">
-                    <strong className="text-3xl text-emerald-700">{isStatsHidden || hideReportProfit ? "***" : formatMoney(inventoryMonthlyReport.profit)}</strong>
-                    <button onClick={() => setHideReportProfit(!hideReportProfit)} className="grid h-11 w-11 place-items-center rounded-lg bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100"><Activity size={20} /></button>
-                  </div>
-                  <p className="mt-4 text-sm font-semibold text-muted">Lãi ghi nhận trong tháng (DB)</p>
-                </section>
-              </div>
-            </section>
+            )}
 
-            <section className="rounded-lg border border-line bg-white p-5 shadow-panel">
-              <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <h2 className="text-xl font-black">Tổng quan năm {reportYear}</h2>
-                  <p className="text-sm font-semibold text-muted">Biểu đồ thống kê doanh thu, lợi nhuận và số máy bán ra theo từng tháng.</p>
+            {reportHubTab === "overview" && (
+              <div className="grid gap-4">
+                <div className="rounded-lg border border-brand/30 bg-brand-soft/60 p-3 text-sm font-semibold text-ink">
+                  {dashboardSummaryLoading
+                    ? "Đang đồng bộ báo cáo từ DB…"
+                    : `Tổng quan · ${storeName(storeFilter)} · ${
+                        reportPeriod === "day"
+                          ? reportDay
+                          : reportPeriod === "month"
+                            ? inventoryReportMonth
+                            : reportYear
+                      }. Kho = snapshot tồn; Bán/PM/Sửa = theo kỳ đã chọn.`}
                 </div>
-                <Field label="Chọn năm" className="w-full lg:w-32">
-                  <select value={reportYear} onChange={(e) => setReportYear(e.target.value)} className="h-10 rounded-lg border border-line bg-white px-3 font-bold">
-                    <option value="2024">2024</option>
-                    <option value="2025">2025</option>
-                    <option value="2026">2026</option>
-                  </select>
-                </Field>
+
+                <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                  <OverviewModuleCard
+                    title="Kho hàng"
+                    icon={<Boxes size={16} />}
+                    theme={{
+                      card: "border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50/80",
+                      icon: "bg-amber-100 text-amber-800 ring-1 ring-amber-200",
+                      title: "text-amber-900",
+                    }}
+                    lines={[
+                      `Tổng ĐT đã bán: ${overviewModules.kho.phonesSold}`,
+                      `Tổng ĐT còn: ${overviewModules.kho.phonesInStock}`,
+                      `Tổng ĐT chưa xử lý: ${overviewModules.kho.phonesPending}`,
+                    ]}
+                    revenue={formatMoney(overviewModules.kho.revenue)}
+                    capital={formatMoney(overviewModules.kho.capital)}
+                    profit={formatMoney(overviewModules.kho.profit)}
+                    revenueLabel="Doanh thu tạm tính"
+                    capitalLabel="Chi phí vốn"
+                    profitLabel="Lãi tạm tính"
+                    hideMoney={isStatsHidden}
+                  />
+                  <OverviewModuleCard
+                    title="Bán hàng"
+                    icon={<ReceiptText size={16} />}
+                    theme={{
+                      card: "border-emerald-200 bg-gradient-to-br from-emerald-50 to-teal-50/80",
+                      icon: "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200",
+                      title: "text-emerald-900",
+                    }}
+                    lines={[
+                      `Máy bán kỳ: ${overviewModules.banHang.soldPhones}`,
+                      `Phụ kiện bán kỳ: ${overviewModules.banHang.soldAccessories}`,
+                      `Tổng phiếu: ${overviewModules.banHang.saleCount}`,
+                    ]}
+                    revenue={formatMoney(overviewModules.banHang.revenue)}
+                    capital={formatMoney(overviewModules.banHang.capital)}
+                    profit={formatMoney(overviewModules.banHang.profit)}
+                    hideMoney={isStatsHidden}
+                  />
+                  <OverviewModuleCard
+                    title="Phần mềm"
+                    icon={<Terminal size={16} />}
+                    theme={{
+                      card: "border-sky-200 bg-gradient-to-br from-sky-50 to-blue-50/80",
+                      icon: "bg-sky-100 text-sky-800 ring-1 ring-sky-200",
+                      title: "text-sky-900",
+                    }}
+                    lines={[
+                      `HĐ đã thanh toán: ${overviewModules.phanMem.paidCount}`,
+                      `HĐ còn nợ: ${overviewModules.phanMem.debtCount}`,
+                    ]}
+                    revenue={formatMoney(overviewModules.phanMem.revenue)}
+                    capital={formatMoney(overviewModules.phanMem.capital)}
+                    profit={formatMoney(overviewModules.phanMem.profit)}
+                    hideMoney={isStatsHidden}
+                  />
+                  <OverviewModuleCard
+                    title="Sửa chữa"
+                    icon={<Wrench size={16} />}
+                    theme={{
+                      card: "border-violet-200 bg-gradient-to-br from-violet-50 to-fuchsia-50/80",
+                      icon: "bg-violet-100 text-violet-800 ring-1 ring-violet-200",
+                      title: "text-violet-900",
+                    }}
+                    lines={[
+                      `HĐ đã thanh toán: ${overviewModules.suaChua.paidCount}`,
+                      `HĐ còn nợ: ${overviewModules.suaChua.debtCount}`,
+                    ]}
+                    revenue={formatMoney(overviewModules.suaChua.revenue)}
+                    capital={formatMoney(overviewModules.suaChua.capital)}
+                    profit={formatMoney(overviewModules.suaChua.profit)}
+                    hideMoney={isStatsHidden}
+                  />
+                </div>
+
+                {/* Biểu đồ tròn: Chồng (PM) vs Vợ (Sửa + Bán) — ẩn số chỉ che tiền, vẫn hiện % */}
+                <section className="rounded-xl border border-line bg-white p-4 shadow-panel">
+                  <div className="mb-4">
+                    <h2 className="text-lg font-black text-ink">Chia sẻ doanh thu & lợi nhuận</h2>
+                    <p className="text-sm font-semibold text-muted">
+                      Chồng = Phần mềm · Vợ = Sửa chữa + Bán hàng
+                      {reportPeriod === "day"
+                        ? ` · ${reportDay}`
+                        : reportPeriod === "month"
+                          ? ` · ${inventoryReportMonth}`
+                          : ` · ${reportYear}`}
+                    </p>
+                  </div>
+                  <div className="grid gap-6 lg:grid-cols-2">
+                    {(
+                      [
+                        {
+                          id: "revenue",
+                          title: "Doanh thu",
+                          data: overviewCoupleCharts.revenue,
+                          total: overviewCoupleCharts.revenueTotal,
+                          colorChong: "#0ea5e9",
+                          colorVo: "#10b981",
+                        },
+                        {
+                          id: "profit",
+                          title: "Lợi nhuận",
+                          data: overviewCoupleCharts.profit,
+                          total: overviewCoupleCharts.profitTotal,
+                          colorChong: "#6366f1",
+                          colorVo: "#f59e0b",
+                        },
+                      ] as const
+                    ).map((chart) => {
+                      const colors = [chart.colorChong, chart.colorVo];
+                      const hasData = chart.total > 0;
+                      return (
+                        <div
+                          key={chart.id}
+                          className="rounded-xl border border-slate-100 bg-slate-50/60 p-3"
+                        >
+                          <div className="mb-2 flex items-center justify-between gap-2">
+                            <h3 className="text-base font-black text-ink">{chart.title}</h3>
+                            <span className="text-sm font-bold text-muted">
+                              Tổng:{" "}
+                              <strong className="text-base text-ink">
+                                {isStatsHidden ? "***" : formatMoney(chart.total)}
+                              </strong>
+                            </span>
+                          </div>
+                          {!hasData ? (
+                            <p className="flex h-[200px] items-center justify-center text-sm font-semibold text-muted">
+                              Chưa có dữ liệu trong kỳ
+                            </p>
+                          ) : (
+                            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:gap-2">
+                              <div className="flex min-h-[240px] flex-[2] items-center justify-center sm:min-h-[280px]">
+                                <div className="h-[220px] w-full max-w-[280px] sm:h-[260px] sm:max-w-none">
+                                  <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                      <Pie
+                                        data={chart.data}
+                                        dataKey="value"
+                                        nameKey="name"
+                                        cx="50%"
+                                        cy="50%"
+                                        innerRadius="48%"
+                                        outerRadius="78%"
+                                        paddingAngle={2}
+                                      >
+                                        {chart.data.map((entry, idx) => (
+                                          <Cell
+                                            key={entry.key}
+                                            fill={colors[idx % colors.length]}
+                                            stroke="#fff"
+                                            strokeWidth={2}
+                                          />
+                                        ))}
+                                      </Pie>
+                                      <Tooltip
+                                        formatter={(value: number, name: string) => [
+                                          isStatsHidden
+                                            ? "***"
+                                            : formatMoney(Number(value) || 0),
+                                          name,
+                                        ]}
+                                        contentStyle={{
+                                          borderRadius: "8px",
+                                          border: "1px solid #e2e8f0",
+                                          fontWeight: 700,
+                                          fontSize: 12,
+                                        }}
+                                      />
+                                    </PieChart>
+                                  </ResponsiveContainer>
+                                </div>
+                              </div>
+                              <div className="flex flex-[1] flex-col justify-center gap-2 sm:max-w-[34%] sm:pl-0 sm:pr-0.5">
+                                {chart.data.map((row, idx) => (
+                                  <div
+                                    key={row.key}
+                                    className="rounded-lg border border-slate-100 bg-white px-2.5 py-2 shadow-sm"
+                                  >
+                                    <div className="flex items-center gap-1.5">
+                                      <span
+                                        className="h-2.5 w-2.5 shrink-0 rounded-full"
+                                        style={{ backgroundColor: colors[idx] }}
+                                      />
+                                      <span className="text-sm font-black text-slate-800">
+                                        {row.key === "chong" ? "Chồng" : "Vợ"}
+                                      </span>
+                                      <span className="ml-auto text-sm font-black tabular-nums text-brand">
+                                        {row.pct.toFixed(0)}%
+                                      </span>
+                                    </div>
+                                    <p className="mt-0.5 text-xs font-semibold leading-tight text-muted">
+                                      {row.key === "chong"
+                                        ? "Phần mềm"
+                                        : "Sửa + Bán hàng"}
+                                    </p>
+                                    <p className="text-base font-black tabular-nums text-ink">
+                                      {isStatsHidden ? "***" : formatMoney(row.value)}
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
               </div>
-              <div className="h-[400px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartYearlyData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                    <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12, fontWeight: 600 }} dy={10} />
-                    <YAxis yAxisId="left" orientation="left" stroke="#1e293b" axisLine={false} tickLine={false} tickFormatter={(val) => `${val / 1000000}M`} tick={{ fill: "#64748b", fontSize: 12, fontWeight: 600 }} dx={-10} />
-                    <YAxis yAxisId="right" orientation="right" stroke="#0ea5e9" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12, fontWeight: 600 }} dx={10} />
-                    <Tooltip
-                      cursor={{ fill: "#f1f5f9" }}
-                      contentStyle={{ borderRadius: "8px", border: "1px solid #e2e8f0", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)", fontWeight: "bold" }}
-                      formatter={(value: any, name: any) => {
-                        if (name === "Doanh thu" || name === "Lợi nhuận") return [formatMoney(value as number), name];
-                        return [value, name];
-                      }}
-                    />
-                    <Legend iconType="circle" wrapperStyle={{ paddingTop: "20px", fontWeight: "bold" }} />
-                    <Bar yAxisId="left" dataKey="revenue" name="Doanh thu" fill="#14b8a6" radius={[4, 4, 0, 0]} />
-                    <Bar yAxisId="left" dataKey="profit" name="Lợi nhuận" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                    <Bar yAxisId="right" dataKey="sold" name="Máy bán" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+            )}
+
+            {reportHubTab === "sales" && (
+              <section className="grid gap-4">
+                <div className="rounded-lg border border-sky-100 bg-sky-50/80 p-3 text-sm font-semibold text-sky-900">
+                  Tab <strong>Bán hàng</strong> — Sprint 2 sẽ bổ sung chart theo ngày & breakdown
+                  TM/CK/nợ. Hiện dùng lại báo cáo tháng/năm từ phiếu bán (DB).
+                </div>
+
+                <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
+                  <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h2 className="text-xl font-black">Theo tháng</h2>
+                      <p className="text-sm font-semibold text-muted">
+                        Phiếu bán hoàn tất · {inventoryReportMonth}
+                      </p>
+                    </div>
+                  </div>
+                  {supabaseReportMonthly &&
+                  inventoryMonthlyReport.revenue === 0 &&
+                  inventoryMonthlyReport.soldPhones === 0 ? (
+                    <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">
+                      Chưa có phiếu bán trong tháng {inventoryReportMonth}. Vào{" "}
+                      <strong>Bán hàng</strong> tạo phiếu rồi quay lại.
+                    </div>
+                  ) : null}
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
+                      <p className="text-sm font-bold text-muted">Máy bán</p>
+                      <div className="mt-4 flex items-center justify-between">
+                        <strong className="text-3xl text-sky-800">
+                          {isStatsHidden || hideReportSold
+                            ? "***"
+                            : `${reportPeriodSales.soldPhones} con`}
+                        </strong>
+                        <button
+                          type="button"
+                          onClick={() => setHideReportSold(!hideReportSold)}
+                          className="grid h-11 w-11 place-items-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100"
+                        >
+                          <Smartphone size={20} />
+                        </button>
+                      </div>
+                    </section>
+                    <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
+                      <p className="text-sm font-bold text-muted">Doanh thu</p>
+                      <div className="mt-4 flex items-center justify-between">
+                        <strong className="text-3xl text-amber-700">
+                          {isStatsHidden || hideReportRevenue
+                            ? "***"
+                            : formatMoney(reportPeriodSales.revenue)}
+                        </strong>
+                        <button
+                          type="button"
+                          onClick={() => setHideReportRevenue(!hideReportRevenue)}
+                          className="grid h-11 w-11 place-items-center rounded-lg bg-amber-50 text-amber-700 transition hover:bg-amber-100"
+                        >
+                          <ReceiptText size={20} />
+                        </button>
+                      </div>
+                    </section>
+                    <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
+                      <p className="text-sm font-bold text-muted">Lợi nhuận</p>
+                      <div className="mt-4 flex items-center justify-between">
+                        <strong className="text-3xl text-emerald-700">
+                          {isStatsHidden || hideReportProfit
+                            ? "***"
+                            : formatMoney(reportPeriodSales.profit)}
+                        </strong>
+                        <button
+                          type="button"
+                          onClick={() => setHideReportProfit(!hideReportProfit)}
+                          className="grid h-11 w-11 place-items-center rounded-lg bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100"
+                        >
+                          <Activity size={20} />
+                        </button>
+                      </div>
+                    </section>
+                  </div>
+                </section>
+
+                <section className="rounded-lg border border-line bg-white p-5 shadow-panel">
+                  <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <h2 className="text-xl font-black">Biểu đồ năm {reportYear}</h2>
+                      <p className="text-sm font-semibold text-muted">
+                        Doanh thu, lợi nhuận và số máy bán theo tháng
+                      </p>
+                    </div>
+                  </div>
+                  <div className="h-[400px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={chartYearlyData}
+                        margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                        <XAxis
+                          dataKey="month"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: "#64748b", fontSize: 12, fontWeight: 600 }}
+                          dy={10}
+                        />
+                        <YAxis
+                          yAxisId="left"
+                          orientation="left"
+                          stroke="#1e293b"
+                          axisLine={false}
+                          tickLine={false}
+                          tickFormatter={(val) => `${val / 1000000}M`}
+                          tick={{ fill: "#64748b", fontSize: 12, fontWeight: 600 }}
+                          dx={-10}
+                        />
+                        <YAxis
+                          yAxisId="right"
+                          orientation="right"
+                          stroke="#0ea5e9"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: "#64748b", fontSize: 12, fontWeight: 600 }}
+                          dx={10}
+                        />
+                        <Tooltip
+                          cursor={{ fill: "#f1f5f9" }}
+                          contentStyle={{
+                            borderRadius: "8px",
+                            border: "1px solid #e2e8f0",
+                            boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
+                            fontWeight: "bold",
+                          }}
+                          formatter={(value: any, name: any) => {
+                            if (name === "Doanh thu" || name === "Lợi nhuận")
+                              return [formatMoney(value as number), name];
+                            return [value, name];
+                          }}
+                        />
+                        <Legend
+                          iconType="circle"
+                          wrapperStyle={{ paddingTop: "20px", fontWeight: "bold" }}
+                        />
+                        <Bar
+                          yAxisId="left"
+                          dataKey="revenue"
+                          name="Doanh thu"
+                          fill="#14b8a6"
+                          radius={[4, 4, 0, 0]}
+                        />
+                        <Bar
+                          yAxisId="left"
+                          dataKey="profit"
+                          name="Lợi nhuận"
+                          fill="#f59e0b"
+                          radius={[4, 4, 0, 0]}
+                        />
+                        <Bar
+                          yAxisId="right"
+                          dataKey="sold"
+                          name="Máy bán"
+                          fill="#0ea5e9"
+                          radius={[4, 4, 0, 0]}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </section>
+              </section>
+            )}
+
+            {reportHubTab === "inventory" && (
+              <div className="grid gap-4">
+                <div className="rounded-lg border border-amber-100 bg-amber-50/80 p-3 text-sm font-semibold text-amber-950">
+                  Tab <strong>Kho hàng</strong> — snapshot tồn · {storeName(storeFilter)}. DT/lãi
+                  tạm tính = nếu bán hết tồn theo giá bán dự kiến (đơn vị shop).
+                </div>
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  <StatCard
+                    label="Máy còn hàng"
+                    value={isStatsHidden || dashboardSummaryLoading ? "***" : `${dashboard.phones}`}
+                    hint="Đang in_stock"
+                    icon={<Smartphone size={20} />}
+                  />
+                  <StatCard
+                    label="Máy đã bán (tổng)"
+                    value={
+                      isStatsHidden || dashboardSummaryLoading
+                        ? "***"
+                        : `${dashboard.phonesSold}`
+                    }
+                    hint="Lifetime thái Đã bán · lifetime"
+                    icon={<ReceiptText size={20} />}
+                  />
+                  <StatCard
+                    label="Phụ kiện tồn (SL)"
+                    value={
+                      isStatsHidden || dashboardSummaryLoading ? "***" : `${dashboard.accessories}`
+                    }
+                    hint="Tổng số lượng"
+                    icon={<PackagePlus size={20} />}
+                  />
+                  <StatCard
+                    label="Vốn đầu tư"
+                    value={
+                      isStatsHidden || dashboardSummaryLoading
+                        ? "***"
+                        : formatMoney(dashboard.capitalShort)
+                    }
+                    hint="Σ giá nhập tồn máy + PK"
+                    icon={<Store size={20} />}
+                  />
+                  <StatCard
+                    label="Doanh thu tạm tính"
+                    value={
+                      isStatsHidden || dashboardSummaryLoading
+                        ? "***"
+                        : formatMoney(dashboard.provisionalRevenueShort)
+                    }
+                    hint="Σ giá bán dự kiến tồn"
+                    icon={<Activity size={20} />}
+                  />
+                  <StatCard
+                    label="Lãi tạm tính"
+                    value={
+                      isStatsHidden || dashboardSummaryLoading
+                        ? "***"
+                        : formatMoney(dashboard.provisionalProfitShort)
+                    }
+                    hint="DT tạm − vốn đầu tư"
+                    icon={<FileText size={20} />}
+                  />
+                </div>
               </div>
-            </section>
-          </section>
+            )}
+
+            {reportHubTab === "repair" && (
+              <div className="rounded-xl border border-line bg-white p-8 shadow-panel">
+                <div className="flex items-start gap-4">
+                  <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-brand-soft text-brand">
+                    <Wrench size={24} />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-black text-ink">Báo cáo sửa chữa</h2>
+                    <p className="mt-1 text-sm font-semibold text-muted">
+                      Sprint 4 — thống kê đơn sửa theo ngày/tháng/năm (báo giá, phí DV, nợ).
+                    </p>
+                    <p className="mt-3 text-sm font-bold text-slate-700">
+                      Hiện:{" "}
+                      {isStatsHidden ? "***" : `${dashboard.repairs}`} đơn đang mở / còn nợ (ước
+                      tính).
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         )}
 
         {activePage === "parts" && (
