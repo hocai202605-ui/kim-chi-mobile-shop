@@ -441,6 +441,25 @@ export async function repoDeleteAccessory(id: string): Promise<Accessory> {
   });
 }
 
+/** Xóa cứng máy khỏi DB (và sale_items gắn phone nếu có). */
+export async function repoDeletePhone(id: string): Promise<PhoneItem> {
+  const phoneId = String(id || "").trim();
+  if (!phoneId) throw new Error("Thiếu mã máy.");
+  const { idToCode } = await loadStoreMaps();
+
+  return withTransaction(async (client) => {
+    await skipStatusGuard(client);
+    // Gỡ dòng bán gắn máy (FK sale_items.phone_id → phones)
+    await client.query(`delete from public.sale_items where phone_id = $1`, [phoneId]);
+    const { rows } = await client.query(
+      `delete from public.phones where id = $1 returning *`,
+      [phoneId]
+    );
+    if (!rows[0]) throw new Error("Không tìm thấy máy để xóa.");
+    return mapPhone(rows[0], idToCode);
+  });
+}
+
 async function resolveStoreUuid(
   storeCode: string,
   client?: PoolClient

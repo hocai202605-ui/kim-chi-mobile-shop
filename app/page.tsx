@@ -40,6 +40,7 @@ import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState
 import { createPortal } from "react-dom";
 import {
   deleteAccessory as apiDeleteAccessory,
+  deletePhone as apiDeletePhone,
   loadInventoryBootstrap as apiLoadInventoryBootstrap,
   upsertAccessory as apiUpsertAccessory,
   upsertPhone as apiUpsertPhone,
@@ -2133,6 +2134,34 @@ export default function Home() {
     }
   }
 
+  /** Xóa cứng máy (grid: máy đã bán chỉ còn Chi tiết + Xóa). */
+  async function deletePhoneItem(id: string) {
+    const source = phones.find((item) => item.id === id);
+    if (!source) return;
+    const label = `${source.brand} ${source.name}`.trim();
+    const imeiHint = source.imei ? ` (…${source.imei.slice(-5)})` : "";
+    const ok = window.confirm(
+      `Xóa máy "${label}"${imeiHint}?\n\nThao tác này xóa hẳn khỏi danh sách / hệ thống (kèm dòng bán gắn máy nếu có), không hoàn tác.`
+    );
+    if (!ok) return;
+    try {
+      await apiDeletePhone(id);
+      pushLog("Xóa máy", `${label}${imeiHint}`, source.storeId);
+      setPhones((prev) => prev.filter((p) => p.id !== id));
+      if (viewingPhoneId === id) setViewingPhoneId(null);
+      if (editingPhoneId === id) {
+        setIsInventoryModalOpen(false);
+        setEditingPhoneId(null);
+        setClonePhoneDraft(null);
+      }
+      await reloadInventoryFromDb();
+      void reloadSalesFromDb();
+      showUiToast("success", `Đã xóa máy ${label}.`);
+    } catch (err) {
+      showUiToast("error", `Xóa máy thất bại: ${toUiError(err)}`);
+    }
+  }
+
   function closeInventoryModal() {
     if (inventorySaving) return;
     setIsInventoryModalOpen(false);
@@ -4049,28 +4078,35 @@ export default function Home() {
                       >
                         <Eye size={18} />
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => openPhoneEditModal(item.id)}
-                        disabled={item.status === "Đã bán"}
-                        title={item.status === "Đã bán" ? "Máy đã bán — không sửa" : "Sửa"}
-                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-brand-soft"
-                      >
-                        <Edit3 size={18} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openPhoneCloneModal(item.id)}
-                        disabled={item.status === "Đã bán"}
-                        title={
-                          item.status === "Đã bán"
-                            ? "Máy đã bán — không nhân bản"
-                            : "Nhân bản thêm mới"
-                        }
-                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-sky-50"
-                      >
-                        <CopyPlus size={18} />
-                      </button>
+                      {item.status === "Đã bán" ? (
+                        <button
+                          type="button"
+                          onClick={() => void deletePhoneItem(item.id)}
+                          title="Xóa máy (xóa hẳn)"
+                          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => openPhoneEditModal(item.id)}
+                            title="Sửa"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20"
+                          >
+                            <Edit3 size={18} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openPhoneCloneModal(item.id)}
+                            title="Nhân bản thêm mới"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100"
+                          >
+                            <CopyPlus size={18} />
+                          </button>
+                        </>
+                      )}
                     </div>,
                   ])}
                 />
@@ -5334,18 +5370,18 @@ export default function Home() {
                                       onBlur={() => {
                                         window.setTimeout(() => setSaleCustomerSuggestOpen(false), 180);
                                       }}
-                                      className="h-9 min-w-0 flex-1 rounded-md border border-line bg-white px-2.5 text-sm font-semibold outline-none focus:border-brand"
-                                      placeholder="Không bắt buộc"
+                                      className="h-9 min-w-0 w-0 flex-[1_1_0%] max-w-[9.5rem] rounded-md border border-line bg-white px-2 text-sm font-semibold outline-none focus:border-brand sm:max-w-none sm:flex-[1_1_55%]"
+                                      placeholder="SĐT"
                                       autoComplete="off"
                                     />
                                     <button
                                       type="button"
                                       onClick={handleSaveSaleCustomer}
-                                      title="Lưu khách"
-                                      className="inline-flex h-9 shrink-0 items-center justify-center gap-1 rounded-md border border-brand bg-brand-soft px-2 text-[11px] font-bold text-brand-dark hover:bg-brand hover:text-white"
+                                      title="Lưu khách hàng"
+                                      className="inline-flex h-9 min-w-0 flex-[1_1_45%] items-center justify-center gap-1.5 rounded-md border border-brand bg-brand-soft px-2.5 text-xs font-bold text-brand-dark hover:bg-brand hover:text-white sm:flex-none sm:px-3 sm:text-sm"
                                     >
-                                      <Users size={12} />
-                                      Lưu
+                                      <Users size={14} />
+                                      Lưu khách
                                     </button>
                                   </div>
                                 </div>

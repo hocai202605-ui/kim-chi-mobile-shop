@@ -138,6 +138,15 @@ export async function cancelPhone(id: string, actorUsername?: string): Promise<P
   return parseJson<PhoneItem>(res);
 }
 
+/** Xóa cứng máy khỏi DB / grid. */
+export async function deletePhone(id: string): Promise<PhoneItem> {
+  const res = await fetch(`/api/inventory/phones/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+  });
+  return parseJson<PhoneItem>(res);
+}
+
 export async function cancelAccessory(
   id: string,
   actorUsername?: string
