@@ -2756,7 +2756,12 @@ export default function Home() {
   async function saveShopRepairFromForm(form: FormData) {
     if (!currentUser) return;
     const quote = parseInputMoney(form.get("quote"));
-    const deposit = parseInputMoney(form.get("deposit"));
+    const depositRaw = String(form.get("deposit") ?? "").trim();
+    if (!depositRaw.replace(/\D/g, "")) {
+      showUiToast("error", "Nhập phí dịch vụ.");
+      return;
+    }
+    const deposit = parseInputMoney(depositRaw);
     const pStatus = String(form.get("paymentStatus")) as ShopRepairOrder["paymentStatus"];
     const isEdit = Boolean(editingShopRepairId);
     const isClone = !isEdit && Boolean(cloneShopRepairDraft);
@@ -7630,9 +7635,12 @@ export default function Home() {
                     name="deposit"
                     options={shopRepairFeeOptions}
                     setOptions={setFormLookupOptions(REPAIR_LOOKUP_CATEGORIES.fee, repairLookupStoreId)}
-                    defaultValue={formatInputMoney(
-                      formDefaults != null ? formDefaults.deposit ?? 0 : 0
-                    )}
+                    defaultValue={
+                      formDefaults != null
+                        ? formatInputMoney(formDefaults.deposit ?? "")
+                        : ""
+                    }
+                    required
                     categoryCode={REPAIR_LOOKUP_CATEGORIES.fee}
                     storeId={repairLookupStoreId}
                     onRenameCascade={reloadShopRepairsFromDb}
@@ -7768,9 +7776,9 @@ export default function Home() {
                     <span className="flex h-1.5 w-1.5 rounded-full bg-yellow-400 shrink-0 hidden md:block"></span>
                     Nhanh — Uy tín — Bảo hành rõ ràng
                   </p>
-                  <p className="font-semibold text-white/80 flex items-center gap-2 text-xs sm:text-sm">
+                  <p className="font-semibold text-white/90 flex items-center gap-2 text-xs sm:text-sm">
                     <span className="flex h-1.5 w-1.5 rounded-full bg-white/50 shrink-0 hidden md:block"></span>
-                    Dữ liệu real-time từ Supabase
+                    Địa chỉ: Phường Nam Sách, TP. Hải Phòng
                   </p>
                 </div>
               </div>
@@ -8595,11 +8603,11 @@ export default function Home() {
             })()}
 
             <div className="grid gap-4">
-              <div className="rounded-lg bg-gradient-to-br from-indigo-800 via-blue-700 to-brand p-4 sm:p-5 text-white shadow relative overflow-hidden flex flex-col md:flex-row justify-between items-center md:text-left text-center gap-4 mb-4">
+              <div className="rounded-lg bg-gradient-to-br from-pink-600 via-rose-500 to-fuchsia-600 p-4 sm:p-5 text-white shadow relative overflow-hidden flex flex-col md:flex-row justify-between items-center md:text-left text-center gap-4 mb-4">
                 <div className="absolute top-0 right-0 -mt-16 -mr-16 h-64 w-64 rounded-full bg-white/10 blur-3xl mix-blend-overlay pointer-events-none"></div>
                 <div className="absolute bottom-0 left-0 -mb-16 -ml-16 h-48 w-48 rounded-full bg-white/10 blur-2xl pointer-events-none"></div>
                 <div className="relative z-10 md:w-1/2">
-                  <h1 className="text-lg sm:text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500 drop-shadow-sm uppercase tracking-tight">
+                  <h1 className="text-lg sm:text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 to-yellow-400 drop-shadow-sm uppercase tracking-tight">
                     Trung Tâm Giải Mã Phần Mềm Điện Thoại Di Động Nam Sách
                   </h1>
                 </div>
