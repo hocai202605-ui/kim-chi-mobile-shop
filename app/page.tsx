@@ -4922,6 +4922,36 @@ export default function Home() {
                   </div>
 
                   <form id="sale-create-form" onSubmit={createSale} className="grid gap-2 p-3">
+                    {/* 2 nút tab lên đầu form — thay «Thêm máy» cũ, phân biệt rõ Bán PK / Bán Máy */}
+                    {!isSaleReadOnly ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSaleModalTab("accessory")}
+                          className={`inline-flex h-11 items-center justify-center gap-2 rounded-xl text-sm font-black shadow-sm ring-1 transition ${
+                            saleModalTab === "accessory"
+                              ? "bg-amber-500 text-white ring-amber-400 hover:bg-amber-600"
+                              : "bg-white text-amber-800 ring-amber-200 hover:bg-amber-50"
+                          }`}
+                        >
+                          <PackagePlus size={17} />
+                          Bán PK
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSaleModalTab("phone")}
+                          className={`inline-flex h-11 items-center justify-center gap-2 rounded-xl text-sm font-black shadow-sm ring-1 transition ${
+                            saleModalTab === "phone"
+                              ? "bg-indigo-600 text-white ring-indigo-400 hover:bg-indigo-700"
+                              : "bg-white text-indigo-700 ring-indigo-200 hover:bg-indigo-50"
+                          }`}
+                        >
+                          <Smartphone size={17} />
+                          Bán Máy
+                        </button>
+                      </div>
+                    ) : null}
+
                     <div className="grid gap-2">
                       <div className="grid gap-2 sm:grid-cols-2">
                         <label className="grid gap-0.5">
@@ -5018,36 +5048,9 @@ export default function Home() {
                       </div>
                     </div>
 
-                    {/* Tab Bán PK | Bán Máy — ẩn khi chỉ xem (chỉ hiện giỏ) */}
+                    {/* Nội dung theo tab — ẩn khi chỉ xem */}
                     {!isSaleReadOnly ? (
                       <>
-                        <div className="grid grid-cols-2 gap-1 rounded-xl border border-line bg-slate-100/80 p-1">
-                          <button
-                            type="button"
-                            onClick={() => setSaleModalTab("accessory")}
-                            className={`inline-flex h-10 items-center justify-center gap-1.5 rounded-lg text-sm font-black transition ${
-                              saleModalTab === "accessory"
-                                ? "bg-amber-500 text-white shadow-sm"
-                                : "bg-transparent text-slate-600 hover:bg-white hover:text-amber-800"
-                            }`}
-                          >
-                            <PackagePlus size={16} />
-                            Bán PK
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setSaleModalTab("phone")}
-                            className={`inline-flex h-10 items-center justify-center gap-1.5 rounded-lg text-sm font-black transition ${
-                              saleModalTab === "phone"
-                                ? "bg-indigo-600 text-white shadow-sm"
-                                : "bg-transparent text-slate-600 hover:bg-white hover:text-indigo-700"
-                            }`}
-                          >
-                            <Smartphone size={16} />
-                            Bán Máy
-                          </button>
-                        </div>
-
                         {saleModalTab === "accessory" ? (
                           <div className="relative overflow-hidden rounded-xl border border-amber-200/80 bg-gradient-to-br from-amber-50 via-orange-50/40 to-white p-2.5 shadow-sm ring-1 ring-amber-100/80">
                             <div className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-amber-200/30 blur-2xl" />
