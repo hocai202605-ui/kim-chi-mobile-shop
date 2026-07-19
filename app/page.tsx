@@ -304,6 +304,7 @@ type SaleLineSnapshot =
       quantity: number;
       unitPrice: number;
       cost?: number;
+      category?: string;
     };
 
 type Sale = {
@@ -2704,6 +2705,19 @@ export default function Home() {
       setSaleCustomerPhone(sale.customerPhone || "");
       setSaleCustomerAddress(sale.customerAddress || "");
       setSaleCustomerSuggestOpen(false);
+      {
+        const rawNote = String(
+          (detail as { note?: string } | null)?.note ??
+            (local as { note?: string } | undefined)?.note ??
+            ""
+        ).trim();
+        // note có thể là "Bảo hành: 6 tháng" hoặc chỉ "6 tháng"
+        const warranty = rawNote.replace(/^bảo\s*hành\s*:\s*/i, "").trim();
+        setSaleWarranty(warranty);
+        setSaleWarrantyKey((k) => k + 1);
+      }
+      setSaleGiftCost("");
+      setSaleGiftFormKey((k) => k + 1);
       setSaleStoreId(sale.storeId);
       const parsedPay = parseSalePaymentFields(sale.payment);
       setSalePayStatus(parsedPay.status);
@@ -2751,7 +2765,12 @@ export default function Home() {
               : {
                   key: `acc-${idx}-${sale.id}`,
                   kind: "accessory" as const,
-                  name: line.name,
+                  name:
+                    line.unitPrice === 0 && line.category === "Tặng"
+                      ? line.name
+                      : line.category && line.category !== "Khác"
+                        ? `${line.category}: ${line.name}`
+                        : line.name,
                   quantity: line.quantity,
                   unitPrice: line.unitPrice,
                   cost: line.cost || 0,
@@ -2915,6 +2934,41 @@ export default function Home() {
     setSaleAccFormKey((k) => k + 1);
   }
 
+  /** Tặng PK kèm máy: giá bán 0, giá (vốn) trừ vào lãi phiếu. */
+  function addGiftAccessoryToSaleCart() {
+    const formEl = document.getElementById("sale-create-form") as HTMLFormElement | null;
+    const fd = formEl ? new FormData(formEl) : null;
+    const name = String(fd?.get("saleGiftName") ?? "").trim();
+    if (!name) {
+      window.alert("Chọn hoặc nhập tên PK tặng.");
+      return;
+    }
+    const cost = parseShopMoney(saleGiftCost); // 0 nếu trống
+    if (cost < 0) {
+      window.alert("Giá PK tặng không hợp lệ.");
+      return;
+    }
+    setSaleCart((prev) => [
+      ...prev,
+      {
+        key: `gift-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        kind: "accessory",
+        name,
+        quantity: 1,
+        unitPrice: 0,
+        cost,
+      },
+    ]);
+    setSaleGiftCost("");
+    setSaleGiftFormKey((k) => k + 1);
+    if (cost > 0) {
+      showUiToast(
+        "success",
+        `Đã thêm tặng: ${name} (trừ lãi ${formatMoney(cost)}).`
+      );
+    }
+  }
+
   function removeSaleCartLine(key: string) {
     setSaleCart((prev) => prev.filter((l) => l.key !== key));
   }
@@ -2971,6 +3025,10 @@ export default function Home() {
         }
       }
 
+      const formEl = event.currentTarget;
+      const fd = new FormData(formEl);
+      // ManageableSelect bảo hành (chỉ có trên tab Máy) — fallback state khi view/load.
+      const warrantyNote = String(fd.get("saleWarranty") ?? saleWarranty ?? "").trim();
       const saved = await apiCreateSale({
         storeId: saleStoreId,
         payment: paymentValue,
@@ -2978,6 +3036,11 @@ export default function Home() {
         customerPhone: saleCustomerPhone.trim(),
         customerAddress: saleCustomerAddress.trim(),
         soldAt: saleSoldAt || vnNowDateTimeLocal(),
+        note: warrantyNote
+          ? /^bảo\s*hành/i.test(warrantyNote)
+            ? warrantyNote
+            : `Bảo hành: ${warrantyNote}`
+          : undefined,
         actorUsername: currentUser?.username,
         lines: saleCart.map((line) =>
           line.kind === "phone"
@@ -2988,7 +3051,10 @@ export default function Home() {
               }
             : {
                 itemType: "Phụ kiện" as const,
-                itemName: line.name,
+                itemName:
+                  line.unitPrice === 0 && !line.name.toLowerCase().startsWith("tặng")
+                    ? `Tặng: ${line.name}`
+                    : line.name,
                 quantity: line.quantity,
                 unitPrice: line.unitPrice,
                 unitCost: line.cost || 0,
@@ -4942,7 +5008,21 @@ export default function Home() {
                       <div className="grid grid-cols-2 gap-2">
                         <button
                           type="button"
-                          onClick={() => setSaleModalTab("accessory")}
+                          onClick={() => {
+                            // Giữ bảo hành khi rời tab Máy (ManageableSelect unmount).
+                            if (saleModalTab === "phone") {
+                              const form = document.getElementById(
+                                "sale-create-form"
+                              ) as HTMLFormElement | null;
+                              if (form) {
+                                const fd = new FormData(form);
+                                setSaleWarranty(
+                                  String(fd.get("saleWarranty") ?? "").trim()
+                                );
+                              }
+                            }
+                            setSaleModalTab("accessory");
+                          }}
                           className={`inline-flex h-11 items-center justify-center gap-2 rounded-xl text-sm font-black shadow-sm ring-1 transition ${
                             saleModalTab === "accessory"
                               ? "bg-amber-500 text-white ring-amber-400 hover:bg-amber-600"
@@ -5277,6 +5357,83 @@ export default function Home() {
                                   </button>
                                 </div>
                               </div>
+                              <div className="mt-2 grid min-w-0 gap-1.5">
+                                <span className="text-xs font-bold text-slate-700">Bảo hành</span>
+                                <div className="min-w-0 [&_label>span]:hidden">
+                                  <ManageableSelect
+                                    key={`sale-warranty-${saleWarrantyKey}-${saleStoreId}`}
+                                    label="Bảo hành"
+                                    name="saleWarranty"
+                                    options={saleWarrantyOptions}
+                                    setOptions={setSaleWarrantyOptions}
+                                    defaultValue={saleWarranty}
+                                    required={false}
+                                    categoryCode={SALE_LOOKUP_CATEGORIES.warranty}
+                                    storeId={saleStoreId}
+                                    allowManage
+                                    allowFreeText
+                                    actorUsername={currentUser?.username ?? ""}
+                                    onManageNotify={(type, message) => showUiToast(type, message)}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Tặng PK — giá bán 0, vốn nhập trừ lãi máy */}
+                            <div className="relative overflow-hidden rounded-xl border border-fuchsia-200/80 bg-gradient-to-br from-fuchsia-50 via-pink-50/40 to-white p-2.5 shadow-sm ring-1 ring-fuchsia-100/80">
+                              <div className="relative mb-1.5 flex items-center gap-1.5">
+                                <span className="grid h-7 w-7 place-items-center rounded-md bg-fuchsia-100 text-fuchsia-700 ring-1 ring-fuchsia-200/80">
+                                  <PackagePlus size={14} />
+                                </span>
+                                <div>
+                                  <p className="text-sm font-black text-fuchsia-950">Tặng PK</p>
+                                  <p className="text-[11px] font-semibold text-muted">
+                                    Giá tặng trừ vào lãi bán máy
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="relative grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_7.5rem_auto] sm:items-end">
+                                <div className="grid min-w-0 gap-1.5">
+                                  <span className="text-sm font-bold text-fuchsia-950">Tên PK</span>
+                                  <div className="min-w-0 [&_label>span]:hidden">
+                                    <ManageableSelect
+                                      key={`sale-gift-name-${saleGiftFormKey}-${saleStoreId}`}
+                                      label="Tên PK tặng"
+                                      name="saleGiftName"
+                                      options={saleAccNameOptions}
+                                      setOptions={setSaleAccNameOptions}
+                                      defaultValue=""
+                                      required={false}
+                                      categoryCode={ACCESSORY_LOOKUP_CATEGORIES.name}
+                                      storeId={saleStoreId}
+                                      onRenameCascade={reloadInventoryFromDb}
+                                      allowManage
+                                      allowFreeText
+                                      actorUsername={currentUser?.username ?? ""}
+                                      onManageNotify={(type, message) => showUiToast(type, message)}
+                                    />
+                                  </div>
+                                </div>
+                                <div className="grid gap-1.5">
+                                  <span className="text-sm font-bold text-fuchsia-950">Giá</span>
+                                  <input
+                                    inputMode="numeric"
+                                    value={saleGiftCost}
+                                    onChange={(e) => setSaleGiftCost(formatInputMoney(e.target.value))}
+                                    className="h-10 w-full rounded-lg border border-fuchsia-200/80 bg-white px-2.5 text-sm font-bold text-fuchsia-950 outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-100"
+                                    title="Giá vốn PK tặng (đơn vị shop) — trừ vào lãi"
+                                    placeholder="0"
+                                  />
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={addGiftAccessoryToSaleCart}
+                                  className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-fuchsia-600 px-3.5 text-sm font-bold text-white shadow-sm hover:bg-fuchsia-700"
+                                >
+                                  <Plus size={16} />
+                                  Thêm tặng
+                                </button>
+                              </div>
                             </div>
 
                             <div className="space-y-2 rounded-xl border border-indigo-200/80 bg-gradient-to-br from-indigo-50 via-slate-50 to-white p-2.5 shadow-sm ring-1 ring-indigo-100/80">
@@ -5403,6 +5560,17 @@ export default function Home() {
                             />
                           </label>
                         ) : null}
+                        {saleWarranty ? (
+                          <label className="mt-2 grid gap-0.5">
+                            <span className="text-xs font-bold text-slate-700">Bảo hành</span>
+                            <input
+                              value={saleWarranty}
+                              readOnly
+                              disabled
+                              className="h-9 w-full cursor-default rounded-md border border-line bg-slate-50 px-2.5 text-sm font-semibold text-slate-700"
+                            />
+                          </label>
+                        ) : null}
                       </div>
                     ) : null}
 
@@ -5458,41 +5626,39 @@ export default function Home() {
                                     </span>
                                     {line.name}
                                     <span className="ml-1 font-semibold text-muted">×{line.quantity}</span>
+                                    {line.unitPrice === 0 ? (
+                                      <span className="ml-1 rounded bg-fuchsia-50 px-1 py-0.5 text-[10px] font-black uppercase text-fuchsia-700 ring-1 ring-fuchsia-200">
+                                        Tặng
+                                      </span>
+                                    ) : null}
                                   </p>
                                 )}
                               </div>
-                              {isSaleReadOnly ? (
+                              {line.kind === "accessory" && line.unitPrice === 0 ? (
                                 <span
-                                  className={`inline-flex h-8 min-w-[5.5rem] items-center justify-end rounded-md border px-2 text-sm font-bold ${
-                                    line.kind === "accessory" && line.unitPrice === 0
-                                      ? "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-800"
-                                      : "border-line bg-slate-50 text-emerald-700"
-                                  }`}
+                                  className="inline-flex h-8 min-w-[5.5rem] items-center justify-end rounded-md border border-fuchsia-200 bg-fuchsia-50 px-2 text-sm font-bold text-fuchsia-800"
+                                  title={`Vốn tặng: ${formatMoney(line.cost || 0)} (trừ lãi)`}
                                 >
                                   {isSaleSensitiveHidden
                                     ? "***"
-                                    : line.kind === "accessory" && line.unitPrice === 0
-                                      ? "0"
-                                      : formatMoney(line.unitPrice)}
+                                    : line.cost > 0
+                                      ? `−${formatMoney(line.cost)}`
+                                      : "0"}
+                                </span>
+                              ) : isSaleReadOnly ? (
+                                <span className="inline-flex h-8 min-w-[5.5rem] items-center justify-end rounded-md border border-line bg-slate-50 px-2 text-sm font-bold text-emerald-700">
+                                  {isSaleSensitiveHidden ? "***" : formatMoney(line.unitPrice)}
                                 </span>
                               ) : (
                                 <input
                                   inputMode="numeric"
                                   value={
-                                    line.kind === "accessory" && line.unitPrice === 0
-                                      ? "0"
-                                      : line.unitPrice
-                                        ? formatInputMoney(line.unitPrice)
-                                        : ""
+                                    line.unitPrice ? formatInputMoney(line.unitPrice) : ""
                                   }
                                   onChange={(e) =>
                                     updateSaleCartUnitPrice(line.key, parseShopMoney(e.target.value))
                                   }
-                                  className={`h-8 w-24 rounded-md border px-2 text-right text-sm font-bold outline-none focus:border-brand ${
-                                    line.kind === "accessory" && line.unitPrice === 0
-                                      ? "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-800"
-                                      : "border-line text-emerald-700"
-                                  }`}
+                                  className="h-8 w-24 rounded-md border border-line px-2 text-right text-sm font-bold text-emerald-700 outline-none focus:border-brand"
                                   title="Giá bán (đơn vị shop)"
                                 />
                               )}
