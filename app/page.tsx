@@ -477,7 +477,33 @@ const partsInboundSeed: PartInbound[] = [
     quantity: 5,
     status: "Hiệu lực",
   },
+  {
+    id: "pk2",
+    createdAt: "2026-07-12",
+    storeId: "store-1",
+    distributor: "Kho pin B",
+    address: "88 Lê Lợi, Q3",
+    phone: "0912345678",
+    partType: "Pin",
+    partName: "Pin iPhone 12 dung lượng cao",
+    quantity: 10,
+    status: "Hiệu lực",
+  },
 ];
+
+function uniquePartLabels(values: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of values) {
+    const v = String(raw || "").trim();
+    if (!v) continue;
+    const key = v.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(v);
+  }
+  return out.sort((a, b) => a.localeCompare(b, "vi", { sensitivity: "base" }));
+}
 
 /**
  * UI Sửa chữa (menu `software`) — load/ghi Postgres qua /api/repairs.
@@ -1091,7 +1117,22 @@ export default function Home() {
   /** Linh kiện — phiếu nhập (mock state). */
   const [partInbounds, setPartInbounds] = useState<PartInbound[]>(partsInboundSeed);
   const [partFormKey, setPartFormKey] = useState(0);
+  /** Remount địa chỉ / loại / SĐT khi cascade theo NPP. */
+  const [partCascadeKey, setPartCascadeKey] = useState(0);
   const [partSearch, setPartSearch] = useState("");
+  const [partDistributor, setPartDistributor] = useState("");
+  const [partAddress, setPartAddress] = useState("");
+  const [partPhone, setPartPhone] = useState("");
+  const [partType, setPartType] = useState("");
+  const [partDistributorOptions, setPartDistributorOptions] = useState(() =>
+    uniquePartLabels(partsInboundSeed.map((p) => p.distributor))
+  );
+  const [partAddressOptions, setPartAddressOptions] = useState(() =>
+    uniquePartLabels(partsInboundSeed.map((p) => p.address))
+  );
+  const [partTypeOptions, setPartTypeOptions] = useState(() =>
+    uniquePartLabels(partsInboundSeed.map((p) => p.partType))
+  );
 
   const [customers, setCustomers] = useState(customersSeed);
   const [phones, setPhones] = useState<PhoneItem[]>([]);
@@ -2286,13 +2327,37 @@ export default function Home() {
     return currentUser?.storeId ?? "store-1";
   }
 
+  function resetPartInboundForm() {
+    setPartDistributor("");
+    setPartAddress("");
+    setPartPhone("");
+    setPartType("");
+    setPartFormKey((k) => k + 1);
+    setPartCascadeKey((k) => k + 1);
+  }
+
+  /** Chọn NPP → điền Địa chỉ, SĐT, Loại LK theo phiếu mới nhất cùng NPP. */
+  function applyPartDistributorCascade(name: string) {
+    setPartDistributor(name);
+    const key = name.trim().toLowerCase();
+    if (!key) return;
+    const match = partInbounds.find(
+      (p) => p.distributor.trim().toLowerCase() === key
+    );
+    if (!match) return;
+    setPartAddress(match.address || "");
+    setPartPhone(match.phone || "");
+    setPartType(match.partType || "");
+    setPartCascadeKey((k) => k + 1);
+  }
+
   function handleSavePartInbound(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = new FormData(e.currentTarget);
-    const distributor = String(form.get("distributor") || "").trim();
-    const address = String(form.get("address") || "").trim();
-    const phone = String(form.get("phone") || "").trim();
-    const partType = String(form.get("partType") || "").trim();
+    const distributor = String(form.get("distributor") || partDistributor || "").trim();
+    const address = String(form.get("address") || partAddress || "").trim();
+    const phone = String(form.get("phone") || partPhone || "").trim();
+    const partTypeVal = String(form.get("partType") || partType || "").trim();
     const partName = String(form.get("partName") || "").trim();
     const qtyRaw = String(form.get("quantity") || "").trim().replace(/[^\d]/g, "");
     const quantity = Math.max(0, Number(qtyRaw) || 0);
@@ -2301,7 +2366,7 @@ export default function Home() {
       window.alert("Nhập nhà phân phối.");
       return;
     }
-    if (!partType) {
+    if (!partTypeVal) {
       window.alert("Nhập loại linh kiện.");
       return;
     }
@@ -2322,14 +2387,23 @@ export default function Home() {
       distributor,
       address,
       phone,
-      partType,
+      partType: partTypeVal,
       partName,
       quantity,
       status: "Hiệu lực",
     };
     setPartInbounds((prev) => [row, ...prev]);
-    pushLog("Nhập linh kiện", `${partType} — ${partName} ×${quantity} (${distributor})`, storeId);
-    setPartFormKey((k) => k + 1);
+    setPartDistributorOptions((prev) => uniquePartLabels([...prev, distributor]));
+    if (address) {
+      setPartAddressOptions((prev) => uniquePartLabels([...prev, address]));
+    }
+    setPartTypeOptions((prev) => uniquePartLabels([...prev, partTypeVal]));
+    pushLog(
+      "Nhập linh kiện",
+      `${partTypeVal} — ${partName} ×${quantity} (${distributor})`,
+      storeId
+    );
+    resetPartInboundForm();
   }
 
   function deletePartInbound(id: string) {
@@ -5104,41 +5178,56 @@ export default function Home() {
 
                 <form key={partFormKey} onSubmit={handleSavePartInbound} className="grid gap-3">
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    <Field label="Nhà phân phối" required>
-                      <input
-                        name="distributor"
-                        required
-                        autoComplete="off"
-                        placeholder="Tên NPP / nguồn hàng"
-                        className="h-11 w-full rounded-lg border border-line px-3 text-sm font-semibold outline-none ring-brand/30 focus:ring-2"
-                      />
-                    </Field>
-                    <Field label="Địa chỉ">
-                      <input
-                        name="address"
-                        autoComplete="off"
-                        placeholder="Địa chỉ nhà phân phối"
-                        className="h-11 w-full rounded-lg border border-line px-3 text-sm font-semibold outline-none ring-brand/30 focus:ring-2"
-                      />
-                    </Field>
+                    <ManageableSelect
+                      label="Nhà phân phối"
+                      name="distributor"
+                      options={partDistributorOptions}
+                      setOptions={setPartDistributorOptions}
+                      defaultValue={partDistributor}
+                      required
+                      allowFreeText
+                      allowManage
+                      actorUsername={currentUser?.username ?? ""}
+                      onValueChange={applyPartDistributorCascade}
+                    />
+                    <ManageableSelect
+                      key={`part-addr-${partCascadeKey}`}
+                      label="Địa chỉ"
+                      name="address"
+                      options={partAddressOptions}
+                      setOptions={setPartAddressOptions}
+                      defaultValue={partAddress}
+                      required={false}
+                      allowFreeText
+                      allowManage
+                      actorUsername={currentUser?.username ?? ""}
+                      onValueChange={setPartAddress}
+                    />
                     <Field label="SĐT">
                       <input
+                        key={`part-phone-${partCascadeKey}`}
                         name="phone"
+                        value={partPhone}
+                        onChange={(e) => setPartPhone(e.target.value)}
                         autoComplete="off"
                         inputMode="tel"
-                        placeholder="Số điện thoại"
+                        placeholder="Tự điền khi chọn NPP · có thể sửa"
                         className="h-11 w-full rounded-lg border border-line px-3 text-sm font-semibold outline-none ring-brand/30 focus:ring-2"
                       />
                     </Field>
-                    <Field label="Loại linh kiện" required>
-                      <input
-                        name="partType"
-                        required
-                        autoComplete="off"
-                        placeholder="VD: Màn hình, Pin, Cáp..."
-                        className="h-11 w-full rounded-lg border border-line px-3 text-sm font-semibold outline-none ring-brand/30 focus:ring-2"
-                      />
-                    </Field>
+                    <ManageableSelect
+                      key={`part-type-${partCascadeKey}`}
+                      label="Loại linh kiện"
+                      name="partType"
+                      options={partTypeOptions}
+                      setOptions={setPartTypeOptions}
+                      defaultValue={partType}
+                      required
+                      allowFreeText
+                      allowManage
+                      actorUsername={currentUser?.username ?? ""}
+                      onValueChange={setPartType}
+                    />
                     <Field label="Tên linh kiện" required>
                       <input
                         name="partName"
@@ -5159,6 +5248,10 @@ export default function Home() {
                       />
                     </Field>
                   </div>
+                  <p className="text-xs font-semibold text-muted">
+                    Chọn <strong>Nhà phân phối</strong> đã có → tự điền Địa chỉ, SĐT, Loại linh kiện
+                    (theo phiếu mới nhất). Có thể gõ tay / bấm + lưu droplist.
+                  </p>
                   <div className="flex flex-wrap items-center gap-2 pt-1">
                     <button
                       type="submit"
@@ -5169,7 +5262,7 @@ export default function Home() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setPartFormKey((k) => k + 1)}
+                      onClick={resetPartInboundForm}
                       className="inline-flex h-11 items-center rounded-lg border border-line bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50"
                     >
                       Xóa form
