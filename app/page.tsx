@@ -966,7 +966,8 @@ export default function Home() {
   const [hideReportProfit, setHideReportProfit] = useState(false);
   /** Hub Báo cáo / Thống kê */
   const [reportHubTab, setReportHubTab] = useState<ReportHubTab>("overview");
-  const [reportPeriod, setReportPeriod] = useState<ReportPeriod>("month");
+  /** Mặc định xem theo ngày hiện tại (VN). */
+  const [reportPeriod, setReportPeriod] = useState<ReportPeriod>("day");
   const [reportDay, setReportDay] = useState(() => vnNowDate());
   const [activePage, setActivePage] = useState<PageId>("inventory");
   const [storeFilter, setStoreFilter] = useState<StoreId>("all");
