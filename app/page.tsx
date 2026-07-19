@@ -459,10 +459,10 @@ type PartInbound = {
   createdAt: string;
   storeId: Exclude<StoreId, "all">;
   distributor: string;
-  address: string;
-  phone: string;
   partType: string;
   partName: string;
+  /** Màu sắc — tùy chọn. */
+  color: string;
   quantity: number;
 };
 
@@ -1095,7 +1095,7 @@ export default function Home() {
   const [partSaving, setPartSaving] = useState(false);
   const [partBackendError, setPartBackendError] = useState("");
   const [partFormKey, setPartFormKey] = useState(0);
-  /** Remount địa chỉ / loại / SĐT khi cascade theo NPP. */
+  /** Remount loại / màu khi cascade theo NPP. */
   const [partCascadeKey, setPartCascadeKey] = useState(0);
   const [partSearch, setPartSearch] = useState("");
   /** Lọc grid theo NPP (`all` = mọi NPP). */
@@ -1104,14 +1104,13 @@ export default function Home() {
   const [isPartFormOpen, setIsPartFormOpen] = useState(false);
   const [editingPartId, setEditingPartId] = useState<string | null>(null);
   const [partDistributor, setPartDistributor] = useState("");
-  const [partAddress, setPartAddress] = useState("");
-  const [partPhone, setPartPhone] = useState("");
   const [partType, setPartType] = useState("");
+  const [partColor, setPartColor] = useState("");
   const [partName, setPartName] = useState("");
   const [partQuantity, setPartQuantity] = useState("");
   const [partDistributorOptions, setPartDistributorOptions] = useState<string[]>([]);
-  const [partAddressOptions, setPartAddressOptions] = useState<string[]>([]);
   const [partTypeOptions, setPartTypeOptions] = useState<string[]>([]);
+  const [partColorOptions, setPartColorOptions] = useState<string[]>([]);
 
   const [customers, setCustomers] = useState(customersSeed);
   const [phones, setPhones] = useState<PhoneItem[]>([]);
@@ -1340,11 +1339,11 @@ export default function Home() {
       setPartDistributorOptions((prev) =>
         uniquePartLabels([...prev, ...list.map((p) => p.distributor)])
       );
-      setPartAddressOptions((prev) =>
-        uniquePartLabels([...prev, ...list.map((p) => p.address)])
-      );
       setPartTypeOptions((prev) =>
         uniquePartLabels([...prev, ...list.map((p) => p.partType)])
+      );
+      setPartColorOptions((prev) =>
+        uniquePartLabels([...prev, ...list.map((p) => p.color)])
       );
     } catch (err) {
       setPartInbounds([]);
@@ -2350,9 +2349,8 @@ export default function Home() {
 
   function clearPartInboundFields() {
     setPartDistributor("");
-    setPartAddress("");
-    setPartPhone("");
     setPartType("");
+    setPartColor("");
     setPartName("");
     setPartQuantity("");
     setPartFormKey((k) => k + 1);
@@ -2376,9 +2374,8 @@ export default function Home() {
     if (!row) return;
     setEditingPartId(row.id);
     setPartDistributor(row.distributor);
-    setPartAddress(row.address);
-    setPartPhone(row.phone);
     setPartType(row.partType);
+    setPartColor(row.color || "");
     setPartName(row.partName);
     setPartQuantity(String(row.quantity || ""));
     setPartFormKey((k) => k + 1);
@@ -2386,7 +2383,7 @@ export default function Home() {
     setIsPartFormOpen(true);
   }
 
-  /** Chọn NPP → điền Địa chỉ, SĐT, Loại LK theo phiếu mới nhất cùng NPP (không đè khi đang sửa cùng id). */
+  /** Chọn NPP → điền Loại LK + Màu theo phiếu mới nhất cùng NPP. */
   function applyPartDistributorCascade(name: string) {
     setPartDistributor(name);
     const key = name.trim().toLowerCase();
@@ -2396,15 +2393,12 @@ export default function Home() {
         p.distributor.trim().toLowerCase() === key &&
         (!editingPartId || p.id !== editingPartId)
     );
-    // Ưu tiên phiếu khác (mới nhất); nếu đang tạo mới vẫn lấy bất kỳ match
     const fallback =
       match ||
       partInbounds.find((p) => p.distributor.trim().toLowerCase() === key);
     if (!fallback) return;
-    // Khi sửa: chỉ cascade nếu user đổi sang NPP khác với giá trị đang load? Luôn cascade khi chọn từ list.
-    setPartAddress(fallback.address || "");
-    setPartPhone(fallback.phone || "");
     setPartType(fallback.partType || "");
+    setPartColor(fallback.color || "");
     setPartCascadeKey((k) => k + 1);
   }
 
@@ -2413,9 +2407,8 @@ export default function Home() {
     if (partSaving || !currentUser) return;
     const form = new FormData(e.currentTarget);
     const distributor = String(form.get("distributor") || partDistributor || "").trim();
-    const address = String(form.get("address") || partAddress || "").trim();
-    const phone = String(form.get("phone") || partPhone || "").trim();
     const partTypeVal = String(form.get("partType") || partType || "").trim();
+    const colorVal = String(form.get("color") || partColor || "").trim();
     const partNameVal = String(form.get("partName") || partName || "").trim();
     const qtyRaw = String(form.get("quantity") || partQuantity || "")
       .trim()
@@ -2450,17 +2443,16 @@ export default function Home() {
         id: isEdit && existing ? existing.id : undefined,
         storeId: isEdit && existing ? existing.storeId : storeId,
         distributor,
-        address,
-        phone,
         partType: partTypeVal,
         partName: partNameVal,
+        color: colorVal,
         quantity,
         actorUsername: currentUser.username,
       });
       await reloadPartsFromDb();
       pushLog(
         isEdit ? "Sửa phiếu nhập hàng" : "Nhập hàng",
-        `${saved.partType} — ${saved.partName} ×${saved.quantity} (${saved.distributor})`,
+        `${saved.partType} — ${saved.partName}${saved.color ? ` · ${saved.color}` : ""} ×${saved.quantity} (${saved.distributor})`,
         saved.storeId
       );
       showUiToast(
@@ -5235,10 +5227,9 @@ export default function Home() {
               if (!q) return true;
               const hay = [
                 p.distributor,
-                p.address,
-                p.phone,
                 p.partType,
                 p.partName,
+                p.color,
                 String(p.quantity),
               ]
                 .join(" ")
@@ -5344,31 +5335,6 @@ export default function Home() {
                           onValueChange={applyPartDistributorCascade}
                         />
                         <ManageableSelect
-                          key={`part-addr-${partCascadeKey}`}
-                          label="Địa chỉ"
-                          name="address"
-                          options={partAddressOptions}
-                          setOptions={setPartAddressOptions}
-                          defaultValue={partAddress}
-                          required={false}
-                          allowFreeText
-                          allowManage
-                          actorUsername={currentUser?.username ?? ""}
-                          onValueChange={setPartAddress}
-                        />
-                        <Field label="SĐT">
-                          <input
-                            key={`part-phone-${partCascadeKey}`}
-                            name="phone"
-                            value={partPhone}
-                            onChange={(e) => setPartPhone(e.target.value)}
-                            autoComplete="off"
-                            inputMode="tel"
-                            placeholder="Tự điền khi chọn NPP · có thể sửa"
-                            className="h-11 w-full rounded-lg border border-line px-3 text-sm font-semibold outline-none ring-brand/30 focus:ring-2"
-                          />
-                        </Field>
-                        <ManageableSelect
                           key={`part-type-${partCascadeKey}`}
                           label="Loại linh kiện"
                           name="partType"
@@ -5380,6 +5346,19 @@ export default function Home() {
                           allowManage
                           actorUsername={currentUser?.username ?? ""}
                           onValueChange={setPartType}
+                        />
+                        <ManageableSelect
+                          key={`part-color-${partCascadeKey}`}
+                          label="Màu sắc"
+                          name="color"
+                          options={partColorOptions}
+                          setOptions={setPartColorOptions}
+                          defaultValue={partColor}
+                          required={false}
+                          allowFreeText
+                          allowManage
+                          actorUsername={currentUser?.username ?? ""}
+                          onValueChange={setPartColor}
                         />
                         <Field label="Tên linh kiện" required>
                           <input
@@ -5406,8 +5385,8 @@ export default function Home() {
                         </Field>
                       </div>
                       <p className="text-xs font-semibold text-muted">
-                        Chọn <strong>Nhà phân phối</strong> đã có → tự điền Địa chỉ, SĐT, Loại linh
-                        kiện (theo phiếu mới nhất).
+                        Chọn <strong>Nhà phân phối</strong> đã có → tự điền Loại / Màu (phiếu mới
+                        nhất). Màu sắc không bắt buộc.
                       </p>
                       <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line pt-4">
                         <button
@@ -5480,7 +5459,7 @@ export default function Home() {
                       <input
                         value={partSearch}
                         onChange={(e) => setPartSearch(e.target.value)}
-                        placeholder="Tìm loại, tên, SĐT…"
+                        placeholder="Tìm loại, tên, màu…"
                         className="h-10 w-full rounded-lg border border-line bg-slate-50 py-2 pl-9 pr-3 text-sm font-semibold outline-none ring-brand/30 focus:bg-white focus:ring-2"
                       />
                     </div>
@@ -5493,10 +5472,9 @@ export default function Home() {
                         <th className="whitespace-nowrap px-3 py-3">Ngày</th>
                         <th className="whitespace-nowrap px-3 py-3">CH</th>
                         <th className="min-w-[9rem] px-3 py-3">Nhà phân phối</th>
-                        <th className="min-w-[8rem] px-3 py-3">Địa chỉ</th>
-                        <th className="whitespace-nowrap px-3 py-3">SĐT</th>
                         <th className="whitespace-nowrap px-3 py-3">Loại</th>
                         <th className="min-w-[9rem] px-3 py-3">Tên LK</th>
+                        <th className="whitespace-nowrap px-3 py-3">Màu</th>
                         <th className="whitespace-nowrap px-3 py-3 text-right">SL</th>
                         <th className="whitespace-nowrap px-3 py-3 text-center">Thao tác</th>
                       </tr>
@@ -5505,7 +5483,7 @@ export default function Home() {
                       {list.length === 0 ? (
                         <tr>
                           <td
-                            colSpan={9}
+                            colSpan={8}
                             className="px-4 py-10 text-center text-sm font-semibold text-muted"
                           >
                             Chưa có phiếu nhập phù hợp.
@@ -5526,18 +5504,15 @@ export default function Home() {
                               {storeName(row.storeId)}
                             </td>
                             <td className="px-3 py-2.5 font-bold text-ink">{row.distributor}</td>
-                            <td className="px-3 py-2.5 font-semibold text-slate-600">
-                              {row.address || "—"}
-                            </td>
-                            <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">
-                              {row.phone || "—"}
-                            </td>
                             <td className="px-3 py-2.5">
                               <span className="inline-flex rounded-full bg-brand-soft px-2 py-0.5 text-xs font-bold text-brand-dark">
                                 {row.partType}
                               </span>
                             </td>
                             <td className="px-3 py-2.5 font-semibold text-ink">{row.partName}</td>
+                            <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">
+                              {row.color?.trim() ? row.color : "—"}
+                            </td>
                             <td className="whitespace-nowrap px-3 py-2.5 text-right font-black text-ink">
                               {row.quantity.toLocaleString("vi-VN")}
                             </td>
