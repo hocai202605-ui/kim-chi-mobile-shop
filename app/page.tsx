@@ -5030,7 +5030,7 @@ export default function Home() {
                           }`}
                         >
                           <PackagePlus size={17} />
-                          Bán PK
+                          Bán Phụ Kiện
                         </button>
                         <button
                           type="button"
@@ -5195,7 +5195,7 @@ export default function Home() {
                                   className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-amber-500 px-4 text-sm font-bold text-white shadow-sm hover:bg-amber-600"
                                 >
                                   <Plus size={16} />
-                                  Thêm PK
+                                  giỏ hàng
                                 </button>
                               </div>
                               <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
