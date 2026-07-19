@@ -448,7 +448,7 @@ const softwareServiceSeed: SoftwareService[] = [
   { id: "sw3", createdAt: "2026-07-07 23:47", customerName: "Dũng Mobi", deviceName: "Unlock mạng", quantity: 1, revenue: 5000000, cost: 3500000, profit: 1500000, isPaid: true },
 ];
 
-/** Phiếu nhập linh kiện (menu LINH KIỆN) — mock client, form free text. */
+/** Phiếu nhập hàng (menu NHẬP HÀNG / id `parts`) — mock client, form free text. */
 type PartInbound = {
   id: string;
   createdAt: string;
@@ -633,8 +633,8 @@ const navItems = [
   { id: "online-repairs", label: "PHẦN MỀM", icon: Terminal },
   { id: "inventory", label: "KHO HÀNG", icon: Boxes },
   { id: "software", label: "SỬA CHỮA", icon: Wrench },
-  { id: "parts", label: "LINH KIỆN", icon: Cpu },
-  { id: "inbound", label: "NHẬP HÀNG", icon: PackagePlus },
+  { id: "parts", label: "NHẬP HÀNG", icon: PackagePlus },
+  { id: "inbound", label: "LINH KIỆN", icon: Cpu },
   { id: "customers", label: "KHÁCH HÀNG", icon: Users },
   { id: "ledger", label: "CÔNG NỢ", icon: CreditCard },
   { id: "logs", label: "NHẬT KÝ", icon: ClipboardList },
@@ -1114,16 +1114,23 @@ export default function Home() {
   const [shopRepairBackendError, setShopRepairBackendError] = useState("");
   const [shopRepairPaying, setShopRepairPaying] = useState(false);
 
-  /** Linh kiện — phiếu nhập (mock state). */
+  /** Nhập hàng — phiếu nhập (mock state, page id `parts`). */
   const [partInbounds, setPartInbounds] = useState<PartInbound[]>(partsInboundSeed);
   const [partFormKey, setPartFormKey] = useState(0);
   /** Remount địa chỉ / loại / SĐT khi cascade theo NPP. */
   const [partCascadeKey, setPartCascadeKey] = useState(0);
   const [partSearch, setPartSearch] = useState("");
+  /** Lọc grid theo NPP (`all` = mọi NPP). */
+  const [partDistributorFilter, setPartDistributorFilter] = useState("all");
+  /** Form chỉ hiện khi bấm «Nhập hàng» / «Sửa». */
+  const [isPartFormOpen, setIsPartFormOpen] = useState(false);
+  const [editingPartId, setEditingPartId] = useState<string | null>(null);
   const [partDistributor, setPartDistributor] = useState("");
   const [partAddress, setPartAddress] = useState("");
   const [partPhone, setPartPhone] = useState("");
   const [partType, setPartType] = useState("");
+  const [partName, setPartName] = useState("");
+  const [partQuantity, setPartQuantity] = useState("");
   const [partDistributorOptions, setPartDistributorOptions] = useState(() =>
     uniquePartLabels(partsInboundSeed.map((p) => p.distributor))
   );
@@ -2327,27 +2334,63 @@ export default function Home() {
     return currentUser?.storeId ?? "store-1";
   }
 
-  function resetPartInboundForm() {
+  function clearPartInboundFields() {
     setPartDistributor("");
     setPartAddress("");
     setPartPhone("");
     setPartType("");
+    setPartName("");
+    setPartQuantity("");
     setPartFormKey((k) => k + 1);
     setPartCascadeKey((k) => k + 1);
   }
 
-  /** Chọn NPP → điền Địa chỉ, SĐT, Loại LK theo phiếu mới nhất cùng NPP. */
+  function closePartInboundForm() {
+    setIsPartFormOpen(false);
+    setEditingPartId(null);
+    clearPartInboundFields();
+  }
+
+  function openNewPartInboundForm() {
+    setEditingPartId(null);
+    clearPartInboundFields();
+    setIsPartFormOpen(true);
+  }
+
+  function openEditPartInboundForm(id: string) {
+    const row = partInbounds.find((p) => p.id === id);
+    if (!row) return;
+    setEditingPartId(row.id);
+    setPartDistributor(row.distributor);
+    setPartAddress(row.address);
+    setPartPhone(row.phone);
+    setPartType(row.partType);
+    setPartName(row.partName);
+    setPartQuantity(String(row.quantity || ""));
+    setPartFormKey((k) => k + 1);
+    setPartCascadeKey((k) => k + 1);
+    setIsPartFormOpen(true);
+  }
+
+  /** Chọn NPP → điền Địa chỉ, SĐT, Loại LK theo phiếu mới nhất cùng NPP (không đè khi đang sửa cùng id). */
   function applyPartDistributorCascade(name: string) {
     setPartDistributor(name);
     const key = name.trim().toLowerCase();
     if (!key) return;
     const match = partInbounds.find(
-      (p) => p.distributor.trim().toLowerCase() === key
+      (p) =>
+        p.distributor.trim().toLowerCase() === key &&
+        (!editingPartId || p.id !== editingPartId)
     );
-    if (!match) return;
-    setPartAddress(match.address || "");
-    setPartPhone(match.phone || "");
-    setPartType(match.partType || "");
+    // Ưu tiên phiếu khác (mới nhất); nếu đang tạo mới vẫn lấy bất kỳ match
+    const fallback =
+      match ||
+      partInbounds.find((p) => p.distributor.trim().toLowerCase() === key);
+    if (!fallback) return;
+    // Khi sửa: chỉ cascade nếu user đổi sang NPP khác với giá trị đang load? Luôn cascade khi chọn từ list.
+    setPartAddress(fallback.address || "");
+    setPartPhone(fallback.phone || "");
+    setPartType(fallback.partType || "");
     setPartCascadeKey((k) => k + 1);
   }
 
@@ -2358,8 +2401,10 @@ export default function Home() {
     const address = String(form.get("address") || partAddress || "").trim();
     const phone = String(form.get("phone") || partPhone || "").trim();
     const partTypeVal = String(form.get("partType") || partType || "").trim();
-    const partName = String(form.get("partName") || "").trim();
-    const qtyRaw = String(form.get("quantity") || "").trim().replace(/[^\d]/g, "");
+    const partNameVal = String(form.get("partName") || partName || "").trim();
+    const qtyRaw = String(form.get("quantity") || partQuantity || "")
+      .trim()
+      .replace(/[^\d]/g, "");
     const quantity = Math.max(0, Number(qtyRaw) || 0);
 
     if (!distributor) {
@@ -2370,7 +2415,7 @@ export default function Home() {
       window.alert("Nhập loại linh kiện.");
       return;
     }
-    if (!partName) {
+    if (!partNameVal) {
       window.alert("Nhập tên linh kiện.");
       return;
     }
@@ -2380,30 +2425,53 @@ export default function Home() {
     }
 
     const storeId = resolvePartsStoreId();
-    const row: PartInbound = {
-      id: `pk${Date.now()}`,
-      createdAt: vnNowDate(),
-      storeId,
-      distributor,
-      address,
-      phone,
-      partType: partTypeVal,
-      partName,
-      quantity,
-      status: "Hiệu lực",
-    };
-    setPartInbounds((prev) => [row, ...prev]);
+    const isEdit = Boolean(editingPartId);
+    const existing = isEdit ? partInbounds.find((p) => p.id === editingPartId) : null;
+
+    if (isEdit && existing) {
+      const updated: PartInbound = {
+        ...existing,
+        storeId: existing.storeId || storeId,
+        distributor,
+        address,
+        phone,
+        partType: partTypeVal,
+        partName: partNameVal,
+        quantity,
+      };
+      setPartInbounds((prev) => prev.map((p) => (p.id === existing.id ? updated : p)));
+      pushLog(
+        "Sửa phiếu nhập hàng",
+        `${partTypeVal} — ${partNameVal} ×${quantity} (${distributor})`,
+        updated.storeId
+      );
+    } else {
+      const row: PartInbound = {
+        id: `pk${Date.now()}`,
+        createdAt: vnNowDate(),
+        storeId,
+        distributor,
+        address,
+        phone,
+        partType: partTypeVal,
+        partName: partNameVal,
+        quantity,
+        status: "Hiệu lực",
+      };
+      setPartInbounds((prev) => [row, ...prev]);
+      pushLog(
+        "Nhập hàng",
+        `${partTypeVal} — ${partNameVal} ×${quantity} (${distributor})`,
+        storeId
+      );
+    }
+
     setPartDistributorOptions((prev) => uniquePartLabels([...prev, distributor]));
     if (address) {
       setPartAddressOptions((prev) => uniquePartLabels([...prev, address]));
     }
     setPartTypeOptions((prev) => uniquePartLabels([...prev, partTypeVal]));
-    pushLog(
-      "Nhập linh kiện",
-      `${partTypeVal} — ${partName} ×${quantity} (${distributor})`,
-      storeId
-    );
-    resetPartInboundForm();
+    closePartInboundForm();
   }
 
   function deletePartInbound(id: string) {
@@ -2416,8 +2484,9 @@ export default function Home() {
     ) {
       return;
     }
+    if (editingPartId === id) closePartInboundForm();
     setPartInbounds((prev) => prev.filter((p) => p.id !== id));
-    pushLog("Xóa nhập linh kiện", `${row.partType} — ${row.partName} ×${row.quantity}`, row.storeId);
+    pushLog("Xóa phiếu nhập hàng", `${row.partType} — ${row.partName} ×${row.quantity}`, row.storeId);
   }
 
   useEffect(() => {
@@ -5127,8 +5196,20 @@ export default function Home() {
         {activePage === "parts" && (() => {
           const storeIdForForm = resolvePartsStoreId();
           const q = partSearch.trim().toLowerCase();
-          const list = partInbounds
-            .filter((p) => storeFilter === "all" || p.storeId === storeFilter)
+          const baseByStore = partInbounds.filter(
+            (p) => storeFilter === "all" || p.storeId === storeFilter
+          );
+          const distributorFilterOptions = uniquePartLabels(
+            baseByStore.map((p) => p.distributor)
+          );
+          const list = baseByStore
+            .filter((p) => {
+              if (partDistributorFilter === "all") return true;
+              return (
+                p.distributor.trim().toLowerCase() ===
+                partDistributorFilter.trim().toLowerCase()
+              );
+            })
             .filter((p) => {
               if (!q) return true;
               const hay = [
@@ -5146,150 +5227,202 @@ export default function Home() {
             .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
           const activeCount = list.length;
           const totalQty = list.reduce((s, p) => s + p.quantity, 0);
+          const isEditMode = Boolean(editingPartId);
 
           return (
             <section className="grid gap-4">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-start gap-3">
                   <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-brand-soft text-brand">
-                    <Cpu size={22} />
+                    <PackagePlus size={22} />
                   </div>
                   <div>
-                    <h2 className="text-xl font-black text-ink">Linh kiện</h2>
+                    <h2 className="text-xl font-black text-ink">Nhập hàng</h2>
                     <p className="text-sm font-semibold text-muted">
-                      Nhập linh kiện free text · {storeName(storeFilter)} ·{" "}
-                      {activeCount} phiếu / {totalQty} cái
+                      {storeName(storeFilter)} · {activeCount} phiếu / {totalQty} cái
                     </p>
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={openNewPartInboundForm}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-bold text-white shadow-sm hover:bg-brand-dark"
+                >
+                  <Plus size={18} />
+                  Nhập hàng
+                </button>
               </div>
 
-              <section className="rounded-xl border border-line bg-white p-4 shadow-panel sm:p-5">
-                <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-                  <div>
-                    <h3 className="text-lg font-black text-ink">Form nhập</h3>
-                    <p className="text-xs font-semibold text-muted">
-                      Tất cả trường nhập tay · lưu vào cửa hàng:{" "}
-                      <strong className="text-brand">{storeName(storeIdForForm)}</strong>
-                      {storeFilter === "all" ? " (header đang «Tất cả» → mặc định CH user)" : ""}
-                    </p>
-                  </div>
-                </div>
-
-                <form key={partFormKey} onSubmit={handleSavePartInbound} className="grid gap-3">
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    <ManageableSelect
-                      label="Nhà phân phối"
-                      name="distributor"
-                      options={partDistributorOptions}
-                      setOptions={setPartDistributorOptions}
-                      defaultValue={partDistributor}
-                      required
-                      allowFreeText
-                      allowManage
-                      actorUsername={currentUser?.username ?? ""}
-                      onValueChange={applyPartDistributorCascade}
-                    />
-                    <ManageableSelect
-                      key={`part-addr-${partCascadeKey}`}
-                      label="Địa chỉ"
-                      name="address"
-                      options={partAddressOptions}
-                      setOptions={setPartAddressOptions}
-                      defaultValue={partAddress}
-                      required={false}
-                      allowFreeText
-                      allowManage
-                      actorUsername={currentUser?.username ?? ""}
-                      onValueChange={setPartAddress}
-                    />
-                    <Field label="SĐT">
-                      <input
-                        key={`part-phone-${partCascadeKey}`}
-                        name="phone"
-                        value={partPhone}
-                        onChange={(e) => setPartPhone(e.target.value)}
-                        autoComplete="off"
-                        inputMode="tel"
-                        placeholder="Tự điền khi chọn NPP · có thể sửa"
-                        className="h-11 w-full rounded-lg border border-line px-3 text-sm font-semibold outline-none ring-brand/30 focus:ring-2"
-                      />
-                    </Field>
-                    <ManageableSelect
-                      key={`part-type-${partCascadeKey}`}
-                      label="Loại linh kiện"
-                      name="partType"
-                      options={partTypeOptions}
-                      setOptions={setPartTypeOptions}
-                      defaultValue={partType}
-                      required
-                      allowFreeText
-                      allowManage
-                      actorUsername={currentUser?.username ?? ""}
-                      onValueChange={setPartType}
-                    />
-                    <Field label="Tên linh kiện" required>
-                      <input
-                        name="partName"
-                        required
-                        autoComplete="off"
-                        placeholder="Tên / model linh kiện"
-                        className="h-11 w-full rounded-lg border border-line px-3 text-sm font-semibold outline-none ring-brand/30 focus:ring-2"
-                      />
-                    </Field>
-                    <Field label="SL" required>
-                      <input
-                        name="quantity"
-                        required
-                        autoComplete="off"
-                        inputMode="numeric"
-                        placeholder="Số lượng"
-                        className="h-11 w-full rounded-lg border border-line px-3 text-sm font-semibold outline-none ring-brand/30 focus:ring-2"
-                      />
-                    </Field>
-                  </div>
-                  <p className="text-xs font-semibold text-muted">
-                    Chọn <strong>Nhà phân phối</strong> đã có → tự điền Địa chỉ, SĐT, Loại linh kiện
-                    (theo phiếu mới nhất). Có thể gõ tay / bấm + lưu droplist.
-                  </p>
-                  <div className="flex flex-wrap items-center gap-2 pt-1">
-                    <button
-                      type="submit"
-                      className="inline-flex h-11 items-center gap-2 rounded-lg bg-brand px-5 text-sm font-bold text-white hover:bg-brand-dark"
-                    >
-                      <Plus size={18} />
-                      Lưu phiếu nhập
-                    </button>
+              {isPartFormOpen ? (
+                <section className="rounded-xl border border-line bg-white p-4 shadow-panel sm:p-5">
+                  <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <h3 className="text-lg font-black text-ink">
+                        {isEditMode ? "Sửa phiếu nhập" : "Form nhập hàng"}
+                      </h3>
+                      <p className="text-xs font-semibold text-muted">
+                        Lưu vào cửa hàng:{" "}
+                        <strong className="text-brand">{storeName(storeIdForForm)}</strong>
+                        {storeFilter === "all" ? " (header «Tất cả» → CH mặc định user)" : ""}
+                      </p>
+                    </div>
                     <button
                       type="button"
-                      onClick={resetPartInboundForm}
-                      className="inline-flex h-11 items-center rounded-lg border border-line bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                      onClick={closePartInboundForm}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line bg-white px-3 text-sm font-bold text-muted hover:bg-slate-50"
                     >
-                      Xóa form
+                      <X size={16} />
+                      Đóng
                     </button>
                   </div>
-                </form>
-              </section>
+
+                  <form key={partFormKey} onSubmit={handleSavePartInbound} className="grid gap-3">
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      <ManageableSelect
+                        label="Nhà phân phối"
+                        name="distributor"
+                        options={partDistributorOptions}
+                        setOptions={setPartDistributorOptions}
+                        defaultValue={partDistributor}
+                        required
+                        allowFreeText
+                        allowManage
+                        actorUsername={currentUser?.username ?? ""}
+                        onValueChange={applyPartDistributorCascade}
+                      />
+                      <ManageableSelect
+                        key={`part-addr-${partCascadeKey}`}
+                        label="Địa chỉ"
+                        name="address"
+                        options={partAddressOptions}
+                        setOptions={setPartAddressOptions}
+                        defaultValue={partAddress}
+                        required={false}
+                        allowFreeText
+                        allowManage
+                        actorUsername={currentUser?.username ?? ""}
+                        onValueChange={setPartAddress}
+                      />
+                      <Field label="SĐT">
+                        <input
+                          key={`part-phone-${partCascadeKey}`}
+                          name="phone"
+                          value={partPhone}
+                          onChange={(e) => setPartPhone(e.target.value)}
+                          autoComplete="off"
+                          inputMode="tel"
+                          placeholder="Tự điền khi chọn NPP · có thể sửa"
+                          className="h-11 w-full rounded-lg border border-line px-3 text-sm font-semibold outline-none ring-brand/30 focus:ring-2"
+                        />
+                      </Field>
+                      <ManageableSelect
+                        key={`part-type-${partCascadeKey}`}
+                        label="Loại linh kiện"
+                        name="partType"
+                        options={partTypeOptions}
+                        setOptions={setPartTypeOptions}
+                        defaultValue={partType}
+                        required
+                        allowFreeText
+                        allowManage
+                        actorUsername={currentUser?.username ?? ""}
+                        onValueChange={setPartType}
+                      />
+                      <Field label="Tên linh kiện" required>
+                        <input
+                          name="partName"
+                          required
+                          value={partName}
+                          onChange={(e) => setPartName(e.target.value)}
+                          autoComplete="off"
+                          placeholder="Tên / model linh kiện"
+                          className="h-11 w-full rounded-lg border border-line px-3 text-sm font-semibold outline-none ring-brand/30 focus:ring-2"
+                        />
+                      </Field>
+                      <Field label="SL" required>
+                        <input
+                          name="quantity"
+                          required
+                          value={partQuantity}
+                          onChange={(e) => setPartQuantity(e.target.value)}
+                          autoComplete="off"
+                          inputMode="numeric"
+                          placeholder="Số lượng"
+                          className="h-11 w-full rounded-lg border border-line px-3 text-sm font-semibold outline-none ring-brand/30 focus:ring-2"
+                        />
+                      </Field>
+                    </div>
+                    <p className="text-xs font-semibold text-muted">
+                      Chọn <strong>Nhà phân phối</strong> đã có → tự điền Địa chỉ, SĐT, Loại linh
+                      kiện (theo phiếu mới nhất).
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <button
+                        type="submit"
+                        className="inline-flex h-11 items-center gap-2 rounded-lg bg-brand px-5 text-sm font-bold text-white hover:bg-brand-dark"
+                      >
+                        {isEditMode ? (
+                          <>
+                            <Edit3 size={18} />
+                            Cập nhật phiếu
+                          </>
+                        ) : (
+                          <>
+                            <Plus size={18} />
+                            Lưu phiếu nhập
+                          </>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={closePartInboundForm}
+                        className="inline-flex h-11 items-center rounded-lg border border-line bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                      >
+                        Hủy
+                      </button>
+                    </div>
+                  </form>
+                </section>
+              ) : null}
 
               <section className="overflow-hidden rounded-xl border border-line bg-white shadow-panel">
-                <div className="flex flex-col gap-3 border-b border-line p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-col gap-3 border-b border-line p-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <h3 className="text-lg font-black text-ink">Danh sách nhập</h3>
                     <p className="text-xs font-semibold text-muted">
-                      Mới → cũ · lọc theo cửa hàng header + tìm nhanh
+                      Mới → cũ · lọc NPP / tìm nhanh
                     </p>
                   </div>
-                  <div className="relative w-full sm:max-w-xs">
-                    <Search
-                      size={16}
-                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"
-                    />
-                    <input
-                      value={partSearch}
-                      onChange={(e) => setPartSearch(e.target.value)}
-                      placeholder="Tìm NPP, loại, tên, SĐT…"
-                      className="h-10 w-full rounded-lg border border-line bg-slate-50 py-2 pl-9 pr-3 text-sm font-semibold outline-none ring-brand/30 focus:bg-white focus:ring-2"
-                    />
+                  <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
+                    <label className="grid gap-0.5 sm:min-w-[11rem]">
+                      <span className="text-[11px] font-bold uppercase tracking-wide text-muted">
+                        Nhà phân phối
+                      </span>
+                      <select
+                        value={partDistributorFilter}
+                        onChange={(e) => setPartDistributorFilter(e.target.value)}
+                        className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold outline-none ring-brand/30 focus:ring-2"
+                      >
+                        <option value="all">Tất cả NPP</option>
+                        {distributorFilterOptions.map((d) => (
+                          <option key={d} value={d}>
+                            {d}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="relative min-w-0 flex-1 sm:min-w-[14rem]">
+                      <Search
+                        size={16}
+                        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"
+                      />
+                      <input
+                        value={partSearch}
+                        onChange={(e) => setPartSearch(e.target.value)}
+                        placeholder="Tìm loại, tên, SĐT…"
+                        className="h-10 w-full rounded-lg border border-line bg-slate-50 py-2 pl-9 pr-3 text-sm font-semibold outline-none ring-brand/30 focus:bg-white focus:ring-2"
+                      />
+                    </div>
                   </div>
                 </div>
                 <div className="max-h-[min(60vh,28rem)] overflow-auto">
@@ -5314,14 +5447,16 @@ export default function Home() {
                             colSpan={9}
                             className="px-4 py-10 text-center text-sm font-semibold text-muted"
                           >
-                            Chưa có phiếu nhập linh kiện phù hợp.
+                            Chưa có phiếu nhập phù hợp.
                           </td>
                         </tr>
                       ) : (
                         list.map((row) => (
                           <tr
                             key={row.id}
-                            className="border-b border-line/80 last:border-0 hover:bg-slate-50/80"
+                            className={`border-b border-line/80 last:border-0 hover:bg-slate-50/80 ${
+                              editingPartId === row.id ? "bg-brand-soft/40" : ""
+                            }`}
                           >
                             <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">
                               {formatDateVi(row.createdAt)}
@@ -5345,14 +5480,25 @@ export default function Home() {
                             <td className="whitespace-nowrap px-3 py-2.5 text-right font-black text-ink">
                               {row.quantity.toLocaleString("vi-VN")}
                             </td>
-                            <td className="px-3 py-2.5 text-center">
-                              <button
-                                type="button"
-                                onClick={() => deletePartInbound(row.id)}
-                                className="rounded-lg bg-red-50 px-2.5 py-1.5 text-xs font-bold text-danger hover:bg-red-100"
-                              >
-                                Xóa
-                              </button>
+                            <td className="px-3 py-2.5">
+                              <div className="flex flex-nowrap items-center justify-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => openEditPartInboundForm(row.id)}
+                                  title="Sửa"
+                                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20"
+                                >
+                                  <Edit3 size={16} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => deletePartInbound(row.id)}
+                                  title="Xóa"
+                                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))
@@ -5370,12 +5516,12 @@ export default function Home() {
             <div className="rounded-xl border border-line bg-white p-8 shadow-panel">
               <div className="flex items-start gap-4">
                 <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-brand-soft text-brand">
-                  <PackagePlus size={24} />
+                  <Cpu size={24} />
                 </div>
                 <div>
-                  <h2 className="text-xl font-black text-ink">Nhập hàng</h2>
+                  <h2 className="text-xl font-black text-ink">Linh kiện</h2>
                   <p className="mt-2 text-sm font-semibold text-muted">
-                    Menu đã sẵn sàng. Tính năng nhập hàng sẽ được phát triển sau.
+                    Menu đã sẵn sàng. Tính năng quản lý linh kiện sẽ được phát triển sau.
                   </p>
                 </div>
               </div>
