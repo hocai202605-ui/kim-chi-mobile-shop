@@ -789,6 +789,33 @@ function vndToShopMoney(vnd: number): number {
 }
 
 /**
+ * Quy về triệu ₫ (M) để trục biểu đồ.
+ * - Số ≥ 1.000.000: coi là VND đầy đủ → /1e6
+ * - Còn lại: short shop (×1000 = VND) → /1000
+ */
+function toMillionVnd(value: number): number {
+  const n = Number(value) || 0;
+  if (!Number.isFinite(n) || n === 0) return 0;
+  if (Math.abs(n) >= 1_000_000) return n / 1_000_000;
+  return n / 1000;
+}
+
+/** Mốc trục Y: 0, 5, 10, 15, 20, 30, 40, … đủ phủ maxM. */
+function buildMillionAxisTicks(maxM: number): number[] {
+  const base = [0, 5, 10, 15, 20, 30, 40, 50, 60, 80, 100, 120, 150, 200, 250, 300, 400, 500, 750, 1000];
+  const ceiling = Math.max(5, maxM);
+  let ticks = base.filter((t) => t <= ceiling);
+  const top =
+    base.find((t) => t >= ceiling) ??
+    Math.ceil(ceiling / 10) * 10;
+  if (!ticks.includes(top)) ticks = [...ticks, top];
+  if (ticks[ticks.length - 1]! < ceiling) {
+    ticks.push(Math.ceil(ceiling / 5) * 5);
+  }
+  return ticks;
+}
+
+/**
  * Inventory grid price buckets on **real VND** (after ×1000 from short).
  * Boundaries non-overlapping.
  */
@@ -4241,10 +4268,18 @@ export default function Home() {
                         },
                       ] as const
                     ).map((chart) => {
-                      const rows = chart.pack.rows.map((r) => ({
-                        ...r,
-                        fill: r.key === "chong" ? chart.colorChong : chart.colorVo,
-                      }));
+                      const rows = chart.pack.rows.map((r) => {
+                        const valueM = toMillionVnd(r.value);
+                        return {
+                          ...r,
+                          /** Giá trị trục Y (triệu ₫) */
+                          valueM,
+                          fill: r.key === "chong" ? chart.colorChong : chart.colorVo,
+                        };
+                      });
+                      const maxM = Math.max(0, ...rows.map((r) => r.valueM));
+                      const yTicks = buildMillionAxisTicks(maxM);
+                      const yMax = yTicks[yTicks.length - 1] ?? 5;
                       const hasData = chart.pack.total > 0;
                       return (
                         <div
@@ -4273,7 +4308,7 @@ export default function Home() {
                                   <ResponsiveContainer width="100%" height={260}>
                                     <BarChart
                                       data={rows}
-                                      margin={{ top: 12, right: 8, left: 0, bottom: 4 }}
+                                      margin={{ top: 12, right: 8, left: 4, bottom: 4 }}
                                       barCategoryGap="28%"
                                     >
                                       <CartesianGrid
@@ -4292,31 +4327,38 @@ export default function Home() {
                                         }}
                                       />
                                       <YAxis
+                                        domain={[0, yMax]}
+                                        ticks={yTicks}
                                         axisLine={false}
                                         tickLine={false}
                                         tickFormatter={(v) =>
                                           isStatsHidden
                                             ? "***"
-                                            : Number(v) >= 1000
-                                              ? `${Math.round(Number(v) / 1000)}k`
-                                              : String(v)
+                                            : Number(v) === 0
+                                              ? "0"
+                                              : `${Number(v)}M`
                                         }
                                         tick={{
                                           fill: "#64748b",
                                           fontSize: 11,
-                                          fontWeight: 600,
+                                          fontWeight: 700,
                                         }}
-                                        width={48}
+                                        width={44}
                                       />
                                       <Tooltip
-                                        formatter={(value, _name, item) => {
-                                          const pct = Number(
-                                            (item?.payload as { pct?: number })?.pct ?? 0
-                                          );
+                                        formatter={(_value, _name, item) => {
+                                          const payload = item?.payload as {
+                                            pct?: number;
+                                            value?: number;
+                                            valueM?: number;
+                                          };
+                                          const pct = Number(payload?.pct ?? 0);
+                                          const raw = Number(payload?.value ?? 0);
+                                          const m = Number(payload?.valueM ?? 0);
                                           return [
                                             isStatsHidden
                                               ? `*** (${pct.toFixed(0)}%)`
-                                              : `${formatMoney(Number(value) || 0)} · ${pct.toFixed(0)}%`,
+                                              : `${formatMoney(raw)} · ${m.toFixed(m >= 10 ? 0 : 1)}M · ${pct.toFixed(0)}%`,
                                             chart.title,
                                           ];
                                         }}
@@ -4327,7 +4369,7 @@ export default function Home() {
                                           fontSize: 12,
                                         }}
                                       />
-                                      <Bar dataKey="value" radius={[8, 8, 0, 0]} maxBarSize={72}>
+                                      <Bar dataKey="valueM" radius={[8, 8, 0, 0]} maxBarSize={72}>
                                         {rows.map((entry) => (
                                           <Cell key={entry.key} fill={entry.fill} />
                                         ))}
