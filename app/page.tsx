@@ -86,6 +86,11 @@ import {
   upsertRepairOrder as apiUpsertRepairOrder,
 } from "@/services/repairService";
 import {
+  deletePartInbound as apiDeletePartInbound,
+  listPartInbounds as apiListPartInbounds,
+  upsertPartInbound as apiUpsertPartInbound,
+} from "@/services/partsService";
+import {
   cancelManualDebt as apiCancelManualDebt,
   listDebts as apiListDebts,
   markDebtsPaid as apiMarkDebtsPaid,
@@ -448,7 +453,7 @@ const softwareServiceSeed: SoftwareService[] = [
   { id: "sw3", createdAt: "2026-07-07 23:47", customerName: "Dũng Mobi", deviceName: "Unlock mạng", quantity: 1, revenue: 5000000, cost: 3500000, profit: 1500000, isPaid: true },
 ];
 
-/** Phiếu nhập hàng (menu NHẬP HÀNG / id `parts`) — mock client, form free text. */
+/** Phiếu nhập hàng (menu NHẬP HÀNG / id `parts`) — Postgres part_inbounds. */
 type PartInbound = {
   id: string;
   createdAt: string;
@@ -458,38 +463,8 @@ type PartInbound = {
   phone: string;
   partType: string;
   partName: string;
-  /** Số lượng (parse từ free text). */
   quantity: number;
-  status: "Hiệu lực" | "Đã hủy";
 };
-
-/** Demo seed chỉ Kim Chi (store-1) — caobac/kieuvy không thấy. */
-const partsInboundSeed: PartInbound[] = [
-  {
-    id: "pk1",
-    createdAt: "2026-07-10",
-    storeId: "store-1",
-    distributor: "NPP Linh kiện A",
-    address: "12 Nguyễn Trãi, Q1",
-    phone: "0901234567",
-    partType: "Màn hình",
-    partName: "LCD iPhone 11 zin",
-    quantity: 5,
-    status: "Hiệu lực",
-  },
-  {
-    id: "pk2",
-    createdAt: "2026-07-12",
-    storeId: "store-1",
-    distributor: "Kho pin B",
-    address: "88 Lê Lợi, Q3",
-    phone: "0912345678",
-    partType: "Pin",
-    partName: "Pin iPhone 12 dung lượng cao",
-    quantity: 10,
-    status: "Hiệu lực",
-  },
-];
 
 function uniquePartLabels(values: string[]): string[] {
   const seen = new Set<string>();
@@ -1114,8 +1089,11 @@ export default function Home() {
   const [shopRepairBackendError, setShopRepairBackendError] = useState("");
   const [shopRepairPaying, setShopRepairPaying] = useState(false);
 
-  /** Nhập hàng — phiếu nhập (mock state, page id `parts`). */
-  const [partInbounds, setPartInbounds] = useState<PartInbound[]>(partsInboundSeed);
+  /** Nhập hàng — phiếu nhập (DB part_inbounds, page id `parts`). */
+  const [partInbounds, setPartInbounds] = useState<PartInbound[]>([]);
+  const [partLoading, setPartLoading] = useState(false);
+  const [partSaving, setPartSaving] = useState(false);
+  const [partBackendError, setPartBackendError] = useState("");
   const [partFormKey, setPartFormKey] = useState(0);
   /** Remount địa chỉ / loại / SĐT khi cascade theo NPP. */
   const [partCascadeKey, setPartCascadeKey] = useState(0);
@@ -1131,15 +1109,9 @@ export default function Home() {
   const [partType, setPartType] = useState("");
   const [partName, setPartName] = useState("");
   const [partQuantity, setPartQuantity] = useState("");
-  const [partDistributorOptions, setPartDistributorOptions] = useState(() =>
-    uniquePartLabels(partsInboundSeed.map((p) => p.distributor))
-  );
-  const [partAddressOptions, setPartAddressOptions] = useState(() =>
-    uniquePartLabels(partsInboundSeed.map((p) => p.address))
-  );
-  const [partTypeOptions, setPartTypeOptions] = useState(() =>
-    uniquePartLabels(partsInboundSeed.map((p) => p.partType))
-  );
+  const [partDistributorOptions, setPartDistributorOptions] = useState<string[]>([]);
+  const [partAddressOptions, setPartAddressOptions] = useState<string[]>([]);
+  const [partTypeOptions, setPartTypeOptions] = useState<string[]>([]);
 
   const [customers, setCustomers] = useState(customersSeed);
   const [phones, setPhones] = useState<PhoneItem[]>([]);
@@ -1342,6 +1314,46 @@ export default function Home() {
     }
   }, [currentUser, dataScopeStore]);
 
+  /** Nhập hàng: load part_inbounds theo CH + actor. */
+  const reloadPartsFromDb = useCallback(async () => {
+    if (!currentUser) {
+      setPartInbounds([]);
+      return;
+    }
+    setPartLoading(true);
+    setPartBackendError("");
+    try {
+      const scope =
+        currentUser.role === "staff"
+          ? currentUser.storeId || null
+          : dataScopeStore === "all"
+            ? null
+            : dataScopeStore;
+      if (currentUser.role === "staff" && !scope) {
+        setPartInbounds([]);
+        setPartBackendError("Tài khoản staff thiếu cửa hàng gán.");
+        return;
+      }
+      const rows = await apiListPartInbounds(scope, currentUser.username);
+      const list = Array.isArray(rows) ? rows : [];
+      setPartInbounds(list);
+      setPartDistributorOptions((prev) =>
+        uniquePartLabels([...prev, ...list.map((p) => p.distributor)])
+      );
+      setPartAddressOptions((prev) =>
+        uniquePartLabels([...prev, ...list.map((p) => p.address)])
+      );
+      setPartTypeOptions((prev) =>
+        uniquePartLabels([...prev, ...list.map((p) => p.partType)])
+      );
+    } catch (err) {
+      setPartInbounds([]);
+      setPartBackendError(toUiError(err));
+    } finally {
+      setPartLoading(false);
+    }
+  }, [currentUser, dataScopeStore]);
+
   const reloadSalesFromDb = useCallback(async () => {
     try {
       const rows = await apiListRecentSales();
@@ -1393,12 +1405,13 @@ export default function Home() {
 
   useEffect(() => {
     if (!currentUser) return;
-    // Sequential: inventory first, then software/repairs — fewer concurrent DB slots
-    // dataScopeStore đổi (owner đổi CH) → tải lại PM/Sửa theo cửa hàng
+    // Sequential: inventory first, then software/repairs/parts — fewer concurrent DB slots
+    // dataScopeStore đổi (owner đổi CH) → tải lại theo cửa hàng
     void (async () => {
       await reloadInventoryFromDb();
       await reloadSoftwareFromDb();
       await reloadShopRepairsFromDb();
+      await reloadPartsFromDb();
       await reloadSalesFromDb();
       await reloadCustomersFromDb();
     })();
@@ -1408,6 +1421,7 @@ export default function Home() {
     reloadInventoryFromDb,
     reloadSoftwareFromDb,
     reloadShopRepairsFromDb,
+    reloadPartsFromDb,
     reloadSalesFromDb,
     reloadCustomersFromDb,
   ]);
@@ -2394,8 +2408,9 @@ export default function Home() {
     setPartCascadeKey((k) => k + 1);
   }
 
-  function handleSavePartInbound(e: FormEvent<HTMLFormElement>) {
+  async function handleSavePartInbound(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (partSaving || !currentUser) return;
     const form = new FormData(e.currentTarget);
     const distributor = String(form.get("distributor") || partDistributor || "").trim();
     const address = String(form.get("address") || partAddress || "").trim();
@@ -2428,65 +2443,71 @@ export default function Home() {
     const isEdit = Boolean(editingPartId);
     const existing = isEdit ? partInbounds.find((p) => p.id === editingPartId) : null;
 
-    if (isEdit && existing) {
-      const updated: PartInbound = {
-        ...existing,
-        storeId: existing.storeId || storeId,
+    setPartSaving(true);
+    setPartBackendError("");
+    try {
+      const saved = await apiUpsertPartInbound({
+        id: isEdit && existing ? existing.id : undefined,
+        storeId: isEdit && existing ? existing.storeId : storeId,
         distributor,
         address,
         phone,
         partType: partTypeVal,
         partName: partNameVal,
         quantity,
-      };
-      setPartInbounds((prev) => prev.map((p) => (p.id === existing.id ? updated : p)));
+        actorUsername: currentUser.username,
+      });
+      await reloadPartsFromDb();
       pushLog(
-        "Sửa phiếu nhập hàng",
-        `${partTypeVal} — ${partNameVal} ×${quantity} (${distributor})`,
-        updated.storeId
+        isEdit ? "Sửa phiếu nhập hàng" : "Nhập hàng",
+        `${saved.partType} — ${saved.partName} ×${saved.quantity} (${saved.distributor})`,
+        saved.storeId
       );
-    } else {
-      const row: PartInbound = {
-        id: `pk${Date.now()}`,
-        createdAt: vnNowDate(),
-        storeId,
-        distributor,
-        address,
-        phone,
-        partType: partTypeVal,
-        partName: partNameVal,
-        quantity,
-        status: "Hiệu lực",
-      };
-      setPartInbounds((prev) => [row, ...prev]);
-      pushLog(
-        "Nhập hàng",
-        `${partTypeVal} — ${partNameVal} ×${quantity} (${distributor})`,
-        storeId
+      showUiToast(
+        "success",
+        isEdit
+          ? `Đã cập nhật phiếu «${saved.partName}».`
+          : `Đã lưu phiếu nhập «${saved.partName}».`
       );
+      closePartInboundForm();
+    } catch (err) {
+      const msg = toUiError(err);
+      setPartBackendError(msg);
+      showUiToast("error", `Lưu phiếu nhập thất bại: ${msg}`);
+    } finally {
+      setPartSaving(false);
     }
-
-    setPartDistributorOptions((prev) => uniquePartLabels([...prev, distributor]));
-    if (address) {
-      setPartAddressOptions((prev) => uniquePartLabels([...prev, address]));
-    }
-    setPartTypeOptions((prev) => uniquePartLabels([...prev, partTypeVal]));
-    closePartInboundForm();
   }
 
-  function deletePartInbound(id: string) {
+  async function deletePartInbound(id: string) {
     const row = partInbounds.find((p) => p.id === id);
-    if (!row) return;
+    if (!row || partSaving) return;
     if (
       !window.confirm(
-        `Xóa phiếu nhập «${row.partName}»?\n\nThao tác này xóa hẳn khỏi danh sách, không hoàn tác.`
+        `Xóa phiếu nhập «${row.partName}»?\n\nThao tác này xóa hẳn khỏi danh sách / hệ thống, không hoàn tác.`
       )
     ) {
       return;
     }
     if (editingPartId === id) closePartInboundForm();
-    setPartInbounds((prev) => prev.filter((p) => p.id !== id));
-    pushLog("Xóa phiếu nhập hàng", `${row.partType} — ${row.partName} ×${row.quantity}`, row.storeId);
+    setPartSaving(true);
+    setPartBackendError("");
+    try {
+      await apiDeletePartInbound(id);
+      await reloadPartsFromDb();
+      pushLog(
+        "Xóa phiếu nhập hàng",
+        `${row.partType} — ${row.partName} ×${row.quantity}`,
+        row.storeId
+      );
+      showUiToast("success", `Đã xóa phiếu «${row.partName}».`);
+    } catch (err) {
+      const msg = toUiError(err);
+      setPartBackendError(msg);
+      showUiToast("error", `Xóa phiếu nhập thất bại: ${msg}`);
+    } finally {
+      setPartSaving(false);
+    }
   }
 
   useEffect(() => {
@@ -2708,7 +2729,7 @@ export default function Home() {
     setSales([]);
     setOnlineRepairs([]);
     setShopRepairs([]);
-    setPartInbounds(partsInboundSeed);
+    setPartInbounds([]);
     setAccountsList([]);
     setAccountsDraft({});
     clearSession();
@@ -5240,18 +5261,33 @@ export default function Home() {
                     <h2 className="text-xl font-black text-ink">Nhập hàng</h2>
                     <p className="text-sm font-semibold text-muted">
                       {storeName(storeFilter)} · {activeCount} phiếu / {totalQty} cái
+                      {partLoading ? " · Đang tải…" : ""}
                     </p>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={openNewPartInboundForm}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-bold text-white shadow-sm hover:bg-brand-dark"
+                  disabled={partSaving}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-bold text-white shadow-sm hover:bg-brand-dark disabled:opacity-50"
                 >
                   <Plus size={18} />
                   Nhập hàng
                 </button>
               </div>
+
+              {partBackendError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-danger">
+                  {partBackendError}{" "}
+                  <button
+                    type="button"
+                    className="ml-2 font-black text-brand underline"
+                    onClick={() => void reloadPartsFromDb()}
+                  >
+                    Thử lại
+                  </button>
+                </div>
+              ) : null}
 
               {isPartFormOpen ? (
                 <div
@@ -5377,15 +5413,22 @@ export default function Home() {
                         <button
                           type="button"
                           onClick={closePartInboundForm}
-                          className="inline-flex h-11 items-center rounded-lg border border-line bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                          disabled={partSaving}
+                          className="inline-flex h-11 items-center rounded-lg border border-line bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                         >
                           Hủy
                         </button>
                         <button
                           type="submit"
-                          className="inline-flex h-11 items-center gap-2 rounded-lg bg-brand px-5 text-sm font-bold text-white hover:bg-brand-dark"
+                          disabled={partSaving}
+                          className="inline-flex h-11 items-center gap-2 rounded-lg bg-brand px-5 text-sm font-bold text-white hover:bg-brand-dark disabled:opacity-50"
                         >
-                          {isEditMode ? (
+                          {partSaving ? (
+                            <>
+                              <Loader2 size={18} className="animate-spin" />
+                              Đang lưu…
+                            </>
+                          ) : isEditMode ? (
                             <>
                               <Edit3 size={18} />
                               Cập nhật phiếu
