@@ -936,6 +936,8 @@ export default function Home() {
   const [saleWarrantyKey, setSaleWarrantyKey] = useState(0);
   const [saleCart, setSaleCart] = useState<SaleCartLine[]>([]);
   const [salePhoneSearch, setSalePhoneSearch] = useState("");
+  /** List máy còn hàng: mặc định đóng, bấm mới sổ. */
+  const [salePhoneListOpen, setSalePhoneListOpen] = useState(false);
   /** Tab form bán: phụ kiện (mặc định) | máy. */
   const [saleModalTab, setSaleModalTab] = useState<"accessory" | "phone">("accessory");
   const [saleAccQty, setSaleAccQty] = useState(1);
@@ -2641,6 +2643,7 @@ export default function Home() {
     setSaleWarrantyKey((k) => k + 1);
     setSaleCart([]);
     setSalePhoneSearch("");
+    setSalePhoneListOpen(false);
     setSaleModalTab("accessory");
     setSaleAccQty(1);
     setSaleAccFormKey((k) => k + 1);
@@ -2732,6 +2735,7 @@ export default function Home() {
       setSaleSoldAt(soldLocal);
 
       setSalePhoneSearch("");
+      setSalePhoneListOpen(false);
       setSaleAccQty(1);
 
       const lines = detail?.lines?.length
@@ -5316,24 +5320,35 @@ export default function Home() {
                                     ) : null}
                                   </div>
                                 </label>
-                                <label className="grid gap-0.5">
+                                <div className="grid min-w-0 gap-0.5">
                                   <span className="text-xs font-bold text-slate-700">Số điện thoại</span>
-                                  <input
-                                    value={saleCustomerPhone}
-                                    onChange={(e) => {
-                                      setSaleCustomerPhone(e.target.value);
-                                      setSaleCustomerId(null);
-                                      setSaleCustomerSuggestOpen(true);
-                                    }}
-                                    onFocus={() => setSaleCustomerSuggestOpen(true)}
-                                    onBlur={() => {
-                                      window.setTimeout(() => setSaleCustomerSuggestOpen(false), 180);
-                                    }}
-                                    className="h-9 w-full rounded-md border border-line bg-white px-2.5 text-sm font-semibold outline-none focus:border-brand"
-                                    placeholder="Không bắt buộc"
-                                    autoComplete="off"
-                                  />
-                                </label>
+                                  <div className="flex min-w-0 items-center gap-1.5">
+                                    <input
+                                      value={saleCustomerPhone}
+                                      onChange={(e) => {
+                                        setSaleCustomerPhone(e.target.value);
+                                        setSaleCustomerId(null);
+                                        setSaleCustomerSuggestOpen(true);
+                                      }}
+                                      onFocus={() => setSaleCustomerSuggestOpen(true)}
+                                      onBlur={() => {
+                                        window.setTimeout(() => setSaleCustomerSuggestOpen(false), 180);
+                                      }}
+                                      className="h-9 min-w-0 flex-1 rounded-md border border-line bg-white px-2.5 text-sm font-semibold outline-none focus:border-brand"
+                                      placeholder="Không bắt buộc"
+                                      autoComplete="off"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={handleSaveSaleCustomer}
+                                      title="Lưu khách"
+                                      className="inline-flex h-9 shrink-0 items-center justify-center gap-1 rounded-md border border-brand bg-brand-soft px-2 text-[11px] font-bold text-brand-dark hover:bg-brand hover:text-white"
+                                    >
+                                      <Users size={12} />
+                                      Lưu
+                                    </button>
+                                  </div>
+                                </div>
                               </div>
                               <div className="mt-2 grid min-w-0 gap-2 sm:grid-cols-2">
                                 <label className="grid min-w-0 gap-0.5">
@@ -5370,16 +5385,6 @@ export default function Home() {
                                     />
                                   </div>
                                 </div>
-                              </div>
-                              <div className="mt-2 flex justify-end">
-                                <button
-                                  type="button"
-                                  onClick={handleSaveSaleCustomer}
-                                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-brand bg-brand-soft px-3 text-sm font-bold text-brand-dark hover:bg-brand hover:text-white"
-                                >
-                                  <Users size={14} />
-                                  Lưu khách
-                                </button>
                               </div>
                             </div>
 
@@ -5441,85 +5446,115 @@ export default function Home() {
                             </div>
 
                             <div className="space-y-2 rounded-xl border border-indigo-200/80 bg-gradient-to-br from-indigo-50 via-slate-50 to-white p-2.5 shadow-sm ring-1 ring-indigo-100/80">
-                              <div className="flex items-center justify-between gap-2">
-                                <p className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-indigo-800">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSalePhoneListOpen((open) => {
+                                    if (open) setSalePhoneSearch("");
+                                    return !open;
+                                  });
+                                }}
+                                className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left transition ${
+                                  salePhoneListOpen
+                                    ? "bg-indigo-100/80 ring-1 ring-indigo-200"
+                                    : "bg-white/80 ring-1 ring-indigo-100 hover:bg-indigo-50"
+                                }`}
+                              >
+                                <span className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-indigo-800">
                                   <Smartphone size={13} />
                                   Máy còn hàng
-                                </p>
-                                <span className="text-[11px] font-semibold text-muted">
-                                  {saleAvailablePhones.length} máy
+                                  <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-bold normal-case tracking-normal text-indigo-700 ring-1 ring-indigo-200/80">
+                                    {saleAvailablePhones.length} máy
+                                  </span>
                                 </span>
-                              </div>
-                              <div className="relative">
-                                <Search className="pointer-events-none absolute left-3 top-2.5 text-slate-400" size={16} />
-                                <input
-                                  value={salePhoneSearch}
-                                  onChange={(e) => setSalePhoneSearch(e.target.value)}
-                                  placeholder="Tìm tên / IMEI / màu…"
-                                  className="h-9 w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm font-semibold outline-none focus:border-indigo-400"
-                                />
-                              </div>
-                              <div className="max-h-48 space-y-1 overflow-auto rounded-lg border border-slate-200 bg-white p-1">
-                                {saleAvailablePhones.length === 0 ? (
-                                  <p className="px-3 py-3 text-center text-sm font-semibold text-muted">
-                                    Không còn máy tại cửa hàng này
-                                  </p>
-                                ) : (
-                                  saleAvailablePhones.map((p) => {
-                                    const colorHex = p.color ? getColorCode(p.color) : "";
-                                    const colorIsLight =
-                                      !colorHex ||
-                                      ["#ffffff", "#cbd5e1", "#e2e8f0", "#f8fafc", "#94a3b8", "#a8a29e"].includes(
-                                        colorHex.toLowerCase()
-                                      );
-                                    return (
-                                      <div
-                                        key={p.id}
-                                        className="flex items-center gap-2 rounded-lg px-2 py-1.5 transition hover:bg-slate-50"
-                                      >
-                                        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-                                          <span className="shrink-0 text-sm font-black text-indigo-700">
-                                            {p.brand} {p.name}
-                                          </span>
-                                          {p.color ? (
-                                            <span
-                                              className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-black ring-1"
-                                              style={{
-                                                color: colorIsLight ? "#334155" : colorHex,
-                                                backgroundColor: colorIsLight ? "#f1f5f9" : `${colorHex}22`,
-                                                borderColor: colorIsLight ? "#cbd5e1" : `${colorHex}55`,
-                                              }}
-                                              title={p.color}
+                                <span
+                                  className={`inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-xs font-bold ${
+                                    salePhoneListOpen
+                                      ? "bg-indigo-600 text-white"
+                                      : "bg-indigo-600 text-white hover:bg-indigo-700"
+                                  }`}
+                                >
+                                  {salePhoneListOpen ? "Thu gọn" : "Chọn máy"}
+                                  <ChevronDown
+                                    size={14}
+                                    className={`transition ${salePhoneListOpen ? "rotate-180" : ""}`}
+                                  />
+                                </span>
+                              </button>
+                              {salePhoneListOpen ? (
+                                <>
+                                  <div className="relative">
+                                    <Search className="pointer-events-none absolute left-3 top-2.5 text-slate-400" size={16} />
+                                    <input
+                                      value={salePhoneSearch}
+                                      onChange={(e) => setSalePhoneSearch(e.target.value)}
+                                      placeholder="Tìm tên / IMEI / màu…"
+                                      className="h-9 w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm font-semibold outline-none focus:border-indigo-400"
+                                    />
+                                  </div>
+                                  <div className="max-h-48 space-y-1 overflow-auto rounded-lg border border-slate-200 bg-white p-1">
+                                    {saleAvailablePhones.length === 0 ? (
+                                      <p className="px-3 py-3 text-center text-sm font-semibold text-muted">
+                                        Không còn máy tại cửa hàng này
+                                      </p>
+                                    ) : (
+                                      saleAvailablePhones.map((p) => {
+                                        const colorHex = p.color ? getColorCode(p.color) : "";
+                                        const colorIsLight =
+                                          !colorHex ||
+                                          ["#ffffff", "#cbd5e1", "#e2e8f0", "#f8fafc", "#94a3b8", "#a8a29e"].includes(
+                                            colorHex.toLowerCase()
+                                          );
+                                        return (
+                                          <div
+                                            key={p.id}
+                                            className="flex items-center gap-2 rounded-lg px-2 py-1.5 transition hover:bg-slate-50"
+                                          >
+                                            <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
+                                              <span className="shrink-0 text-sm font-black text-indigo-700">
+                                                {p.brand} {p.name}
+                                              </span>
+                                              {p.color ? (
+                                                <span
+                                                  className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-black ring-1"
+                                                  style={{
+                                                    color: colorIsLight ? "#334155" : colorHex,
+                                                    backgroundColor: colorIsLight ? "#f1f5f9" : `${colorHex}22`,
+                                                    borderColor: colorIsLight ? "#cbd5e1" : `${colorHex}55`,
+                                                  }}
+                                                  title={p.color}
+                                                >
+                                                  <ColorDot color={p.color} size="sm" />
+                                                  {p.color}
+                                                </span>
+                                              ) : null}
+                                              {p.storage ? (
+                                                <span className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-xs font-black text-slate-700 ring-1 ring-slate-200">
+                                                  {p.storage}
+                                                </span>
+                                              ) : null}
+                                              <span className="min-w-0 truncate font-mono text-[11px] font-medium text-slate-400">
+                                                {p.imei}
+                                              </span>
+                                            </div>
+                                            <span className="shrink-0 text-sm font-black text-amber-800">
+                                              {formatMoney(p.expectedPrice)}
+                                            </span>
+                                            <button
+                                              type="button"
+                                              title="Thêm vào giỏ"
+                                              onClick={() => addPhoneToSaleCart(p)}
+                                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700 ring-1 ring-slate-200 hover:bg-indigo-600 hover:text-white"
                                             >
-                                              <ColorDot color={p.color} size="sm" />
-                                              {p.color}
-                                            </span>
-                                          ) : null}
-                                          {p.storage ? (
-                                            <span className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-xs font-black text-slate-700 ring-1 ring-slate-200">
-                                              {p.storage}
-                                            </span>
-                                          ) : null}
-                                          <span className="min-w-0 truncate font-mono text-[11px] font-medium text-slate-400">
-                                            {p.imei}
-                                          </span>
-                                        </div>
-                                        <span className="shrink-0 text-sm font-black text-amber-800">
-                                          {formatMoney(p.expectedPrice)}
-                                        </span>
-                                        <button
-                                          type="button"
-                                          title="Thêm vào giỏ"
-                                          onClick={() => addPhoneToSaleCart(p)}
-                                          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700 ring-1 ring-slate-200 hover:bg-indigo-600 hover:text-white"
-                                        >
-                                          <Plus size={15} />
-                                        </button>
-                                      </div>
-                                    );
-                                  })
-                                )}
-                              </div>
+                                              <Plus size={15} />
+                                            </button>
+                                          </div>
+                                        );
+                                      })
+                                    )}
+                                  </div>
+                                </>
+                              ) : null}
                             </div>
                           </div>
                         )}
