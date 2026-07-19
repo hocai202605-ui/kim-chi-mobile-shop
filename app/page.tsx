@@ -448,6 +448,48 @@ const softwareServiceSeed: SoftwareService[] = [
   { id: "sw3", createdAt: "2026-07-07 23:47", customerName: "Dũng Mobi", deviceName: "Unlock mạng", quantity: 1, revenue: 5000000, cost: 3500000, profit: 1500000, isPaid: true },
 ];
 
+/** Phiếu nhập linh kiện (menu LINH KIỆN) — mock client, form free text. */
+type PartInbound = {
+  id: string;
+  createdAt: string;
+  storeId: Exclude<StoreId, "all">;
+  distributor: string;
+  address: string;
+  phone: string;
+  partType: string;
+  partName: string;
+  /** Số lượng (parse từ free text). */
+  quantity: number;
+  status: "Hiệu lực" | "Đã hủy";
+};
+
+const partsInboundSeed: PartInbound[] = [
+  {
+    id: "pk1",
+    createdAt: "2026-07-10",
+    storeId: "store-1",
+    distributor: "NPP Linh kiện A",
+    address: "12 Nguyễn Trãi, Q1",
+    phone: "0901234567",
+    partType: "Màn hình",
+    partName: "LCD iPhone 11 zin",
+    quantity: 5,
+    status: "Hiệu lực",
+  },
+  {
+    id: "pk2",
+    createdAt: "2026-07-12",
+    storeId: "store-2",
+    distributor: "Kho pin B",
+    address: "88 Lê Lợi, Q3",
+    phone: "0912345678",
+    partType: "Pin",
+    partName: "Pin iPhone 12 dung lượng cao",
+    quantity: 10,
+    status: "Hiệu lực",
+  },
+];
+
 /**
  * UI Sửa chữa (menu `software`) — load/ghi Postgres qua /api/repairs.
  * Shape = OnlineRepair + tình trạng / bảo hành / IMEI / SĐT-Pass.
@@ -1056,6 +1098,11 @@ export default function Home() {
   const [shopRepairLoading, setShopRepairLoading] = useState(false);
   const [shopRepairBackendError, setShopRepairBackendError] = useState("");
   const [shopRepairPaying, setShopRepairPaying] = useState(false);
+
+  /** Linh kiện — phiếu nhập (mock state). */
+  const [partInbounds, setPartInbounds] = useState<PartInbound[]>(partsInboundSeed);
+  const [partFormKey, setPartFormKey] = useState(0);
+  const [partSearch, setPartSearch] = useState("");
 
   const [customers, setCustomers] = useState(customersSeed);
   const [phones, setPhones] = useState<PhoneItem[]>([]);
@@ -2198,6 +2245,71 @@ export default function Home() {
       },
       ...prev,
     ]);
+  }
+
+  function resolvePartsStoreId(): Exclude<StoreId, "all"> {
+    if (storeFilter !== "all") return storeFilter;
+    return currentUser?.storeId ?? "store-1";
+  }
+
+  function handleSavePartInbound(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    const distributor = String(form.get("distributor") || "").trim();
+    const address = String(form.get("address") || "").trim();
+    const phone = String(form.get("phone") || "").trim();
+    const partType = String(form.get("partType") || "").trim();
+    const partName = String(form.get("partName") || "").trim();
+    const qtyRaw = String(form.get("quantity") || "").trim().replace(/[^\d]/g, "");
+    const quantity = Math.max(0, Number(qtyRaw) || 0);
+
+    if (!distributor) {
+      window.alert("Nhập nhà phân phối.");
+      return;
+    }
+    if (!partType) {
+      window.alert("Nhập loại linh kiện.");
+      return;
+    }
+    if (!partName) {
+      window.alert("Nhập tên linh kiện.");
+      return;
+    }
+    if (quantity <= 0) {
+      window.alert("Số lượng phải lớn hơn 0.");
+      return;
+    }
+
+    const storeId = resolvePartsStoreId();
+    const row: PartInbound = {
+      id: `pk${Date.now()}`,
+      createdAt: vnNowDate(),
+      storeId,
+      distributor,
+      address,
+      phone,
+      partType,
+      partName,
+      quantity,
+      status: "Hiệu lực",
+    };
+    setPartInbounds((prev) => [row, ...prev]);
+    pushLog("Nhập linh kiện", `${partType} — ${partName} ×${quantity} (${distributor})`, storeId);
+    setPartFormKey((k) => k + 1);
+  }
+
+  function cancelPartInbound(id: string) {
+    const row = partInbounds.find((p) => p.id === id);
+    if (!row || row.status === "Đã hủy") return;
+    if (currentUser?.role !== "owner") {
+      window.alert("Chỉ chủ cửa hàng được hủy phiếu nhập linh kiện.");
+      return;
+    }
+    if (!window.confirm(`Hủy phiếu nhập «${row.partName}»?`)) return;
+    setPartInbounds((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, status: "Đã hủy" as const } : p))
+    );
+    pushLog("Hủy nhập linh kiện", `${row.partType} — ${row.partName}`, row.storeId);
   }
 
   useEffect(() => {
@@ -4888,23 +5000,241 @@ export default function Home() {
           </div>
         )}
 
-        {activePage === "parts" && (
-          <section className="grid gap-4">
-            <div className="rounded-xl border border-line bg-white p-8 shadow-panel">
-              <div className="flex items-start gap-4">
-                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-brand-soft text-brand">
-                  <Cpu size={24} />
-                </div>
-                <div>
-                  <h2 className="text-xl font-black text-ink">Linh kiện</h2>
-                  <p className="mt-2 text-sm font-semibold text-muted">
-                    Menu đã sẵn sàng. Tính năng quản lý linh kiện sẽ được phát triển sau.
-                  </p>
+        {activePage === "parts" && (() => {
+          const storeIdForForm = resolvePartsStoreId();
+          const q = partSearch.trim().toLowerCase();
+          const list = partInbounds
+            .filter((p) => storeFilter === "all" || p.storeId === storeFilter)
+            .filter((p) => {
+              if (!q) return true;
+              const hay = [
+                p.distributor,
+                p.address,
+                p.phone,
+                p.partType,
+                p.partName,
+                String(p.quantity),
+              ]
+                .join(" ")
+                .toLowerCase();
+              return hay.includes(q);
+            })
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+          const activeCount = list.filter((p) => p.status === "Hiệu lực").length;
+          const totalQty = list
+            .filter((p) => p.status === "Hiệu lực")
+            .reduce((s, p) => s + p.quantity, 0);
+
+          return (
+            <section className="grid gap-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-brand-soft text-brand">
+                    <Cpu size={22} />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-black text-ink">Linh kiện</h2>
+                    <p className="text-sm font-semibold text-muted">
+                      Nhập linh kiện free text · {storeName(storeFilter)} ·{" "}
+                      {activeCount} phiếu / {totalQty} cái (hiệu lực)
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
-          </section>
-        )}
+
+              <section className="rounded-xl border border-line bg-white p-4 shadow-panel sm:p-5">
+                <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <h3 className="text-lg font-black text-ink">Form nhập</h3>
+                    <p className="text-xs font-semibold text-muted">
+                      Tất cả trường nhập tay · lưu vào cửa hàng:{" "}
+                      <strong className="text-brand">{storeName(storeIdForForm)}</strong>
+                      {storeFilter === "all" ? " (header đang «Tất cả» → mặc định CH user)" : ""}
+                    </p>
+                  </div>
+                </div>
+
+                <form key={partFormKey} onSubmit={handleSavePartInbound} className="grid gap-3">
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    <Field label="Nhà phân phối" required>
+                      <input
+                        name="distributor"
+                        required
+                        autoComplete="off"
+                        placeholder="Tên NPP / nguồn hàng"
+                        className="h-11 w-full rounded-lg border border-line px-3 text-sm font-semibold outline-none ring-brand/30 focus:ring-2"
+                      />
+                    </Field>
+                    <Field label="Địa chỉ">
+                      <input
+                        name="address"
+                        autoComplete="off"
+                        placeholder="Địa chỉ nhà phân phối"
+                        className="h-11 w-full rounded-lg border border-line px-3 text-sm font-semibold outline-none ring-brand/30 focus:ring-2"
+                      />
+                    </Field>
+                    <Field label="SĐT">
+                      <input
+                        name="phone"
+                        autoComplete="off"
+                        inputMode="tel"
+                        placeholder="Số điện thoại"
+                        className="h-11 w-full rounded-lg border border-line px-3 text-sm font-semibold outline-none ring-brand/30 focus:ring-2"
+                      />
+                    </Field>
+                    <Field label="Loại linh kiện" required>
+                      <input
+                        name="partType"
+                        required
+                        autoComplete="off"
+                        placeholder="VD: Màn hình, Pin, Cáp..."
+                        className="h-11 w-full rounded-lg border border-line px-3 text-sm font-semibold outline-none ring-brand/30 focus:ring-2"
+                      />
+                    </Field>
+                    <Field label="Tên linh kiện" required>
+                      <input
+                        name="partName"
+                        required
+                        autoComplete="off"
+                        placeholder="Tên / model linh kiện"
+                        className="h-11 w-full rounded-lg border border-line px-3 text-sm font-semibold outline-none ring-brand/30 focus:ring-2"
+                      />
+                    </Field>
+                    <Field label="SL" required>
+                      <input
+                        name="quantity"
+                        required
+                        autoComplete="off"
+                        inputMode="numeric"
+                        placeholder="Số lượng"
+                        className="h-11 w-full rounded-lg border border-line px-3 text-sm font-semibold outline-none ring-brand/30 focus:ring-2"
+                      />
+                    </Field>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <button
+                      type="submit"
+                      className="inline-flex h-11 items-center gap-2 rounded-lg bg-brand px-5 text-sm font-bold text-white hover:bg-brand-dark"
+                    >
+                      <Plus size={18} />
+                      Lưu phiếu nhập
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPartFormKey((k) => k + 1)}
+                      className="inline-flex h-11 items-center rounded-lg border border-line bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                    >
+                      Xóa form
+                    </button>
+                  </div>
+                </form>
+              </section>
+
+              <section className="overflow-hidden rounded-xl border border-line bg-white shadow-panel">
+                <div className="flex flex-col gap-3 border-b border-line p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="text-lg font-black text-ink">Danh sách nhập</h3>
+                    <p className="text-xs font-semibold text-muted">
+                      Mới → cũ · lọc theo cửa hàng header + tìm nhanh
+                    </p>
+                  </div>
+                  <div className="relative w-full sm:max-w-xs">
+                    <Search
+                      size={16}
+                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"
+                    />
+                    <input
+                      value={partSearch}
+                      onChange={(e) => setPartSearch(e.target.value)}
+                      placeholder="Tìm NPP, loại, tên, SĐT…"
+                      className="h-10 w-full rounded-lg border border-line bg-slate-50 py-2 pl-9 pr-3 text-sm font-semibold outline-none ring-brand/30 focus:bg-white focus:ring-2"
+                    />
+                  </div>
+                </div>
+                <div className="max-h-[min(60vh,28rem)] overflow-auto">
+                  <table className="min-w-full border-collapse text-left text-sm">
+                    <thead className="sticky top-0 z-10 bg-slate-50">
+                      <tr className="border-b border-line text-xs font-black uppercase tracking-wide text-muted">
+                        <th className="whitespace-nowrap px-3 py-3">Ngày</th>
+                        <th className="whitespace-nowrap px-3 py-3">CH</th>
+                        <th className="min-w-[9rem] px-3 py-3">Nhà phân phối</th>
+                        <th className="min-w-[8rem] px-3 py-3">Địa chỉ</th>
+                        <th className="whitespace-nowrap px-3 py-3">SĐT</th>
+                        <th className="whitespace-nowrap px-3 py-3">Loại</th>
+                        <th className="min-w-[9rem] px-3 py-3">Tên LK</th>
+                        <th className="whitespace-nowrap px-3 py-3 text-right">SL</th>
+                        <th className="whitespace-nowrap px-3 py-3">TT</th>
+                        <th className="whitespace-nowrap px-3 py-3 text-center">Thao tác</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {list.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={10}
+                            className="px-4 py-10 text-center text-sm font-semibold text-muted"
+                          >
+                            Chưa có phiếu nhập linh kiện phù hợp.
+                          </td>
+                        </tr>
+                      ) : (
+                        list.map((row) => (
+                          <tr
+                            key={row.id}
+                            className={`border-b border-line/80 last:border-0 hover:bg-slate-50/80 ${
+                              row.status === "Đã hủy" ? "opacity-60" : ""
+                            }`}
+                          >
+                            <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">
+                              {formatDateVi(row.createdAt)}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2.5 text-xs font-bold text-muted">
+                              {storeName(row.storeId)}
+                            </td>
+                            <td className="px-3 py-2.5 font-bold text-ink">{row.distributor}</td>
+                            <td className="px-3 py-2.5 font-semibold text-slate-600">
+                              {row.address || "—"}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">
+                              {row.phone || "—"}
+                            </td>
+                            <td className="px-3 py-2.5">
+                              <span className="inline-flex rounded-full bg-brand-soft px-2 py-0.5 text-xs font-bold text-brand-dark">
+                                {row.partType}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2.5 font-semibold text-ink">{row.partName}</td>
+                            <td className="whitespace-nowrap px-3 py-2.5 text-right font-black text-ink">
+                              {row.quantity.toLocaleString("vi-VN")}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2.5">
+                              <StatusBadge tone={row.status === "Hiệu lực" ? "ok" : "danger"}>
+                                {row.status}
+                              </StatusBadge>
+                            </td>
+                            <td className="px-3 py-2.5 text-center">
+                              {row.status === "Hiệu lực" && currentUser?.role === "owner" ? (
+                                <button
+                                  type="button"
+                                  onClick={() => cancelPartInbound(row.id)}
+                                  className="rounded-lg bg-red-50 px-2.5 py-1.5 text-xs font-bold text-danger hover:bg-red-100"
+                                >
+                                  Hủy
+                                </button>
+                              ) : (
+                                <span className="text-xs font-semibold text-muted">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </section>
+          );
+        })()}
 
         {activePage === "inbound" && (
           <section className="grid gap-4">
