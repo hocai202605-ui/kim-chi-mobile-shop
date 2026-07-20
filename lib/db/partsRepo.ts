@@ -9,6 +9,8 @@ export type PartInboundDto = {
   distributor: string;
   partType: string;
   partName: string;
+  /** Hãng — tùy chọn. */
+  brand: string;
   /** Màu sắc — tùy chọn. */
   color: string;
   quantity: number;
@@ -20,6 +22,7 @@ export type PartInboundUpsertInput = {
   distributor: string;
   partType: string;
   partName: string;
+  brand?: string;
   color?: string;
   quantity: number;
   actorUsername?: string;
@@ -62,6 +65,7 @@ type DbRow = {
   distributor: string;
   part_type: string;
   part_name: string;
+  brand?: string | null;
   color?: string | null;
   quantity: number;
   created_at: Date | string;
@@ -82,6 +86,7 @@ function mapRow(
     distributor: String(row.distributor ?? ""),
     partType: String(row.part_type ?? ""),
     partName: String(row.part_name ?? ""),
+    brand: String(row.brand ?? ""),
     color: String(row.color ?? ""),
     quantity: Math.max(0, Number(row.quantity) || 0),
   };
@@ -134,6 +139,7 @@ export async function repoUpsertPartInbound(
   const distributor = String(input.distributor || "").trim();
   const partType = String(input.partType || "").trim();
   const partName = String(input.partName || "").trim();
+  const brand = String(input.brand || "").trim();
   const color = String(input.color || "").trim();
   const quantity = Math.max(0, Math.round(Number(input.quantity) || 0));
   const actor = normalizeActor(input.actorUsername);
@@ -150,19 +156,21 @@ export async function repoUpsertPartInbound(
          distributor = $2,
          part_type = $3,
          part_name = $4,
-         color = $5,
-         quantity = $6,
+         brand = $5,
+         color = $6,
+         quantity = $7,
          address = '',
          phone = '',
-         updated_by = coalesce($7, updated_by),
+         updated_by = coalesce($8, updated_by),
          updated_at = now()
-       where id = $8::uuid
+       where id = $9::uuid
        returning *`,
       [
         storeUuid,
         distributor,
         partType,
         partName,
+        brand,
         color,
         quantity,
         actor,
@@ -175,11 +183,11 @@ export async function repoUpsertPartInbound(
 
   const { rows } = await getPool().query<DbRow>(
     `insert into public.part_inbounds (
-       store_id, distributor, address, phone, part_type, part_name, color, quantity,
+       store_id, distributor, address, phone, part_type, part_name, brand, color, quantity,
        created_by, updated_by
-     ) values ($1,$2,'','',$3,$4,$5,$6,$7,$7)
+     ) values ($1,$2,'','',$3,$4,$5,$6,$7,$8,$8)
      returning *`,
-    [storeUuid, distributor, partType, partName, color, quantity, actor]
+    [storeUuid, distributor, partType, partName, brand, color, quantity, actor]
   );
   return mapRow(rows[0], idToCode);
 }
