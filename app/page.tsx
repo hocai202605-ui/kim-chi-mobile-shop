@@ -104,6 +104,7 @@ import {
   createSale as apiCreateSale,
   getSale as apiGetSale,
   listRecentSales as apiListRecentSales,
+  type SaleChannel,
 } from "@/services/salesService";
 import {
   listCustomers as apiListCustomers,
@@ -1036,6 +1037,8 @@ export default function Home() {
   const [reportPeriod, setReportPeriod] = useState<ReportPeriod>("day");
   const [reportDay, setReportDay] = useState(() => vnNowDate());
   const [activePage, setActivePage] = useState<PageId>("inventory");
+  /** Tab hub Sửa chữa: repair | Bán Gà (clone bán hàng, channel ban_ga). */
+  const [softwareHubTab, setSoftwareHubTab] = useState<"repair" | "ban-ga">("repair");
   const [storeFilter, setStoreFilter] = useState<StoreId>("all");
   const [query, setQuery] = useState("");
   const [inventoryTab, setInventoryTab] = useState<"phones" | "accessories">("phones");
@@ -1224,6 +1227,12 @@ export default function Home() {
   const [dashboardSummaryLoading, setDashboardSummaryLoading] = useState(false);
   const canCancel = currentUser?.role === "owner";
 
+  const isBanGaContext =
+    activePage === "software" && softwareHubTab === "ban-ga";
+  const saleChannel: SaleChannel = isBanGaContext ? "ban_ga" : "retail";
+  const showSalesUi = activePage === "sales" || isBanGaContext;
+  const salesPageTitle = isBanGaContext ? "Bán Gà" : "Bán hàng";
+
   const refreshDashboardSummary = useCallback(async () => {
     try {
       const summary = await reportDashboardSummary(storeFilter);
@@ -1357,9 +1366,9 @@ export default function Home() {
     }
   }, [currentUser, dataScopeStore]);
 
-  const reloadSalesFromDb = useCallback(async () => {
+  const reloadSalesFromDb = useCallback(async (channel: SaleChannel = "retail") => {
     try {
-      const rows = await apiListRecentSales();
+      const rows = await apiListRecentSales(channel);
       setSales(
         rows.map((r) => ({
           id: r.id,
@@ -1406,6 +1415,14 @@ export default function Home() {
     }
   }, []);
 
+  // Khi vào BÁN HÀNG hoặc tab Bán Gà — load đúng channel (không trộn phiếu).
+  useEffect(() => {
+    if (!currentUser) return;
+    if (activePage === "sales" || (activePage === "software" && softwareHubTab === "ban-ga")) {
+      void reloadSalesFromDb(saleChannel);
+    }
+  }, [currentUser, activePage, softwareHubTab, saleChannel, reloadSalesFromDb]);
+
   useEffect(() => {
     if (!currentUser) return;
     // Sequential: inventory first, then software/repairs/parts — fewer concurrent DB slots
@@ -1415,12 +1432,13 @@ export default function Home() {
       await reloadSoftwareFromDb();
       await reloadShopRepairsFromDb();
       await reloadPartsFromDb();
-      await reloadSalesFromDb();
+      await reloadSalesFromDb(saleChannel);
       await reloadCustomersFromDb();
     })();
   }, [
     currentUser,
     dataScopeStore,
+    saleChannel,
     reloadInventoryFromDb,
     reloadSoftwareFromDb,
     reloadShopRepairsFromDb,
@@ -3036,7 +3054,7 @@ export default function Home() {
       setPhoneHardDeleteTarget(null);
       setPhoneHardDeleteYes("");
       await reloadInventoryFromDb();
-      void reloadSalesFromDb();
+      void reloadSalesFromDb(saleChannel);
       showUiToast("success", `Đã xóa máy ${label}.`);
     } catch (err) {
       showUiToast("error", `Xóa máy thất bại: ${toUiError(err)}`);
@@ -3066,7 +3084,7 @@ export default function Home() {
         setClonePhoneDraft(null);
       }
       await reloadInventoryFromDb();
-      void reloadSalesFromDb();
+      void reloadSalesFromDb(saleChannel);
       showUiToast("success", `Đã xóa máy ${label}.`);
     } catch (err) {
       showUiToast("error", `Xóa máy thất bại: ${toUiError(err)}`);
@@ -4013,6 +4031,7 @@ export default function Home() {
         soldAt: saleSoldAt || vnNowDateTimeLocal(),
         note: saleNote || undefined,
         actorUsername: currentUser?.username,
+        channel: saleChannel,
         lines: saleCart.map((line) =>
           line.kind === "phone"
             ? {
@@ -4072,10 +4091,10 @@ export default function Home() {
         },
         ...prev,
       ]);
-      pushLog(editingSaleId ? "Sửa phiếu bán" : "Tạo phiếu bán", sale.id, saleStoreId);
+      pushLog(editingSaleId ? `Sửa phiếu ${salesPageTitle}` : `Tạo phiếu ${salesPageTitle}`, sale.id, saleStoreId);
 
       await reloadInventoryFromDb();
-      await reloadSalesFromDb();
+      await reloadSalesFromDb(saleChannel);
       void reloadCustomersFromDb();
       try {
         const monthly = await reportInventoryMonthly(inventoryReportMonth, storeFilter);
@@ -4309,15 +4328,15 @@ export default function Home() {
         setEditingSaleId(null);
         setIsSaleModalOpen(false);
       }
-      pushLog("Xóa phiếu bán", id, sale.storeId);
+      pushLog(`Xóa phiếu ${salesPageTitle}`, id, sale.storeId);
       await reloadInventoryFromDb();
-      await reloadSalesFromDb();
+      await reloadSalesFromDb(saleChannel);
       void refreshDashboardSummary();
       showUiToast("success", "Đã xóa phiếu bán.");
     } catch (err) {
       window.alert(toUiError(err));
       // Khôi phục list nếu API lỗi sau khi đã gỡ local
-      await reloadSalesFromDb();
+      await reloadSalesFromDb(saleChannel);
     } finally {
       setSaleSaving(false);
     }
@@ -6815,7 +6834,34 @@ export default function Home() {
           </section>
         )}
 
-        {activePage === "sales" && (
+        {activePage === "software" && (
+          <div className="mb-4 flex flex-wrap gap-2 rounded-xl border border-line bg-white p-1.5 shadow-panel">
+            <button
+              type="button"
+              onClick={() => setSoftwareHubTab("repair")}
+              className={`inline-flex h-10 items-center rounded-lg px-4 text-sm font-black transition ${
+                softwareHubTab === "repair"
+                  ? "bg-brand text-white shadow-sm"
+                  : "bg-transparent text-muted hover:bg-slate-50 hover:text-ink"
+              }`}
+            >
+              Sửa chữa
+            </button>
+            <button
+              type="button"
+              onClick={() => setSoftwareHubTab("ban-ga")}
+              className={`inline-flex h-10 items-center rounded-lg px-4 text-sm font-black transition ${
+                softwareHubTab === "ban-ga"
+                  ? "bg-brand text-white shadow-sm"
+                  : "bg-transparent text-muted hover:bg-slate-50 hover:text-ink"
+              }`}
+            >
+              Bán Gà
+            </button>
+          </div>
+        )}
+
+        {showSalesUi && (
           <section className="grid gap-4">
             {/* KPI tháng / ngày — tương tự phần mềm */}
             <div className="grid gap-3 sm:grid-cols-2">
@@ -7099,10 +7145,10 @@ export default function Home() {
                     <div className="min-w-0">
                       <h2 className="text-base font-black text-slate-800 sm:text-lg">
                         {isSaleReadOnly
-                          ? "Chi tiết phiếu bán"
+                          ? `Chi tiết phiếu ${salesPageTitle}`
                           : editingSaleId
-                            ? "Sửa phiếu bán"
-                            : "Tạo phiếu bán"}
+                            ? `Sửa phiếu ${salesPageTitle}`
+                            : `Tạo phiếu ${salesPageTitle}`}
                       </h2>
                       {isSaleReadOnly ? (
                         <p className="text-[11px] font-semibold text-muted">Chỉ xem — không chỉnh sửa</p>
@@ -8745,7 +8791,7 @@ export default function Home() {
           </Panel>
         )}
 
-        {activePage === "software" && (() => {
+        {activePage === "software" && softwareHubTab === "repair" && (() => {
           // UI Sửa chữa — clone layout Phần mềm; mock state (shopRepairs), chưa API/DB.
           const todayString = vnNowDate();
           const displayDate = shopRepairDate || todayString;

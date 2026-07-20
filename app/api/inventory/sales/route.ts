@@ -62,9 +62,11 @@ function mapLine(raw: Record<string, unknown>): CreateSaleLineInput {
   };
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const data = await repoListRecentSales(100);
+    const channelRaw = req.nextUrl.searchParams.get("channel");
+    const channel = channelRaw === "ban_ga" ? "ban_ga" : "retail";
+    const data = await repoListRecentSales(100, channel);
     return NextResponse.json({ data });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Lỗi tải phiếu bán";
@@ -118,6 +120,7 @@ export async function POST(req: NextRequest) {
           ? String(body.note).trim()
           : undefined,
       actorUsername: body?.actorUsername ? String(body.actorUsername) : undefined,
+      channel: body?.channel === "ban_ga" ? "ban_ga" : "retail",
       lines,
       itemType: lines ? undefined : legacyItemType,
       phoneId: body?.phoneId ? String(body.phoneId) : undefined,

@@ -1,5 +1,7 @@
 import type { StoreId } from "@/types";
 
+export type SaleChannel = "retail" | "ban_ga";
+
 /** amount / profit = short shop (giống giá kho), không phải VND đầy đủ. */
 export type SaleRow = {
   id: string;
@@ -22,6 +24,7 @@ export type SaleRow = {
   /** Ghi chú phiếu (vd: bảo hành). */
   note?: string;
   lineCount?: number;
+  channel?: SaleChannel;
 };
 
 export type CreateSaleLineBody =
@@ -53,6 +56,7 @@ export type CreateSaleBody = {
   soldAt?: string;
   note?: string;
   actorUsername?: string;
+  channel?: SaleChannel;
   /** Multi-line (ưu tiên). */
   lines?: CreateSaleLineBody[];
   /** Legacy 1 dòng */
@@ -69,8 +73,9 @@ async function parseJson<T>(res: Response): Promise<T> {
   return body.data as T;
 }
 
-export async function listRecentSales(): Promise<SaleRow[]> {
-  const res = await fetch("/api/inventory/sales", { cache: "no-store" });
+export async function listRecentSales(channel: SaleChannel = "retail"): Promise<SaleRow[]> {
+  const qs = new URLSearchParams({ channel });
+  const res = await fetch(`/api/inventory/sales?${qs}`, { cache: "no-store" });
   return parseJson<SaleRow[]>(res);
 }
 

@@ -33,6 +33,12 @@ export type CreateSaleLineInput =
       accessoryId?: string;
     };
 
+export type SaleChannel = "retail" | "ban_ga";
+
+function normalizeSaleChannel(raw?: string | null): SaleChannel {
+  return String(raw || "").trim() === "ban_ga" ? "ban_ga" : "retail";
+}
+
 export type CreateSaleInput = {
   storeId: Exclude<StoreId, "all">;
   payment: "cash" | "transfer" | "card" | "other" | "debt" | "partial";
@@ -47,6 +53,8 @@ export type CreateSaleInput = {
   soldAt?: string;
   /** Username app_accounts — created_by / updated_by. */
   actorUsername?: string;
+  /** retail = BÁN HÀNG; ban_ga = tab Bán Gà trong Sửa chữa. */
+  channel?: SaleChannel;
   /** Nhiều dòng / phiếu. Ưu tiên hơn single-item legacy. */
   lines?: CreateSaleLineInput[];
   /** @deprecated Dùng lines[]. Giữ tương thích API cũ 1 dòng. */
@@ -83,6 +91,7 @@ export type CreatedSale = {
   /** Ghi chú phiếu (vd: bảo hành bán máy). */
   note?: string;
   lineCount?: number;
+  channel?: SaleChannel;
 };
 
 type StoreRow = { id: string; code: string };
@@ -1147,15 +1156,15 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
       `insert into public.sales (
          store_id, customer_id, payment_method, status,
          total_amount, total_cost, total_profit, note,
-         sold_at, sold_at_ts,
+         sold_at, sold_at_ts, channel,
          created_by, updated_by
        ) values (
          $1, $2, $3::public.payment_method, 'completed',
          0, 0, 0, $4,
-         $5::date, $6::timestamptz,
-         $7, $7
+         $5::date, $6::timestamptz, $7,
+         $8, $8
        ) returning id, sold_at`,
-      [storeUuid, customerId, input.payment, input.note ?? "", soldAtDate, soldAtIso, actor]
+      [storeUuid, customerId, input.payment, input.note ?? "", soldAtDate, soldAtIso, normalizeSaleChannel(input.channel), actor]
     );
     const saleId = String(saleRows[0].id);
     const soldAt = toDateOnly(saleRows[0].sold_at) ?? soldAtDate;
@@ -1332,6 +1341,7 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
         ? itemNames.join(" + ")
         : `${itemNames[0]} + ${itemNames.length - 1} dòng khác`;
 
+    const saleChannel = normalizeSaleChannel(input.channel);
     return {
       id: saleId,
       soldAt,
@@ -1347,6 +1357,7 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
       customerName,
       note: input.note ?? "",
       lineCount: lines.length,
+      channel: saleChannel,
     };
   });
 }
@@ -1497,15 +1508,16 @@ export async function repoGetSale(saleId: string): Promise<SaleDetail> {
     customerAddress: String(sale.customer_address || ""),
     note: sale.note ? String(sale.note) : "",
     lineCount: lines.length,
+    channel: normalizeSaleChannel(sale.channel),
     lines,
   };
 }
 
 /** Recent sales (completed + cancelled) for UI list. */
-export async function repoListRecentSales(limit = 80): Promise<CreatedSale[]> {
+export async function repoListRecentSales(limit = 80, channel: SaleChannel = "retail"): Promise<CreatedSale[]> {
   const { idToCode } = await loadStoreMaps();
   const { rows } = await getPool().query(
-    `select s.id, s.sold_at, s.store_id, s.total_amount, s.total_cost, s.total_profit, s.payment_method, s.status,
+    `select s.id, s.sold_at, s.store_id, s.total_amount, s.total_cost, s.total_profit, s.payment_method, s.status, s.channel,
             coalesce(c.name, 'Khách lẻ') as customer_name,
             coalesce(c.phone, '') as customer_phone,
             coalesce(c.address, '') as customer_address,
@@ -1550,9 +1562,10 @@ export async function repoListRecentSales(limit = 80): Promise<CreatedSale[]> {
             ) as line_count
      from public.sales s
      left join public.customers c on c.id = s.customer_id
+     where s.channel = $2
      order by s.sold_at_ts desc
      limit $1`,
-    [limit]
+    [limit, normalizeSaleChannel(channel)]
   );
 
   return rows.map((row) => ({
@@ -1571,6 +1584,7 @@ export async function repoListRecentSales(limit = 80): Promise<CreatedSale[]> {
     customerPhone: String(row.customer_phone || ""),
     customerAddress: String(row.customer_address || ""),
     lineCount: Number(row.line_count) || 1,
+    channel: normalizeSaleChannel(row.channel ?? channel),
   }));
 }
 
@@ -1657,6 +1671,7 @@ export async function repoCancelSale(
       profit: vndToShopMoney(Number(sale.total_profit) || 0),
       payment: paymentToUi(String(sale.payment_method)),
       status: "Đã hủy" as const,
+      channel: normalizeSaleChannel(sale.channel),
       customerName: "",
       lineCount: items.length,
     };
@@ -1718,6 +1733,7 @@ export async function repoDashboardSummary(storeCode?: StoreId): Promise<{
          coalesce(sum(total_amount), 0)::bigint as revenue
        from public.sales
        where status = 'completed'
+         and channel = 'retail'
          and ($1::uuid is null or store_id = $1)`,
       [storeId]
     ),
@@ -1792,6 +1808,7 @@ export async function repoReportMonthly(yearMonth: string, storeCode?: StoreId) 
      from public.sales s
      left join public.sale_items si on si.sale_id = s.id and si.sale_status = 'completed'
      where s.status = 'completed'
+       and s.channel = 'retail'
        and to_char(s.sold_at, 'YYYY-MM') = $1
        and ($2::uuid is null or s.store_id = $2)`,
     [yearMonth, storeId]
@@ -1822,6 +1839,7 @@ export async function repoReportYearly(year: number, storeCode?: StoreId) {
        from public.sales s
        left join public.sale_items si on si.sale_id = s.id and si.sale_status = 'completed'
        where s.status = 'completed'
+         and s.channel = 'retail'
          and extract(year from s.sold_at) = $1
          and ($2::uuid is null or s.store_id = $2)
        group by 1
