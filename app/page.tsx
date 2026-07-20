@@ -26,6 +26,7 @@ import {
   Edit3,
   Eye,
   EyeOff,
+  FileSpreadsheet,
   FileText,
   LayoutDashboard,
   Loader2,
@@ -120,6 +121,7 @@ import {
   type LoginUserOption,
 } from "@/services/accountsService";
 import { ALL_MENU_IDS } from "@/lib/constants";
+import { downloadPhonesExcel } from "@/lib/exportPhonesExcel";
 import {
   formatVnDateTime,
   vnNowDate,
@@ -5951,6 +5953,29 @@ export default function Home() {
                       >
                         {isAccessorySensitiveHidden ? <EyeOff size={18} /> : <Eye size={18} />}
                         {isAccessorySensitiveHidden ? "Hiện" : "Ẩn"}
+                      </button>
+                    ) : null}
+                    {inventoryTab === "phones" ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!filteredPhones.length) {
+                            showUiToast("error", "Không có máy để xuất Excel.");
+                            return;
+                          }
+                          try {
+                            const { fileName, count } = downloadPhonesExcel(filteredPhones);
+                            showUiToast("success", `Đã xuất ${count} máy → ${fileName}`);
+                          } catch (err) {
+                            showUiToast("error", `Xuất Excel thất bại: ${toUiError(err)}`);
+                          }
+                        }}
+                        disabled={!filteredPhones.length}
+                        className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-4 text-sm font-black text-ink shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        title="Xuất danh sách máy (theo bộ lọc hiện tại) ra Excel"
+                      >
+                        <FileSpreadsheet size={17} className="text-brand" />
+                        Xuất Excel
                       </button>
                     ) : null}
                     <button onClick={() => openInventoryCreateModal(inventoryTab)} className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 text-sm font-black text-white hover:bg-brand-dark">
