@@ -1133,6 +1133,10 @@ export default function Home() {
   const [accessories, setAccessories] = useState<Accessory[]>([]);
   /** Không seed multi-store — chỉ load từ DB (lọc CH ở UI). */
   const [sales, setSales] = useState<Sale[]>([]);
+  /** Snapshot retail cho card Báo cáo Bán hàng (không phụ thuộc màn Bán Gà). */
+  const [salesRetail, setSalesRetail] = useState<Sale[]>([]);
+  /** Phiếu channel ban_ga — luôn load để card Báo cáo Bán Gà + Vợ (không phụ thuộc màn đang mở). */
+  const [salesBanGa, setSalesBanGa] = useState<Sale[]>([]);
   /** Form bán hàng */
   const [saleStoreId, setSaleStoreId] = useState<Exclude<StoreId, "all">>("store-1");
   const [salePayMethod, setSalePayMethod] = useState<SalePayMethod>("Tiền mặt");
@@ -1369,30 +1373,71 @@ export default function Home() {
   const reloadSalesFromDb = useCallback(async (channel: SaleChannel = "retail") => {
     try {
       const rows = await apiListRecentSales(channel);
-      setSales(
-        rows.map((r) => ({
-          id: r.id,
-          createdAt: r.soldAt,
-          customerId: "db",
-          customerName: r.customerName || "Khách lẻ",
-          customerPhone: r.customerPhone || "",
-          customerAddress: r.customerAddress || "",
-          storeId: r.storeId,
-          itemName: r.itemName,
-          itemType: r.itemType,
-          quantity: r.quantity,
-          amount: r.amount,
-          cost:
-            r.cost != null
-              ? r.cost
-              : Math.max(0, Math.round((Number(r.amount) || 0) - (Number(r.profit) || 0))),
-          profit: r.profit,
-          payment: ((r.payment === "Nợ" ? "NỢ DAI" : r.payment) as PaymentMethod) || "Tiền mặt",
-          status: r.status,
-        }))
-      );
+      const mapped = (Array.isArray(rows) ? rows : []).map((r) => ({
+        id: r.id,
+        createdAt: r.soldAt,
+        customerId: "db" as const,
+        customerName: r.customerName || "Khách lẻ",
+        customerPhone: r.customerPhone || "",
+        customerAddress: r.customerAddress || "",
+        storeId: r.storeId,
+        itemName: r.itemName,
+        itemType: r.itemType,
+        quantity: r.quantity,
+        amount: r.amount,
+        cost:
+          r.cost != null
+            ? r.cost
+            : Math.max(0, Math.round((Number(r.amount) || 0) - (Number(r.profit) || 0))),
+        profit: r.profit,
+        payment: ((r.payment === "Nợ" ? "NỢ DAI" : r.payment) as PaymentMethod) || "Tiền mặt",
+        status: r.status,
+      }));
+      setSales(mapped);
+      if (channel === "retail") setSalesRetail(mapped);
     } catch (err) {
       console.warn("load sales", err);
+    }
+  }, []);
+
+
+  const mapSaleRowsFromApi = (rows: Awaited<ReturnType<typeof apiListRecentSales>>): Sale[] =>
+    rows.map((r) => ({
+      id: r.id,
+      createdAt: r.soldAt,
+      customerId: "db",
+      customerName: r.customerName || "Khách lẻ",
+      customerPhone: r.customerPhone || "",
+      customerAddress: r.customerAddress || "",
+      storeId: r.storeId,
+      itemName: r.itemName,
+      itemType: r.itemType,
+      quantity: r.quantity,
+      amount: r.amount,
+      cost:
+        r.cost != null
+          ? r.cost
+          : Math.max(0, Math.round((Number(r.amount) || 0) - (Number(r.profit) || 0))),
+      profit: r.profit,
+      payment: ((r.payment === "Nợ" ? "NỢ DAI" : r.payment) as PaymentMethod) || "Tiền mặt",
+      status: r.status,
+    }));
+
+  const reloadSalesRetailSnapshot = useCallback(async () => {
+    try {
+      const rows = await apiListRecentSales("retail");
+      setSalesRetail(mapSaleRowsFromApi(Array.isArray(rows) ? rows : []));
+    } catch (err) {
+      console.warn("load retail sales snapshot", err);
+    }
+  }, []);
+
+  const reloadBanGaSalesFromDb = useCallback(async () => {
+    try {
+      const rows = await apiListRecentSales("ban_ga");
+      setSalesBanGa(mapSaleRowsFromApi(Array.isArray(rows) ? rows : []));
+    } catch (err) {
+      console.warn("load ban_ga sales", err);
     }
   }, []);
 
@@ -1420,8 +1465,9 @@ export default function Home() {
     if (!currentUser) return;
     if (activePage === "sales" || (activePage === "software" && softwareHubTab === "ban-ga")) {
       void reloadSalesFromDb(saleChannel);
+      void reloadBanGaSalesFromDb();
     }
-  }, [currentUser, activePage, softwareHubTab, saleChannel, reloadSalesFromDb]);
+  }, [currentUser, activePage, softwareHubTab, saleChannel, reloadSalesFromDb, reloadBanGaSalesFromDb]);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -1433,6 +1479,8 @@ export default function Home() {
       await reloadShopRepairsFromDb();
       await reloadPartsFromDb();
       await reloadSalesFromDb(saleChannel);
+      await reloadSalesRetailSnapshot();
+      await reloadBanGaSalesFromDb();
       await reloadCustomersFromDb();
     })();
   }, [
@@ -1444,6 +1492,8 @@ export default function Home() {
     reloadShopRepairsFromDb,
     reloadPartsFromDb,
     reloadSalesFromDb,
+    reloadSalesRetailSnapshot,
+    reloadBanGaSalesFromDb,
     reloadCustomersFromDb,
   ]);
 
@@ -2056,7 +2106,7 @@ export default function Home() {
       sold: 0,
     }));
 
-    sales.forEach((sale) => {
+    salesRetail.forEach((sale) => {
       if (sale.status === "Hoàn tất" && (storeFilter === "all" || sale.storeId === storeFilter)) {
         if (sale.createdAt.startsWith(reportYear)) {
           const monthIndex = parseInt(sale.createdAt.split("-")[1], 10) - 1;
@@ -2072,7 +2122,7 @@ export default function Home() {
     });
 
     return months;
-  }, [sales, reportYear, storeFilter]);
+  }, [salesRetail, reportYear, storeFilter]);
 
   const chartYearlyData = supabaseYearlyChart ?? yearlyReportData;
 
@@ -2090,7 +2140,7 @@ export default function Home() {
 
   /** KPI bán theo kỳ (short shop) — Tổng quan / tab Bán hàng. */
   const reportPeriodSales = useMemo(() => {
-    const completed = sales.filter(
+    const completed = salesRetail.filter(
       (s) => s.status === "Hoàn tất" && (storeFilter === "all" || s.storeId === storeFilter)
     );
     if (reportPeriod === "day") {
@@ -2139,7 +2189,7 @@ export default function Home() {
       source: "year" as const,
     };
   }, [
-    sales,
+    salesRetail,
     storeFilter,
     reportPeriod,
     reportDay,
@@ -2156,7 +2206,7 @@ export default function Home() {
     const repairInPeriod = shopRepairs.filter((r) =>
       matchesReportPeriod(r.receiveDate || r.createdAt)
     );
-    const salesInPeriod = sales.filter(
+    const salesInPeriod = salesRetail.filter(
       (s) =>
         s.status === "Hoàn tất" &&
         (storeFilter === "all" || s.storeId === storeFilter) &&
@@ -2195,6 +2245,24 @@ export default function Home() {
       (r) => r.paymentStatus === "NỢ DAI" || (!r.isPaid && r.paymentStatus !== "Đã thanh toán")
     ).length;
 
+
+    const banGaInPeriod = salesBanGa.filter(
+      (s) =>
+        s.status === "Hoàn tất" &&
+        (storeFilter === "all" || s.storeId === storeFilter) &&
+        matchesReportPeriod(s.createdAt)
+    );
+    const banGaRevenue = banGaInPeriod.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+    const banGaProfit = banGaInPeriod.reduce((sum, s) => sum + (Number(s.profit) || 0), 0);
+    const banGaCapital = Math.max(0, Math.round(banGaRevenue - banGaProfit));
+    const banGaSoldPhones = banGaInPeriod
+      .filter((s) => s.itemType === "Máy")
+      .reduce((sum, s) => sum + Math.max(1, s.quantity || 0), 0);
+    const banGaSoldAccessories = banGaInPeriod
+      .filter((s) => s.itemType === "Phụ kiện")
+      .reduce((sum, s) => sum + Math.max(1, s.quantity || 0), 0);
+    const banGaSaleCount = banGaInPeriod.length;
+
     return {
       kho: {
         phonesSold: dashboard.phonesSold,
@@ -2228,11 +2296,20 @@ export default function Home() {
         debtCount: scDebt,
         orderCount: repairInPeriod.length,
       },
+      banGa: {
+        revenue: banGaRevenue,
+        capital: banGaCapital,
+        profit: banGaProfit,
+        soldPhones: banGaSoldPhones,
+        soldAccessories: banGaSoldAccessories,
+        saleCount: banGaSaleCount,
+      },
     };
   }, [
     onlineRepairs,
     shopRepairs,
-    sales,
+    salesRetail,
+    salesBanGa,
     storeFilter,
     matchesReportPeriod,
     dashboard.phonesSold,
@@ -2247,16 +2324,20 @@ export default function Home() {
   /**
    * Biểu đồ cột Tổng quan (Chồng vs Vợ):
    * - Chồng = Phần mềm
-   * - Vợ = Sửa chữa + Bán hàng
+   * - Vợ = Sửa chữa + Bán hàng + Bán Gà
    * Cảnh báo: % thấp → cố gắng; % cao hơn hẳn → vinh danh.
    */
   const overviewCoupleCharts = useMemo(() => {
     const chongRevenue = overviewModules.phanMem.revenue;
     const chongProfit = overviewModules.phanMem.profit;
     const voRevenue =
-      overviewModules.suaChua.revenue + overviewModules.banHang.revenue;
+      overviewModules.suaChua.revenue +
+      overviewModules.banHang.revenue +
+      overviewModules.banGa.revenue;
     const voProfit =
-      overviewModules.suaChua.profit + overviewModules.banHang.profit;
+      overviewModules.suaChua.profit +
+      overviewModules.banHang.profit +
+      overviewModules.banGa.profit;
 
     /** % thấp hơn ngưỡng này → «Cần cố gắng hơn nữa» */
     const LOW_PCT = 40;
@@ -2282,7 +2363,7 @@ export default function Home() {
           {
             key: "vo",
             name: "Vợ",
-            short: "Sửa + Bán hàng",
+            short: "Sửa + Bán + Gà",
             value: v,
             pct: voPct,
             fill: "#10b981",
@@ -3055,6 +3136,7 @@ export default function Home() {
       setPhoneHardDeleteYes("");
       await reloadInventoryFromDb();
       void reloadSalesFromDb(saleChannel);
+      void reloadBanGaSalesFromDb();
       showUiToast("success", `Đã xóa máy ${label}.`);
     } catch (err) {
       showUiToast("error", `Xóa máy thất bại: ${toUiError(err)}`);
@@ -3085,6 +3167,7 @@ export default function Home() {
       }
       await reloadInventoryFromDb();
       void reloadSalesFromDb(saleChannel);
+      void reloadBanGaSalesFromDb();
       showUiToast("success", `Đã xóa máy ${label}.`);
     } catch (err) {
       showUiToast("error", `Xóa máy thất bại: ${toUiError(err)}`);
@@ -4095,6 +4178,7 @@ export default function Home() {
 
       await reloadInventoryFromDb();
       await reloadSalesFromDb(saleChannel);
+      await reloadBanGaSalesFromDb();
       void reloadCustomersFromDb();
       try {
         const monthly = await reportInventoryMonthly(inventoryReportMonth, storeFilter);
@@ -4331,12 +4415,14 @@ export default function Home() {
       pushLog(`Xóa phiếu ${salesPageTitle}`, id, sale.storeId);
       await reloadInventoryFromDb();
       await reloadSalesFromDb(saleChannel);
+      await reloadBanGaSalesFromDb();
       void refreshDashboardSummary();
       showUiToast("success", "Đã xóa phiếu bán.");
     } catch (err) {
       window.alert(toUiError(err));
       // Khôi phục list nếu API lỗi sau khi đã gỡ local
       await reloadSalesFromDb(saleChannel);
+      await reloadBanGaSalesFromDb();
     } finally {
       setSaleSaving(false);
     }
@@ -4687,10 +4773,10 @@ export default function Home() {
                           : reportPeriod === "month"
                             ? inventoryReportMonth
                             : reportYear
-                      }. Kho = snapshot tồn; Bán/PM/Sửa = theo kỳ đã chọn.`}
+                      }. Kho = snapshot tồn; Bán/Bán Gà/PM/Sửa = theo kỳ đã chọn.`}
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                <div className="grid grid-cols-2 gap-2 lg:grid-cols-3 xl:grid-cols-5">
                   <OverviewModuleCard
                     title="Kho hàng"
                     icon={<Boxes size={16} />}
@@ -4731,6 +4817,24 @@ export default function Home() {
                     hideMoney={isStatsHidden}
                   />
                   <OverviewModuleCard
+                    title="Bán Gà"
+                    icon={<ShoppingCart size={16} />}
+                    theme={{
+                      card: "border-fuchsia-200 bg-gradient-to-br from-fuchsia-50 to-pink-50/80",
+                      icon: "bg-fuchsia-100 text-fuchsia-800 ring-1 ring-fuchsia-200",
+                      title: "text-fuchsia-900",
+                    }}
+                    lines={[
+                      `Máy bán kỳ: ${overviewModules.banGa.soldPhones}`,
+                      `Phụ kiện bán kỳ: ${overviewModules.banGa.soldAccessories}`,
+                      `Tổng phiếu: ${overviewModules.banGa.saleCount}`,
+                    ]}
+                    revenue={formatMoney(overviewModules.banGa.revenue)}
+                    capital={formatMoney(overviewModules.banGa.capital)}
+                    profit={formatMoney(overviewModules.banGa.profit)}
+                    hideMoney={isStatsHidden}
+                  />
+                  <OverviewModuleCard
                     title="Phần mềm"
                     icon={<Terminal size={16} />}
                     theme={{
@@ -4766,12 +4870,12 @@ export default function Home() {
                   />
                 </div>
 
-                {/* Biểu đồ cột: Chồng (PM) vs Vợ (Sửa + Bán) + cảnh báo / vinh danh */}
+                {/* Biểu đồ cột: Chồng (PM) vs Vợ (Sửa + Bán + Gà) + cảnh báo / vinh danh */}
                 <section className="rounded-xl border border-line bg-white p-4 shadow-panel">
                   <div className="mb-4">
                     <h2 className="text-lg font-black text-ink">Chia sẻ doanh thu & lợi nhuận</h2>
                     <p className="text-sm font-semibold text-muted">
-                      Chồng = Phần mềm · Vợ = Sửa chữa + Bán hàng
+                      Chồng = Phần mềm · Vợ = Sửa chữa + Bán hàng + Bán Gà
                       {reportPeriod === "day"
                         ? ` · ${reportDay}`
                         : reportPeriod === "month"
