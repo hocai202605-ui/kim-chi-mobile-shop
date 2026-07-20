@@ -2404,24 +2404,9 @@ export default function Home() {
     setIsPartFormOpen(true);
   }
 
-  /** Chọn NPP → điền Loại / Hãng / Màu theo phiếu mới nhất cùng NPP. */
+  /** Chọn NPP — chỉ ghi NPP; không auto-fill loại / hãng / màu / tên. */
   function applyPartDistributorCascade(name: string) {
     setPartDistributor(name);
-    const key = name.trim().toLowerCase();
-    if (!key) return;
-    const match = partInbounds.find(
-      (p) =>
-        p.distributor.trim().toLowerCase() === key &&
-        (!editingPartId || p.id !== editingPartId)
-    );
-    const fallback =
-      match ||
-      partInbounds.find((p) => p.distributor.trim().toLowerCase() === key);
-    if (!fallback) return;
-    setPartType(fallback.partType || "");
-    setPartBrand(fallback.brand || "");
-    setPartColor(fallback.color || "");
-    setPartCascadeKey((k) => k + 1);
   }
 
   function bumpPartQuantity(delta: number) {
@@ -5504,15 +5489,6 @@ export default function Home() {
                         </Field>
                         <Field label="SL" required>
                           <div className="flex h-11 w-full overflow-hidden rounded-lg border border-line bg-white focus-within:ring-2 focus-within:ring-brand/30">
-                            <button
-                              type="button"
-                              onClick={() => bumpPartQuantity(-1)}
-                              disabled={partSaving}
-                              title="Giảm 1"
-                              className="inline-flex h-full w-11 shrink-0 items-center justify-center border-r border-line bg-slate-50 text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
-                            >
-                              <Minus size={16} />
-                            </button>
                             <input
                               name="quantity"
                               required
@@ -5529,23 +5505,33 @@ export default function Home() {
                               autoComplete="off"
                               inputMode="numeric"
                               placeholder="1"
-                              className="h-full min-w-0 flex-1 border-0 bg-transparent px-2 text-center text-sm font-black tabular-nums text-ink outline-none"
+                              className="h-full min-w-0 flex-1 border-0 bg-transparent px-3 text-center text-sm font-black tabular-nums text-ink outline-none"
                             />
-                            <button
-                              type="button"
-                              onClick={() => bumpPartQuantity(1)}
-                              disabled={partSaving}
-                              title="Tăng 1"
-                              className="inline-flex h-full w-11 shrink-0 items-center justify-center border-l border-line bg-slate-50 text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
-                            >
-                              <Plus size={16} />
-                            </button>
+                            <div className="flex w-9 shrink-0 flex-col border-l border-line">
+                              <button
+                                type="button"
+                                onClick={() => bumpPartQuantity(1)}
+                                disabled={partSaving}
+                                title="Tăng 1"
+                                className="inline-flex h-1/2 w-full items-center justify-center border-b border-line bg-slate-50 text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
+                              >
+                                <Plus size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => bumpPartQuantity(-1)}
+                                disabled={partSaving}
+                                title="Giảm 1"
+                                className="inline-flex h-1/2 w-full items-center justify-center bg-slate-50 text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
+                              >
+                                <Minus size={14} />
+                              </button>
+                            </div>
                           </div>
                         </Field>
                       </div>
                       <p className="text-xs font-semibold text-muted">
-                        Chọn <strong>Nhà phân phối</strong> đã có → tự điền Loại / Hãng / Màu
-                        (phiếu mới nhất). Hãng và màu không bắt buộc.
+                        Chọn hoặc nhập từng trường. Hãng và màu không bắt buộc.
                       </p>
                       <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line pt-4">
                         <button

@@ -1397,11 +1397,16 @@ export async function repoGetSale(saleId: string): Promise<SaleDetail> {
   );
 
   const lines: SaleDetailLine[] = itemRows.map((si) => {
+    // sale_items.unit_* / amount / profit = VND đầy đủ → luôn vndToShopMoney.
+    // Không dùng toShopMoney (heuristic ≥1tr): PK rẻ 50 short → 50_000 VND
+    // bị hiện lại thành 50_000 (sai ×1000).
     if (si.item_type === "phone") {
       const name =
         String(si.item_name || "").trim() ||
         `${si.phone_brand || ""} ${si.phone_model || ""}`.trim() ||
         "Máy";
+      // unit_cost trên sale_items = VND; phone.cost (fallback legacy) = short kho.
+      const hasSaleUnitCost = si.unit_cost != null && si.unit_cost !== "";
       return {
         kind: "phone" as const,
         phoneId: si.phone_id ? String(si.phone_id) : undefined,
@@ -1411,8 +1416,10 @@ export async function repoGetSale(saleId: string): Promise<SaleDetail> {
         color: si.phone_color ? String(si.phone_color) : undefined,
         storage: si.phone_storage ? String(si.phone_storage) : undefined,
         condition: si.phone_condition ? String(si.phone_condition) : undefined,
-        unitPrice: toShopMoney(Number(si.unit_price) || 0),
-        cost: toShopMoney(Number(si.unit_cost ?? si.phone_cost) || 0),
+        unitPrice: vndToShopMoney(Number(si.unit_price) || 0),
+        cost: hasSaleUnitCost
+          ? vndToShopMoney(Number(si.unit_cost) || 0)
+          : toShopMoney(Number(si.phone_cost) || 0),
       };
     }
     const rawName = String(si.item_name || "").trim() || "Phụ kiện";
@@ -1428,8 +1435,8 @@ export async function repoGetSale(saleId: string): Promise<SaleDetail> {
       category: category || "Khác",
       name,
       quantity: Math.max(1, Number(si.quantity) || 1),
-      unitPrice: toShopMoney(Number(si.unit_price) || 0),
-      cost: toShopMoney(Number(si.unit_cost) || 0),
+      unitPrice: vndToShopMoney(Number(si.unit_price) || 0),
+      cost: vndToShopMoney(Number(si.unit_cost) || 0),
       accessoryId: si.accessory_id ? String(si.accessory_id) : undefined,
     };
   });
