@@ -1048,6 +1048,15 @@ export default function Home() {
   const [clonePhoneDraft, setClonePhoneDraft] = useState<PhoneItem | null>(null);
   const [cloneFormKey, setCloneFormKey] = useState(0);
   const [viewingPhoneId, setViewingPhoneId] = useState<string | null>(null);
+  /** Popup xóa cứng máy chưa bán — bắt buộc gõ YES. */
+  const [phoneHardDeleteTarget, setPhoneHardDeleteTarget] = useState<{
+    id: string;
+    label: string;
+    imeiHint: string;
+    storeId: Exclude<StoreId, "all">;
+  } | null>(null);
+  const [phoneHardDeleteYes, setPhoneHardDeleteYes] = useState("");
+  const [phoneHardDeleting, setPhoneHardDeleting] = useState(false);
   const [editingAccessoryId, setEditingAccessoryId] = useState<string | null>(null);
   /** Prefill form khi clone phụ kiện (mode thêm mới, không phải sửa). */
   const [cloneAccessoryDraft, setCloneAccessoryDraft] = useState<Accessory | null>(null);
@@ -2943,8 +2952,64 @@ export default function Home() {
     }
   }
 
-  /** Xóa cứng máy (grid: máy đã bán chỉ còn Chi tiết + Xóa). */
-  async function deletePhoneItem(id: string) {
+  /** Mở popup xóa cứng máy chưa bán (bắt buộc gõ YES). */
+  function openUnsoldPhoneHardDelete(id: string) {
+    const source = phones.find((item) => item.id === id);
+    if (!source) return;
+    if (source.status === "Đã bán") {
+      void deleteSoldPhoneItem(id);
+      return;
+    }
+    const label = `${source.brand} ${source.name}`.trim();
+    const imeiHint = source.imei ? ` (…${source.imei.slice(-5)})` : "";
+    setPhoneHardDeleteYes("");
+    setPhoneHardDeleteTarget({
+      id: source.id,
+      label,
+      imeiHint,
+      storeId: source.storeId,
+    });
+  }
+
+  function closePhoneHardDeleteModal() {
+    if (phoneHardDeleting) return;
+    setPhoneHardDeleteTarget(null);
+    setPhoneHardDeleteYes("");
+  }
+
+  /** Xóa cứng máy chưa bán sau khi gõ YES trong popup. */
+  async function confirmUnsoldPhoneHardDelete() {
+    if (!phoneHardDeleteTarget) return;
+    if (phoneHardDeleteYes !== "YES") {
+      showUiToast("error", 'Vui lòng gõ chính xác "YES" để xác nhận xóa.');
+      return;
+    }
+    const { id, label, imeiHint, storeId } = phoneHardDeleteTarget;
+    setPhoneHardDeleting(true);
+    try {
+      await apiDeletePhone(id);
+      pushLog("Xóa máy", `${label}${imeiHint}`, storeId);
+      setPhones((prev) => prev.filter((p) => p.id !== id));
+      if (viewingPhoneId === id) setViewingPhoneId(null);
+      if (editingPhoneId === id) {
+        setIsInventoryModalOpen(false);
+        setEditingPhoneId(null);
+        setClonePhoneDraft(null);
+      }
+      setPhoneHardDeleteTarget(null);
+      setPhoneHardDeleteYes("");
+      await reloadInventoryFromDb();
+      void reloadSalesFromDb();
+      showUiToast("success", `Đã xóa máy ${label}.`);
+    } catch (err) {
+      showUiToast("error", `Xóa máy thất bại: ${toUiError(err)}`);
+    } finally {
+      setPhoneHardDeleting(false);
+    }
+  }
+
+  /** Xóa cứng máy đã bán (grid: máy đã bán chỉ còn Chi tiết + Xóa). */
+  async function deleteSoldPhoneItem(id: string) {
     const source = phones.find((item) => item.id === id);
     if (!source) return;
     const label = `${source.brand} ${source.name}`.trim();
@@ -5826,7 +5891,7 @@ export default function Home() {
                       {item.status === "Đã bán" ? (
                         <button
                           type="button"
-                          onClick={() => void deletePhoneItem(item.id)}
+                          onClick={() => void deleteSoldPhoneItem(item.id)}
                           title="Xóa máy (xóa hẳn)"
                           className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100"
                         >
@@ -5849,6 +5914,14 @@ export default function Home() {
                             className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100"
                           >
                             <CopyPlus size={18} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openUnsoldPhoneHardDelete(item.id)}
+                            title="Xóa cứng máy chưa bán"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100"
+                          >
+                            <Trash2 size={18} />
                           </button>
                         </>
                       )}
@@ -6285,6 +6358,92 @@ export default function Home() {
                         </div>
                       </form>
                     )}
+                  </div>
+                </section>
+              </div>
+            )}
+
+            {phoneHardDeleteTarget && (
+              <div
+                className="fixed inset-0 z-[60] grid place-items-center bg-slate-950/60 p-4 backdrop-blur-md"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="phone-hard-delete-title"
+                onClick={closePhoneHardDeleteModal}
+              >
+                <section
+                  className="relative w-full max-w-[440px] overflow-hidden rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {phoneHardDeleting ? (
+                    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-2xl bg-white/55 backdrop-blur-sm">
+                      <Loader2 className="h-8 w-8 animate-spin text-danger" />
+                      <p className="text-sm font-bold text-slate-700">Đang xóa máy…</p>
+                    </div>
+                  ) : null}
+                  <div className="flex items-center justify-between border-b border-slate-200/60 bg-gradient-to-r from-red-50 to-transparent p-5">
+                    <h2 id="phone-hard-delete-title" className="text-lg font-black text-danger">
+                      Xóa cứng máy
+                    </h2>
+                    <button
+                      type="button"
+                      onClick={closePhoneHardDeleteModal}
+                      disabled={phoneHardDeleting}
+                      className="h-9 rounded-xl border border-slate-200/60 bg-white/50 px-4 text-sm font-bold text-slate-600 transition hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Đóng
+                    </button>
+                  </div>
+                  <div className="grid gap-4 p-5">
+                    <p className="text-sm font-semibold leading-relaxed text-slate-700">
+                      Bạn sắp xóa hẳn máy{" "}
+                      <strong className="text-ink">
+                        {phoneHardDeleteTarget.label}
+                        {phoneHardDeleteTarget.imeiHint}
+                      </strong>{" "}
+                      khỏi danh sách / hệ thống.
+                    </p>
+                    <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">
+                      Thao tác không hoàn tác được. Để xác nhận, hãy gõ chính xác{" "}
+                      <span className="font-black tracking-wide">YES</span> vào ô bên dưới.
+                    </p>
+                    <Field label='Gõ "YES" để xác nhận'>
+                      <input
+                        type="text"
+                        value={phoneHardDeleteYes}
+                        onChange={(e) => setPhoneHardDeleteYes(e.target.value)}
+                        disabled={phoneHardDeleting}
+                        autoFocus
+                        autoComplete="off"
+                        placeholder="YES"
+                        className="h-11 w-full rounded-lg border border-line bg-white px-3 font-mono text-base font-black tracking-wider text-ink outline-none ring-danger/30 focus:ring-2 disabled:opacity-50"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && phoneHardDeleteYes === "YES" && !phoneHardDeleting) {
+                            e.preventDefault();
+                            void confirmUnsoldPhoneHardDelete();
+                          }
+                        }}
+                      />
+                    </Field>
+                    <div className="flex flex-wrap justify-end gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={closePhoneHardDeleteModal}
+                        disabled={phoneHardDeleting}
+                        className="h-10 rounded-lg border border-line bg-white px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Hủy
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void confirmUnsoldPhoneHardDelete()}
+                        disabled={phoneHardDeleting || phoneHardDeleteYes !== "YES"}
+                        className="inline-flex h-10 items-center gap-2 rounded-lg bg-danger px-4 text-sm font-bold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Trash2 size={16} />
+                        Xóa cứng
+                      </button>
+                    </div>
                   </div>
                 </section>
               </div>
