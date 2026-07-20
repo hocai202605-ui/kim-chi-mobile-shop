@@ -65,6 +65,7 @@ import {
 } from "@/services/inventoryReportService";
 import {
   ACCESSORY_LOOKUP_CATEGORIES,
+  PART_LOOKUP_CATEGORIES,
   PHONE_LOOKUP_CATEGORIES,
   REPAIR_LOOKUP_CATEGORIES,
   SALE_LOOKUP_CATEGORIES,
@@ -1123,10 +1124,6 @@ export default function Home() {
   const [partColor, setPartColor] = useState("");
   const [partName, setPartName] = useState("");
   const [partQuantity, setPartQuantity] = useState("1");
-  const [partDistributorOptions, setPartDistributorOptions] = useState<string[]>([]);
-  const [partTypeOptions, setPartTypeOptions] = useState<string[]>([]);
-  const [partBrandOptions, setPartBrandOptions] = useState<string[]>([]);
-  const [partColorOptions, setPartColorOptions] = useState<string[]>([]);
 
   const [customers, setCustomers] = useState(customersSeed);
   const [phones, setPhones] = useState<PhoneItem[]>([]);
@@ -1352,18 +1349,6 @@ export default function Home() {
       const rows = await apiListPartInbounds(scope, currentUser.username);
       const list = Array.isArray(rows) ? rows : [];
       setPartInbounds(list);
-      setPartDistributorOptions((prev) =>
-        uniquePartLabels([...prev, ...list.map((p) => p.distributor)])
-      );
-      setPartTypeOptions((prev) =>
-        uniquePartLabels([...prev, ...list.map((p) => p.partType)])
-      );
-      setPartBrandOptions((prev) =>
-        uniquePartLabels([...prev, ...list.map((p) => p.brand)])
-      );
-      setPartColorOptions((prev) =>
-        uniquePartLabels([...prev, ...list.map((p) => p.color)])
-      );
     } catch (err) {
       setPartInbounds([]);
       setPartBackendError(toUiError(err));
@@ -1838,6 +1823,51 @@ export default function Home() {
     },
     [phoneFormStoreId]
   );
+
+  /** Droplist form NHẬP HÀNG — theo CH header (hoặc CH user khi «Tất cả»). */
+  const partsLookupStoreId = useMemo((): Exclude<StoreId, "all"> => {
+    if (storeFilter !== "all") return storeFilter;
+    return currentUser?.storeId ?? "store-1";
+  }, [storeFilter, currentUser]);
+  const partFormLookups = lookupsByStore[partsLookupStoreId] ?? {};
+  const partDistributorOptions =
+    partFormLookups[PART_LOOKUP_CATEGORIES.distributor] ?? [];
+  const partTypeOptions = partFormLookups[PART_LOOKUP_CATEGORIES.partType] ?? [];
+  const partBrandOptions = partFormLookups[PART_LOOKUP_CATEGORIES.brand] ?? [];
+  const partColorOptions = partFormLookups[PART_LOOKUP_CATEGORIES.color] ?? [];
+  const setPartDistributorOptions = useCallback(
+    (next: string[]) => {
+      setFormLookupOptions(
+        PART_LOOKUP_CATEGORIES.distributor,
+        partsLookupStoreId
+      )(next);
+    },
+    [partsLookupStoreId, setFormLookupOptions]
+  );
+  const setPartTypeOptions = useCallback(
+    (next: string[]) => {
+      setFormLookupOptions(PART_LOOKUP_CATEGORIES.partType, partsLookupStoreId)(
+        next
+      );
+    },
+    [partsLookupStoreId, setFormLookupOptions]
+  );
+  const setPartBrandOptions = useCallback(
+    (next: string[]) => {
+      setFormLookupOptions(PART_LOOKUP_CATEGORIES.brand, partsLookupStoreId)(next);
+    },
+    [partsLookupStoreId, setFormLookupOptions]
+  );
+  const setPartColorOptions = useCallback(
+    (next: string[]) => {
+      setFormLookupOptions(PART_LOOKUP_CATEGORIES.color, partsLookupStoreId)(next);
+    },
+    [partsLookupStoreId, setFormLookupOptions]
+  );
+  const reloadPartLookupsAndRows = useCallback(async () => {
+    await reloadInventoryFromDb();
+    await reloadPartsFromDb();
+  }, [reloadInventoryFromDb, reloadPartsFromDb]);
 
   /**
    * Tên PK form bán: luôn lấy lookup store (persist DB).
@@ -4342,8 +4372,7 @@ export default function Home() {
                     </option>
                     {loginUsers.map((u) => (
                       <option key={u.username} value={u.username}>
-                        {u.name} ({u.username}) · {storeName(u.storeId)}
-                        {u.role === "owner" ? " · Chủ" : ""}
+                        {u.name?.trim() || u.username}
                       </option>
                     ))}
                   </>
@@ -5426,6 +5455,7 @@ export default function Home() {
                     >
                       <div className="grid gap-3 sm:grid-cols-2">
                         <ManageableSelect
+                          key={`part-distributor-${partsLookupStoreId}`}
                           label="Nhà phân phối"
                           name="distributor"
                           options={partDistributorOptions}
@@ -5434,11 +5464,15 @@ export default function Home() {
                           required
                           allowFreeText
                           allowManage
+                          categoryCode={PART_LOOKUP_CATEGORIES.distributor}
+                          storeId={partsLookupStoreId}
+                          onRenameCascade={reloadPartLookupsAndRows}
                           actorUsername={currentUser?.username ?? ""}
                           onValueChange={applyPartDistributorCascade}
+                          onManageNotify={(type, message) => showUiToast(type, message)}
                         />
                         <ManageableSelect
-                          key={`part-type-${partCascadeKey}`}
+                          key={`part-type-${partCascadeKey}-${partsLookupStoreId}`}
                           label="Loại linh kiện"
                           name="partType"
                           options={partTypeOptions}
@@ -5447,11 +5481,15 @@ export default function Home() {
                           required
                           allowFreeText
                           allowManage
+                          categoryCode={PART_LOOKUP_CATEGORIES.partType}
+                          storeId={partsLookupStoreId}
+                          onRenameCascade={reloadPartLookupsAndRows}
                           actorUsername={currentUser?.username ?? ""}
                           onValueChange={setPartType}
+                          onManageNotify={(type, message) => showUiToast(type, message)}
                         />
                         <ManageableSelect
-                          key={`part-brand-${partCascadeKey}`}
+                          key={`part-brand-${partCascadeKey}-${partsLookupStoreId}`}
                           label="Hãng"
                           name="brand"
                           options={partBrandOptions}
@@ -5460,11 +5498,15 @@ export default function Home() {
                           required={false}
                           allowFreeText
                           allowManage
+                          categoryCode={PART_LOOKUP_CATEGORIES.brand}
+                          storeId={partsLookupStoreId}
+                          onRenameCascade={reloadPartLookupsAndRows}
                           actorUsername={currentUser?.username ?? ""}
                           onValueChange={setPartBrand}
+                          onManageNotify={(type, message) => showUiToast(type, message)}
                         />
                         <ManageableSelect
-                          key={`part-color-${partCascadeKey}`}
+                          key={`part-color-${partCascadeKey}-${partsLookupStoreId}`}
                           label="Màu sắc"
                           name="color"
                           options={partColorOptions}
@@ -5473,8 +5515,12 @@ export default function Home() {
                           required={false}
                           allowFreeText
                           allowManage
+                          categoryCode={PART_LOOKUP_CATEGORIES.color}
+                          storeId={partsLookupStoreId}
+                          onRenameCascade={reloadPartLookupsAndRows}
                           actorUsername={currentUser?.username ?? ""}
                           onValueChange={setPartColor}
+                          onManageNotify={(type, message) => showUiToast(type, message)}
                         />
                         <Field label="Tên linh kiện" required>
                           <input
@@ -5531,7 +5577,8 @@ export default function Home() {
                         </Field>
                       </div>
                       <p className="text-xs font-semibold text-muted">
-                        Chọn hoặc nhập từng trường. Hãng và màu không bắt buộc.
+                        Chọn hoặc nhập từng trường. Dùng nút + / sửa / xóa để quản lý
+                        droplist (lưu theo cửa hàng). Hãng và màu không bắt buộc.
                       </p>
                       <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line pt-4">
                         <button

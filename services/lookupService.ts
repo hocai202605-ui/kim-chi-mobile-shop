@@ -66,6 +66,17 @@ export const SALE_LOOKUP_CATEGORIES = {
 export type SaleLookupCategoryCode =
   (typeof SALE_LOOKUP_CATEGORIES)[keyof typeof SALE_LOOKUP_CATEGORIES];
 
+/** Droplist form NHẬP HÀNG / part_inbounds (per-store lookup_items). */
+export const PART_LOOKUP_CATEGORIES = {
+  distributor: "part_distributor",
+  partType: "part_type",
+  brand: "part_brand",
+  color: "part_color",
+} as const;
+
+export type PartLookupCategoryCode =
+  (typeof PART_LOOKUP_CATEGORIES)[keyof typeof PART_LOOKUP_CATEGORIES];
+
 async function parseJson<T>(res: Response): Promise<T> {
   const body = await res.json();
   if (!res.ok) {

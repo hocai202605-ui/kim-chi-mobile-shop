@@ -576,6 +576,14 @@ const LOOKUP_REPAIR_MONEY_COLUMN: Record<string, string> = {
   repair_fee: "deposit",
 };
 
+/** Part inbound text columns (scoped by store_id). */
+const LOOKUP_PART_INBOUND_COLUMN: Record<string, string> = {
+  part_distributor: "distributor",
+  part_type: "part_type",
+  part_brand: "brand",
+  part_color: "color",
+};
+
 function parseLookupMoneyLabel(label: string): number | null {
   const n = Number(String(label ?? "").replace(/\D/g, "") || "");
   if (!Number.isFinite(n) || n < 0) return null;
@@ -839,6 +847,16 @@ export async function repoRenameLookupLabel(
             [toN, fromN, actor]
           );
         }
+      }
+
+      const partCol = LOOKUP_PART_INBOUND_COLUMN[categoryCode];
+      if (partCol) {
+        await client.query(
+          `update public.part_inbounds set ${partCol} = $1,
+             updated_by = coalesce($4, updated_by), updated_at = now()
+           where ${partCol} = $2 and store_id = $3`,
+          [to, from, storeUuid, actor]
+        );
       }
     }
 
