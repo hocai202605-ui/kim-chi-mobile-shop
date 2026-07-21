@@ -21,6 +21,7 @@ export type MenuId =
   | "inventoryReports"
   | "customers"
   | "ledger"
+  | "debt-notes"
   | "logs"
   | "accounts"
   | "dashboard";

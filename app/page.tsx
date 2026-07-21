@@ -33,6 +33,7 @@ import {
   LogOut,
   Cpu,
   Minus,
+  NotebookPen,
   PackagePlus,
   Plus,
   ReceiptText,
@@ -636,6 +637,7 @@ const navItems = [
   { id: "inbound", label: "LINH KIỆN", icon: Cpu },
   { id: "customers", label: "KHÁCH HÀNG", icon: Users },
   { id: "ledger", label: "CÔNG NỢ", icon: CreditCard },
+  { id: "debt-notes", label: "GHI NỢ", icon: NotebookPen },
   { id: "logs", label: "NHẬT KÝ", icon: ClipboardList },
   { id: "accounts", label: "TÀI KHOẢN", icon: UserCog },
   { id: "dashboard", label: "BÁO CÁO / THỐNG KÊ", icon: LayoutDashboard },
@@ -9064,6 +9066,23 @@ export default function Home() {
               ])}
             />
           </Panel>
+        )}
+
+        {activePage === "debt-notes" && (
+          <section className="grid min-h-[min(70vh,36rem)] place-items-center rounded-2xl border border-line bg-white p-8 shadow-panel sm:p-12">
+            <div className="mx-auto max-w-3xl text-center">
+              <div className="mx-auto mb-6 grid h-16 w-16 place-items-center rounded-2xl bg-amber-50 text-amber-700 ring-1 ring-amber-200">
+                <NotebookPen size={32} />
+              </div>
+              <p className="text-2xl font-black leading-snug text-ink sm:text-3xl md:text-4xl">
+                Tính năng này sẽ được update sau bữa hải sản ngon. Tùy thuộc vào sự nhiệt tình
+                của Chủ Shop cho đội ngũ phát triển chúng tôi!
+              </p>
+              <p className="mt-6 text-sm font-semibold text-muted">
+                Menu Ghi nợ — đang bảo trì / chờ update.
+              </p>
+            </div>
+          </section>
         )}
 
         {activePage === "ledger" && (() => {
