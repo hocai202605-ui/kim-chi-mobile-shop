@@ -649,6 +649,7 @@ type ReportHubTab =
   | "sales"
   | "inventory"
   | "banGa"
+  | "software"
   | "repair"
   | "transfer";
 type ReportPeriod = "day" | "month" | "year";
@@ -658,6 +659,7 @@ const REPORT_HUB_TABS: { id: ReportHubTab; label: string }[] = [
   { id: "sales", label: "Bán hàng" },
   { id: "inventory", label: "Kho hàng" },
   { id: "banGa", label: "Bán Gà" },
+  { id: "software", label: "Phần mềm" },
   { id: "repair", label: "Sửa chữa" },
   { id: "transfer", label: "Chuyển Khoản" },
 ];
@@ -1495,7 +1497,7 @@ export default function Home() {
     }
   }, [currentUser, activePage, softwareHubTab, saleChannel, reloadSalesFromDb, reloadBanGaSalesFromDb]);
 
-  // Báo cáo → tab Sửa chữa / Bán Gà / Tổng quan: đảm bảo có data thống kê.
+  // Báo cáo → tab Sửa chữa / Phần mềm / Bán Gà / Tổng quan: đảm bảo có data thống kê.
   useEffect(() => {
     if (!currentUser || activePage !== "dashboard") return;
     if (
@@ -1504,6 +1506,12 @@ export default function Home() {
       reportHubTab === "transfer"
     ) {
       void reloadShopRepairsFromDb();
+    }
+    if (
+      reportHubTab === "software" ||
+      reportHubTab === "overview"
+    ) {
+      void reloadSoftwareFromDb();
     }
     if (
       reportHubTab === "banGa" ||
@@ -1517,6 +1525,7 @@ export default function Home() {
     activePage,
     reportHubTab,
     reloadShopRepairsFromDb,
+    reloadSoftwareFromDb,
     reloadBanGaSalesFromDb,
   ]);
 
@@ -2666,6 +2675,83 @@ export default function Home() {
       rows,
     };
   }, [shopRepairs, matchesReportPeriod, reportYear]);
+
+  /** Tab Phần mềm — KPI + danh sách kỳ + chart năm (cùng mô hình Sửa chữa). */
+  const softwareReportStats = useMemo(() => {
+    const orderDate = (r: (typeof onlineRepairs)[number]) =>
+      toReportDateKey(r.receiveDate) ||
+      toReportDateKey(r.createdAt) ||
+      toReportDateKey(r.paymentDate);
+
+    const inPeriod = onlineRepairs
+      .filter((r) => matchesReportPeriod(orderDate(r)))
+      .slice()
+      .sort((a, b) => orderDate(b).localeCompare(orderDate(a)));
+
+    const revenue = inPeriod.reduce((sum, r) => sum + (Number(r.quote) || 0), 0);
+    const capital = inPeriod.reduce((sum, r) => sum + (Number(r.deposit) || 0), 0);
+    const profit = revenue - capital;
+    const paidRows = inPeriod.filter(
+      (r) => r.paymentStatus === "Đã thanh toán" || r.isPaid
+    );
+    const debtRows = inPeriod.filter(
+      (r) =>
+        r.paymentStatus === "NỢ DAI" ||
+        (!r.isPaid && r.paymentStatus !== "Đã thanh toán")
+    );
+    const paidCount = paidRows.length;
+    const debtCount = debtRows.length;
+    const debtAmount = debtRows.reduce((sum, r) => sum + (Number(r.quote) || 0), 0);
+    const paidAmount = paidRows.reduce((sum, r) => sum + (Number(r.quote) || 0), 0);
+
+    const yearRows = Array.from({ length: 12 }, (_, i) => ({
+      month: `Tháng ${i + 1}`,
+      revenue: 0,
+      profit: 0,
+      orders: 0,
+    }));
+    for (const r of onlineRepairs) {
+      const d = orderDate(r);
+      if (!d.startsWith(reportYear)) continue;
+      const m = Number(d.slice(5, 7)) - 1;
+      if (m < 0 || m > 11) continue;
+      const q = Number(r.quote) || 0;
+      const dep = Number(r.deposit) || 0;
+      yearRows[m].revenue += q;
+      yearRows[m].profit += q - dep;
+      yearRows[m].orders += 1;
+    }
+
+    const rows = inPeriod.map((r) => {
+      const quote = Number(r.quote) || 0;
+      const deposit = Number(r.deposit) || 0;
+      return {
+        id: r.id,
+        customerName: r.customerName || "Khách lẻ",
+        deviceName: r.deviceName || "Dịch vụ",
+        issue: r.issue || "",
+        quote,
+        deposit,
+        profit: quote - deposit,
+        paymentStatus: r.paymentStatus,
+        receiveDate: orderDate(r),
+      };
+    });
+
+    return {
+      revenue,
+      capital,
+      profit,
+      paidCount,
+      paidAmount,
+      debtCount,
+      debtAmount,
+      orderCount: inPeriod.length,
+      totalLoaded: onlineRepairs.length,
+      yearRows,
+      rows,
+    };
+  }, [onlineRepairs, matchesReportPeriod, reportYear]);
 
   function pushLog(action: string, target: string, storeId: Exclude<StoreId, "all">) {
     setLogs((prev) => [
@@ -4880,10 +4966,11 @@ export default function Home() {
               </button>
             </div>
 
-            {/* Thanh thời gian — Tổng quan / Bán hàng / Bán Gà / Sửa chữa / Chuyển khoản */}
+            {/* Thanh thời gian — Tổng quan / Bán hàng / Bán Gà / Phần mềm / Sửa chữa / Chuyển khoản */}
             {(reportHubTab === "overview" ||
               reportHubTab === "sales" ||
               reportHubTab === "banGa" ||
+              reportHubTab === "software" ||
               reportHubTab === "repair" ||
               reportHubTab === "transfer") && (
               <div className="flex flex-col gap-2 rounded-xl border border-line bg-white p-3 shadow-sm sm:flex-row sm:flex-wrap sm:items-end sm:gap-3">
@@ -5894,6 +5981,263 @@ export default function Home() {
                           dataKey="revenue"
                           name="Doanh thu"
                           fill="#8b5cf6"
+                          radius={[4, 4, 0, 0]}
+                        />
+                        <Bar
+                          yAxisId="left"
+                          dataKey="profit"
+                          name="Lợi nhuận"
+                          fill="#10b981"
+                          radius={[4, 4, 0, 0]}
+                        />
+                        <Bar
+                          yAxisId="right"
+                          dataKey="orders"
+                          name="Số đơn"
+                          fill="#f59e0b"
+                          radius={[4, 4, 0, 0]}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </section>
+              </section>
+            )}
+
+            {reportHubTab === "software" && (
+              <section className="grid gap-4">
+                <div className="rounded-lg border border-sky-100 bg-sky-50/80 p-3 text-sm font-semibold text-sky-950">
+                  Tab <strong>Phần mềm</strong> — thống kê đơn PM theo kỳ · {storeName(storeFilter)}
+                  {reportPeriod === "day"
+                    ? ` · ${reportDay}`
+                    : reportPeriod === "month"
+                      ? ` · ${inventoryReportMonth}`
+                      : ` · ${reportYear}`}
+                  . Doanh thu = báo giá · Vốn = phí DV · Lãi = báo giá − phí.
+                  {softwareLoading
+                    ? " · Đang tải đơn…"
+                    : ` · Đã tải ${softwareReportStats.totalLoaded} đơn`}
+                  {softwareBackendError ? (
+                    <span className="ml-1 text-danger"> · Lỗi: {softwareBackendError}</span>
+                  ) : null}
+                </div>
+
+                {softwareReportStats.totalLoaded === 0 && !softwareLoading ? (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">
+                    Chưa có đơn phần mềm trong phạm vi cửa hàng đang chọn. Vào menu{" "}
+                    <strong>Phần mềm</strong> tạo đơn rồi quay lại.
+                    <button
+                      type="button"
+                      onClick={() => void reloadSoftwareFromDb()}
+                      className="ml-2 font-black text-brand underline"
+                    >
+                      Tải lại
+                    </button>
+                  </div>
+                ) : null}
+
+                {softwareReportStats.totalLoaded > 0 && softwareReportStats.orderCount === 0 ? (
+                  <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-900">
+                    Có {softwareReportStats.totalLoaded} đơn đã tải nhưng{" "}
+                    <strong>không có đơn trong kỳ</strong> đang chọn
+                    {reportPeriod === "day"
+                      ? ` (ngày ${reportDay})`
+                      : reportPeriod === "month"
+                        ? ` (tháng ${inventoryReportMonth})`
+                        : ` (năm ${reportYear})`}
+                    . Đổi Ngày / Tháng / Năm phía trên để xem thống kê.
+                  </div>
+                ) : null}
+
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                  <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
+                    <p className="text-sm font-bold text-muted">Doanh thu (báo giá)</p>
+                    <strong className="mt-3 block text-3xl font-black text-amber-700">
+                      {isStatsHidden || softwareLoading
+                        ? "***"
+                        : formatMoney(softwareReportStats.revenue)}
+                    </strong>
+                    <p className="mt-1 text-xs font-semibold text-muted">
+                      {softwareReportStats.orderCount} đơn trong kỳ
+                    </p>
+                  </section>
+                  <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
+                    <p className="text-sm font-bold text-muted">Phí dịch vụ (vốn)</p>
+                    <strong className="mt-3 block text-3xl font-black text-slate-700">
+                      {isStatsHidden || softwareLoading
+                        ? "***"
+                        : formatMoney(softwareReportStats.capital)}
+                    </strong>
+                  </section>
+                  <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
+                    <p className="text-sm font-bold text-muted">Lợi nhuận</p>
+                    <strong className="mt-3 block text-3xl font-black text-emerald-700">
+                      {isStatsHidden || softwareLoading
+                        ? "***"
+                        : formatMoney(softwareReportStats.profit)}
+                    </strong>
+                    <p className="mt-1 text-xs font-semibold text-muted">Báo giá − phí DV</p>
+                  </section>
+                  <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
+                    <p className="text-sm font-bold text-muted">Thanh toán</p>
+                    <strong className="mt-3 block text-2xl font-black text-sky-800">
+                      {isStatsHidden || softwareLoading
+                        ? "***"
+                        : `${softwareReportStats.paidCount} TT · ${softwareReportStats.debtCount} nợ`}
+                    </strong>
+                    <p className="mt-1 text-xs font-semibold text-muted">
+                      Đã TT:{" "}
+                      {isStatsHidden ? "***" : formatMoney(softwareReportStats.paidAmount)}
+                      {" · "}
+                      Dư nợ:{" "}
+                      {isStatsHidden ? "***" : formatMoney(softwareReportStats.debtAmount)}
+                    </p>
+                  </section>
+                </div>
+
+                <section className="overflow-hidden rounded-xl border border-line bg-white shadow-panel">
+                  <div className="border-b border-line px-4 py-3">
+                    <h2 className="text-lg font-black text-ink">Danh sách đơn trong kỳ</h2>
+                    <p className="text-xs font-semibold text-muted">
+                      {softwareReportStats.orderCount} đơn · Báo giá · Phí · Lãi · TT
+                    </p>
+                  </div>
+                  <div className="max-h-[min(50vh,24rem)] overflow-auto">
+                    <table className="min-w-full border-collapse text-left text-sm">
+                      <thead className="sticky top-0 z-10 bg-slate-50">
+                        <tr className="border-b border-line text-xs font-black uppercase tracking-wide text-muted">
+                          <th className="whitespace-nowrap px-3 py-2.5">Ngày</th>
+                          <th className="min-w-[8rem] px-3 py-2.5">Khách · Dịch vụ</th>
+                          <th className="whitespace-nowrap px-3 py-2.5">Báo giá</th>
+                          <th className="whitespace-nowrap px-3 py-2.5">Phí DV</th>
+                          <th className="whitespace-nowrap px-3 py-2.5">Lãi</th>
+                          <th className="whitespace-nowrap px-3 py-2.5">TT</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {softwareReportStats.rows.length === 0 ? (
+                          <tr>
+                            <td
+                              colSpan={6}
+                              className="px-4 py-10 text-center text-sm font-semibold text-muted"
+                            >
+                              Không có đơn phần mềm trong kỳ đã chọn.
+                            </td>
+                          </tr>
+                        ) : (
+                          softwareReportStats.rows.map((row) => (
+                            <tr
+                              key={row.id}
+                              className="border-b border-line/80 hover:bg-slate-50/80"
+                            >
+                              <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">
+                                {row.receiveDate || "—"}
+                              </td>
+                              <td className="px-3 py-2.5">
+                                <span className="block font-bold text-sky-700">
+                                  {row.customerName}
+                                </span>
+                                <span className="block text-xs font-semibold text-muted">
+                                  {row.deviceName}
+                                  {row.issue ? ` · ${row.issue}` : ""}
+                                </span>
+                              </td>
+                              <td className="whitespace-nowrap px-3 py-2.5 font-bold tabular-nums text-ink">
+                                {isStatsHidden ? "***" : formatMoney(row.quote)}
+                              </td>
+                              <td className="whitespace-nowrap px-3 py-2.5 font-semibold tabular-nums text-slate-700">
+                                {isStatsHidden ? "***" : formatMoney(row.deposit)}
+                              </td>
+                              <td className="whitespace-nowrap px-3 py-2.5 font-black tabular-nums text-amber-700">
+                                {isStatsHidden ? "***" : formatMoney(row.profit)}
+                              </td>
+                              <td className="whitespace-nowrap px-3 py-2.5">
+                                <span
+                                  className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${
+                                    row.paymentStatus === "Đã thanh toán"
+                                      ? "bg-emerald-50 text-emerald-700"
+                                      : "bg-red-50 text-red-600"
+                                  }`}
+                                >
+                                  {row.paymentStatus === "Đã thanh toán" ? "Đã TT" : "Nợ"}
+                                </span>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <section className="rounded-lg border border-line bg-white p-5 shadow-panel">
+                  <div className="mb-6">
+                    <h2 className="text-xl font-black">Biểu đồ năm {reportYear} — Phần mềm</h2>
+                    <p className="text-sm font-semibold text-muted">
+                      Doanh thu (báo giá), lợi nhuận và số đơn theo tháng (cả năm, không phụ thuộc
+                      bộ lọc Ngày/Tháng)
+                    </p>
+                  </div>
+                  <div className="h-[400px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={softwareReportStats.yearRows}
+                        margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                        <XAxis
+                          dataKey="month"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: "#64748b", fontSize: 12, fontWeight: 600 }}
+                          dy={10}
+                        />
+                        <YAxis
+                          yAxisId="left"
+                          orientation="left"
+                          stroke="#1e293b"
+                          axisLine={false}
+                          tickLine={false}
+                          tickFormatter={(val) =>
+                            Number(val) >= 1_000_000
+                              ? `${Number(val) / 1_000_000}M`
+                              : `${Number(val) / 1000}k`
+                          }
+                          tick={{ fill: "#64748b", fontSize: 12, fontWeight: 600 }}
+                          dx={-10}
+                        />
+                        <YAxis
+                          yAxisId="right"
+                          orientation="right"
+                          stroke="#0284c7"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: "#64748b", fontSize: 12, fontWeight: 600 }}
+                          dx={10}
+                        />
+                        <Tooltip
+                          cursor={{ fill: "#f1f5f9" }}
+                          contentStyle={{
+                            borderRadius: "8px",
+                            border: "1px solid #e2e8f0",
+                            boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
+                            fontWeight: "bold",
+                          }}
+                          formatter={(value: any, name: any) => {
+                            if (name === "Doanh thu" || name === "Lợi nhuận")
+                              return [formatMoney(value as number), name];
+                            return [value, name];
+                          }}
+                        />
+                        <Legend
+                          iconType="circle"
+                          wrapperStyle={{ paddingTop: "20px", fontWeight: "bold" }}
+                        />
+                        <Bar
+                          yAxisId="left"
+                          dataKey="revenue"
+                          name="Doanh thu"
+                          fill="#0ea5e9"
                           radius={[4, 4, 0, 0]}
                         />
                         <Bar
