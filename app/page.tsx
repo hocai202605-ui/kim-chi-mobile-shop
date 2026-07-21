@@ -489,16 +489,17 @@ function uniquePartLabels(values: string[]): string[] {
 
 /**
  * UI Sửa chữa (menu `software`) — load/ghi Postgres qua /api/repairs.
- * Shape = OnlineRepair + tình trạng / bảo hành / IMEI / SĐT-Pass.
+ * Shape = OnlineRepair + tình trạng / bảo hành.
+ * imei / phoneOrPass: legacy DB — UI form/grid/chi tiết đã bỏ.
  */
 type ShopRepairOrder = OnlineRepair & {
   /** Tình trạng máy khi tiếp nhận / ghi nhận. */
   condition: string;
   /** Thời hạn / ghi chú bảo hành. */
   warranty: string;
-  /** IMEI (tùy chọn). */
+  /** Legacy — UI không còn nhập. */
   imei: string;
-  /** SĐT khách / mật khẩu máy (free text, tùy chọn). */
+  /** Legacy — UI không còn nhập. */
   phoneOrPass: string;
   /** Hình thức TT: Tiền mặt | Chuyển khoản. */
   paymentMethod?: "Tiền mặt" | "Chuyển khoản";
@@ -3324,7 +3325,7 @@ export default function Home() {
     const source = shopRepairs.find((item) => item.id === id);
     if (!source) return;
     const ok = window.confirm(
-      `Nhân bản đơn sửa "${source.customerName} — ${source.deviceName}"?\n\nForm sẽ điền sẵn. Giờ nhận = hiện tại; thanh toán = NỢ DAI.`
+      `Nhân bản đơn sửa "${source.customerName} — ${source.deviceName}"?\n\nForm sẽ điền sẵn. Giờ nhận = hiện tại; thanh toán = Đã thanh toán.`
     );
     if (!ok) return;
     setEditingShopRepairId(null);
@@ -3333,9 +3334,9 @@ export default function Home() {
       id: "",
       receiveDate: vnNowDateTimeLocal(),
       completeDate: "",
-      paymentDate: "",
-      paymentStatus: "NỢ DAI",
-      isPaid: false,
+      paymentDate: vnNowDateTimeLocal(),
+      paymentStatus: "Đã thanh toán",
+      isPaid: true,
       rewardPoints: 0,
     });
     setCloneShopRepairFormKey((k) => k + 1);
@@ -3452,8 +3453,9 @@ export default function Home() {
       deviceName: String(form.get("deviceName") || "").trim() || "Máy",
       condition: String(form.get("condition") || "").trim(),
       warranty: String(form.get("warranty") || "").trim(),
-      imei: String(form.get("imei") || "").trim(),
-      phoneOrPass: String(form.get("phoneOrPass") || "").trim(),
+      // UI đã bỏ IMEI / SĐT-Pass — đơn mới để trống; sửa đơn giữ giá trị cũ nếu có.
+      imei: isEdit && existing ? existing.imei || "" : "",
+      phoneOrPass: isEdit && existing ? existing.phoneOrPass || "" : "",
       issue: existing?.issue ?? draft?.issue ?? "",
       quote,
       deposit,
@@ -8144,7 +8146,7 @@ export default function Home() {
                 sourceId: r.id,
                 storeId: (currentUser?.storeId ?? "store-1") as Exclude<StoreId, "all">,
                 customerName: r.customerName,
-                customerPhone: r.phoneOrPass || "",
+                customerPhone: "",
                 title: r.deviceName,
                 amount,
                 debtDate: (r.receiveDate || r.createdAt || "").slice(0, 10),
@@ -8946,10 +8948,9 @@ export default function Home() {
                 r.deviceName,
                 r.condition,
                 r.warranty,
-                r.imei,
-                r.phoneOrPass,
                 r.issue,
                 r.paymentStatus,
+                r.paymentMethod,
               ]
                 .filter(Boolean)
                 .join(" ")
@@ -9140,29 +9141,6 @@ export default function Home() {
                   />
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="IMEI">
-                    <input
-                      name="imei"
-                      type="text"
-                      inputMode="numeric"
-                      autoComplete="off"
-                      placeholder="Không bắt buộc"
-                      defaultValue={formDefaults?.imei ?? ""}
-                      className="h-10 w-full rounded-lg border border-line bg-white px-3 font-semibold text-slate-800 outline-none focus:border-brand"
-                    />
-                  </Field>
-                  <Field label="SĐT / Pass">
-                    <input
-                      name="phoneOrPass"
-                      type="text"
-                      autoComplete="off"
-                      placeholder="SĐT hoặc mật khẩu máy"
-                      defaultValue={formDefaults?.phoneOrPass ?? ""}
-                      className="h-10 w-full rounded-lg border border-line bg-white px-3 font-semibold text-slate-800 outline-none focus:border-brand"
-                    />
-                  </Field>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
                   <ManageableSelect
                     label="Báo giá"
                     name="quote"
@@ -9261,11 +9239,11 @@ export default function Home() {
                     <select
                       name="paymentStatus"
                       required
-                      defaultValue={formDefaults?.paymentStatus ?? "NỢ DAI"}
+                      defaultValue={formDefaults?.paymentStatus ?? "Đã thanh toán"}
                       className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
                     >
-                      <option value="NỢ DAI">NỢ DAI</option>
                       <option value="Đã thanh toán">Đã thanh toán</option>
+                      <option value="NỢ DAI">NỢ DAI</option>
                     </select>
                   </Field>
                 </div>
@@ -9752,16 +9730,6 @@ export default function Home() {
                       <Field label="Tên máy">
                         <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-semibold text-slate-800">
                           {viewingShopRepair.deviceName}
-                        </div>
-                      </Field>
-                      <Field label="IMEI">
-                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-mono text-sm font-semibold text-slate-800">
-                          {viewingShopRepair.imei?.trim() || "—"}
-                        </div>
-                      </Field>
-                      <Field label="SĐT / Pass">
-                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-semibold text-slate-800">
-                          {viewingShopRepair.phoneOrPass?.trim() || "—"}
                         </div>
                       </Field>
                       <Field label="Tình trạng">

@@ -66,7 +66,8 @@ export async function GET(req: NextRequest) {
   try {
     const channelRaw = req.nextUrl.searchParams.get("channel");
     const channel = channelRaw === "ban_ga" ? "ban_ga" : "retail";
-    const data = await repoListRecentSales(100, channel);
+    // Đủ rộng cho KPI tháng trên màn Bán hàng (cộng client-side từ list).
+    const data = await repoListRecentSales(2000, channel);
     return NextResponse.json({ data });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Lỗi tải phiếu bán";

@@ -1514,7 +1514,7 @@ export async function repoGetSale(saleId: string): Promise<SaleDetail> {
 }
 
 /** Recent sales (completed + cancelled) for UI list. */
-export async function repoListRecentSales(limit = 80, channel: SaleChannel = "retail"): Promise<CreatedSale[]> {
+export async function repoListRecentSales(limit = 2000, channel: SaleChannel = "retail"): Promise<CreatedSale[]> {
   const { idToCode } = await loadStoreMaps();
   const { rows } = await getPool().query(
     `select s.id, s.sold_at, s.store_id, s.total_amount, s.total_cost, s.total_profit, s.payment_method, s.status, s.channel,
@@ -1800,13 +1800,27 @@ export async function repoReportMonthly(yearMonth: string, storeCode?: StoreId) 
     storeId = codeToId.get(storeCode) ?? null;
   }
 
+  // Doanh thu / lãi: aggregate từ `sales` (1 lần / phiếu).
+  // Số máy: subquery `sale_items` — tránh join phình total_amount theo số dòng.
   const { rows } = await pool.query(
     `select
-      coalesce(sum(case when si.item_type = 'phone' then si.quantity else 0 end), 0)::bigint as sold_phones,
+      coalesce(
+        (
+          select sum(si.quantity)::bigint
+          from public.sale_items si
+          inner join public.sales s2 on s2.id = si.sale_id
+          where si.item_type = 'phone'
+            and si.sale_status = 'completed'
+            and s2.status = 'completed'
+            and s2.channel = 'retail'
+            and to_char(s2.sold_at, 'YYYY-MM') = $1
+            and ($2::uuid is null or s2.store_id = $2)
+        ),
+        0
+      ) as sold_phones,
       coalesce(sum(s.total_amount), 0)::bigint as revenue,
       coalesce(sum(s.total_profit), 0)::bigint as profit
      from public.sales s
-     left join public.sale_items si on si.sale_id = s.id and si.sale_status = 'completed'
      where s.status = 'completed'
        and s.channel = 'retail'
        and to_char(s.sold_at, 'YYYY-MM') = $1
@@ -1829,15 +1843,28 @@ export async function repoReportYearly(year: number, storeCode?: StoreId) {
     storeId = codeToId.get(storeCode) ?? null;
   }
 
+  // Tách sales vs sale_items — không join rồi sum(total_amount) (sẽ nhân theo số dòng).
   const { rows } = await pool.query(
     `with months as (select generate_series(1, 12) as month),
-     agg as (
+     sales_agg as (
        select extract(month from s.sold_at)::int as month,
          coalesce(sum(s.total_amount), 0)::bigint as revenue,
-         coalesce(sum(s.total_profit), 0)::bigint as profit,
-         coalesce(sum(case when si.item_type = 'phone' then si.quantity else 0 end), 0)::bigint as sold
+         coalesce(sum(s.total_profit), 0)::bigint as profit
        from public.sales s
-       left join public.sale_items si on si.sale_id = s.id and si.sale_status = 'completed'
+       where s.status = 'completed'
+         and s.channel = 'retail'
+         and extract(year from s.sold_at) = $1
+         and ($2::uuid is null or s.store_id = $2)
+       group by 1
+     ),
+     phones_agg as (
+       select extract(month from s.sold_at)::int as month,
+         coalesce(sum(si.quantity), 0)::bigint as sold
+       from public.sales s
+       inner join public.sale_items si
+         on si.sale_id = s.id
+        and si.sale_status = 'completed'
+        and si.item_type = 'phone'
        where s.status = 'completed'
          and s.channel = 'retail'
          and extract(year from s.sold_at) = $1
@@ -1845,11 +1872,12 @@ export async function repoReportYearly(year: number, storeCode?: StoreId) {
        group by 1
      )
      select m.month,
-       coalesce(a.revenue, 0)::bigint as revenue,
-       coalesce(a.profit, 0)::bigint as profit,
-       coalesce(a.sold, 0)::bigint as sold
+       coalesce(sa.revenue, 0)::bigint as revenue,
+       coalesce(sa.profit, 0)::bigint as profit,
+       coalesce(pa.sold, 0)::bigint as sold
      from months m
-     left join agg a on a.month = m.month
+     left join sales_agg sa on sa.month = m.month
+     left join phones_agg pa on pa.month = m.month
      order by m.month`,
     [year, storeId]
   );
