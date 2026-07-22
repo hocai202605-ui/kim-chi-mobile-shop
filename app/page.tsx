@@ -5388,100 +5388,6 @@ export default function Home() {
                       }. Kho = snapshot tồn; Bán/Bán Gà/PM/Sửa = theo kỳ đã chọn.`}
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 lg:grid-cols-3 xl:grid-cols-5">
-                  <OverviewModuleCard
-                    title="Kho hàng"
-                    icon={<Boxes size={16} />}
-                    theme={{
-                      card: "border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50/80",
-                      icon: "bg-amber-100 text-amber-800 ring-1 ring-amber-200",
-                      title: "text-amber-900",
-                    }}
-                    lines={[
-                      `Tổng ĐT đã bán: ${overviewModules.kho.phonesSold}`,
-                      `Tổng ĐT còn: ${overviewModules.kho.phonesInStock}`,
-                      `Tổng ĐT chưa xử lý: ${overviewModules.kho.phonesPending}`,
-                    ]}
-                    revenue={formatMoney(overviewModules.kho.revenue)}
-                    capital={formatMoney(overviewModules.kho.capital)}
-                    profit={formatMoney(overviewModules.kho.profit)}
-                    revenueLabel="Doanh thu tạm tính"
-                    capitalLabel="Chi phí vốn"
-                    profitLabel="Lãi tạm tính"
-                    hideMoney={isStatsHidden}
-                  />
-                  <OverviewModuleCard
-                    title="Bán hàng"
-                    icon={<ReceiptText size={16} />}
-                    theme={{
-                      card: "border-emerald-200 bg-gradient-to-br from-emerald-50 to-teal-50/80",
-                      icon: "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200",
-                      title: "text-emerald-900",
-                    }}
-                    lines={[
-                      `Máy bán kỳ: ${overviewModules.banHang.soldPhones}`,
-                      `Phụ kiện bán kỳ: ${overviewModules.banHang.soldAccessories}`,
-                      `Tổng phiếu: ${overviewModules.banHang.saleCount}`,
-                    ]}
-                    revenue={formatMoney(overviewModules.banHang.revenue)}
-                    capital={formatMoney(overviewModules.banHang.capital)}
-                    profit={formatMoney(overviewModules.banHang.profit)}
-                    hideMoney={isStatsHidden}
-                  />
-                  <OverviewModuleCard
-                    title="Bán Gà"
-                    icon={<ShoppingCart size={16} />}
-                    theme={{
-                      card: "border-fuchsia-200 bg-gradient-to-br from-fuchsia-50 to-pink-50/80",
-                      icon: "bg-fuchsia-100 text-fuchsia-800 ring-1 ring-fuchsia-200",
-                      title: "text-fuchsia-900",
-                    }}
-                    lines={[
-                      `Máy bán kỳ: ${overviewModules.banGa.soldPhones}`,
-                      `Phụ kiện bán kỳ: ${overviewModules.banGa.soldAccessories}`,
-                      `Tổng phiếu: ${overviewModules.banGa.saleCount}`,
-                    ]}
-                    revenue={formatMoney(overviewModules.banGa.revenue)}
-                    capital={formatMoney(overviewModules.banGa.capital)}
-                    profit={formatMoney(overviewModules.banGa.profit)}
-                    hideMoney={isStatsHidden}
-                  />
-                  <OverviewModuleCard
-                    title="Phần mềm"
-                    icon={<Terminal size={16} />}
-                    theme={{
-                      card: "border-sky-200 bg-gradient-to-br from-sky-50 to-blue-50/80",
-                      icon: "bg-sky-100 text-sky-800 ring-1 ring-sky-200",
-                      title: "text-sky-900",
-                    }}
-                    lines={[
-                      `HĐ đã thanh toán: ${overviewModules.phanMem.paidCount}`,
-                      `HĐ còn nợ: ${overviewModules.phanMem.debtCount}`,
-                    ]}
-                    revenue={formatMoney(overviewModules.phanMem.revenue)}
-                    capital={formatMoney(overviewModules.phanMem.capital)}
-                    profit={formatMoney(overviewModules.phanMem.profit)}
-                    hideMoney={isStatsHidden}
-                  />
-                  <OverviewModuleCard
-                    title="Sửa chữa"
-                    icon={<Wrench size={16} />}
-                    theme={{
-                      card: "border-violet-200 bg-gradient-to-br from-violet-50 to-fuchsia-50/80",
-                      icon: "bg-violet-100 text-violet-800 ring-1 ring-violet-200",
-                      title: "text-violet-900",
-                    }}
-                    lines={[
-                      `HĐ đã thanh toán: ${overviewModules.suaChua.paidCount}`,
-                      `HĐ còn nợ: ${overviewModules.suaChua.debtCount}`,
-                    ]}
-                    revenue={formatMoney(overviewModules.suaChua.revenue)}
-                    capital={formatMoney(overviewModules.suaChua.capital)}
-                    profit={formatMoney(overviewModules.suaChua.profit)}
-                    hideMoney={isStatsHidden}
-                  />
-                </div>
-
                 {/* Biểu đồ cột: Chồng (PM) vs Vợ (Sửa + Bán + Gà) + cảnh báo / vinh danh */}
                 <section className="rounded-xl border border-line bg-white p-4 shadow-panel">
                   <div className="mb-4">
@@ -5681,6 +5587,100 @@ export default function Home() {
                     })}
                   </div>
                 </section>
+
+                <div className="grid grid-cols-2 gap-2 lg:grid-cols-3 xl:grid-cols-5">
+                  <OverviewModuleCard
+                    title="Kho hàng"
+                    icon={<Boxes size={16} />}
+                    theme={{
+                      card: "border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50/80",
+                      icon: "bg-amber-100 text-amber-800 ring-1 ring-amber-200",
+                      title: "text-amber-900",
+                    }}
+                    lines={[
+                      `Tổng ĐT đã bán: ${overviewModules.kho.phonesSold}`,
+                      `Tổng ĐT còn: ${overviewModules.kho.phonesInStock}`,
+                      `Tổng ĐT chưa xử lý: ${overviewModules.kho.phonesPending}`,
+                    ]}
+                    revenue={formatMoney(overviewModules.kho.revenue)}
+                    capital={formatMoney(overviewModules.kho.capital)}
+                    profit={formatMoney(overviewModules.kho.profit)}
+                    revenueLabel="Doanh thu tạm tính"
+                    capitalLabel="Chi phí vốn"
+                    profitLabel="Lãi tạm tính"
+                    hideMoney={isStatsHidden}
+                  />
+                  <OverviewModuleCard
+                    title="Bán hàng"
+                    icon={<ReceiptText size={16} />}
+                    theme={{
+                      card: "border-emerald-200 bg-gradient-to-br from-emerald-50 to-teal-50/80",
+                      icon: "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200",
+                      title: "text-emerald-900",
+                    }}
+                    lines={[
+                      `Máy bán kỳ: ${overviewModules.banHang.soldPhones}`,
+                      `Phụ kiện bán kỳ: ${overviewModules.banHang.soldAccessories}`,
+                      `Tổng phiếu: ${overviewModules.banHang.saleCount}`,
+                    ]}
+                    revenue={formatMoney(overviewModules.banHang.revenue)}
+                    capital={formatMoney(overviewModules.banHang.capital)}
+                    profit={formatMoney(overviewModules.banHang.profit)}
+                    hideMoney={isStatsHidden}
+                  />
+                  <OverviewModuleCard
+                    title="Bán Gà"
+                    icon={<ShoppingCart size={16} />}
+                    theme={{
+                      card: "border-fuchsia-200 bg-gradient-to-br from-fuchsia-50 to-pink-50/80",
+                      icon: "bg-fuchsia-100 text-fuchsia-800 ring-1 ring-fuchsia-200",
+                      title: "text-fuchsia-900",
+                    }}
+                    lines={[
+                      `Máy bán kỳ: ${overviewModules.banGa.soldPhones}`,
+                      `Phụ kiện bán kỳ: ${overviewModules.banGa.soldAccessories}`,
+                      `Tổng phiếu: ${overviewModules.banGa.saleCount}`,
+                    ]}
+                    revenue={formatMoney(overviewModules.banGa.revenue)}
+                    capital={formatMoney(overviewModules.banGa.capital)}
+                    profit={formatMoney(overviewModules.banGa.profit)}
+                    hideMoney={isStatsHidden}
+                  />
+                  <OverviewModuleCard
+                    title="Phần mềm"
+                    icon={<Terminal size={16} />}
+                    theme={{
+                      card: "border-sky-200 bg-gradient-to-br from-sky-50 to-blue-50/80",
+                      icon: "bg-sky-100 text-sky-800 ring-1 ring-sky-200",
+                      title: "text-sky-900",
+                    }}
+                    lines={[
+                      `HĐ đã thanh toán: ${overviewModules.phanMem.paidCount}`,
+                      `HĐ còn nợ: ${overviewModules.phanMem.debtCount}`,
+                    ]}
+                    revenue={formatMoney(overviewModules.phanMem.revenue)}
+                    capital={formatMoney(overviewModules.phanMem.capital)}
+                    profit={formatMoney(overviewModules.phanMem.profit)}
+                    hideMoney={isStatsHidden}
+                  />
+                  <OverviewModuleCard
+                    title="Sửa chữa"
+                    icon={<Wrench size={16} />}
+                    theme={{
+                      card: "border-violet-200 bg-gradient-to-br from-violet-50 to-fuchsia-50/80",
+                      icon: "bg-violet-100 text-violet-800 ring-1 ring-violet-200",
+                      title: "text-violet-900",
+                    }}
+                    lines={[
+                      `HĐ đã thanh toán: ${overviewModules.suaChua.paidCount}`,
+                      `HĐ còn nợ: ${overviewModules.suaChua.debtCount}`,
+                    ]}
+                    revenue={formatMoney(overviewModules.suaChua.revenue)}
+                    capital={formatMoney(overviewModules.suaChua.capital)}
+                    profit={formatMoney(overviewModules.suaChua.profit)}
+                    hideMoney={isStatsHidden}
+                  />
+                </div>
               </div>
             )}
 
