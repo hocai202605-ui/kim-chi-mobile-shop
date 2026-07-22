@@ -104,11 +104,13 @@ export async function repoListPartInbounds(
   const store =
     storeCode && storeCode !== "all" ? String(storeCode).trim() : null;
 
+  // Sort chính trên UI; DB chỉ ưu tiên created_at (ổn định, tránh lỗi cột/nulls).
   if (!store) {
     const { rows } = await getPool().query<DbRow>(
       `select *
        from public.part_inbounds
-       order by created_at desc, id desc`
+       order by created_at desc, id desc
+       limit 5000`
     );
     return rows.map((r) => mapRow(r, idToCode));
   }
@@ -120,7 +122,8 @@ export async function repoListPartInbounds(
     `select *
      from public.part_inbounds
      where store_id = $1::uuid
-     order by created_at desc, id desc`,
+     order by created_at desc, id desc
+     limit 5000`,
     [storeUuid]
   );
   return rows.map((r) => mapRow(r, idToCode));

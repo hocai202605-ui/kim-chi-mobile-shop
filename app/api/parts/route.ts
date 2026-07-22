@@ -8,35 +8,44 @@ import {
 
 export const dynamic = "force-dynamic";
 
-/** Staff khóa CH gán; thiếu actor+store → [] không dump full. */
+/** Staff khóa CH gán; thiếu actor → lỗi (không trả [] im lặng). Owner store=all → full. */
 async function resolveListStore(
   storeParam: string | null,
   actorParam: string | null
-): Promise<{ store: string | null; deny: boolean }> {
+): Promise<{ store: string | null; error?: string }> {
   const actor = String(actorParam || "").trim();
   const storeRaw = String(storeParam || "").trim();
   const storeScoped = storeRaw && storeRaw !== "all" ? storeRaw : null;
 
   if (actor) {
     const acc = await repoGetAccountByUsername(actor);
-    if (!acc) return { store: null, deny: true };
-    if (acc.role === "staff") {
-      return { store: acc.storeId, deny: false };
+    if (!acc) {
+      return { store: null, error: `Không tìm thấy tài khoản «${actor}».` };
     }
-    return { store: storeScoped, deny: false };
+    if (acc.role === "staff") {
+      if (!acc.storeId) {
+        return { store: null, error: "Tài khoản staff thiếu cửa hàng gán." };
+      }
+      return { store: acc.storeId };
+    }
+    // owner: all | store-1|2|3
+    return { store: storeScoped };
   }
 
-  if (!storeScoped) return { store: null, deny: true };
-  return { store: storeScoped, deny: false };
+  // Không có actor: chỉ cho phép khi đã scope store (tránh dump full)
+  if (!storeScoped) {
+    return { store: null, error: "Thiếu actor hoặc store khi tải phiếu nhập." };
+  }
+  return { store: storeScoped };
 }
 
 export async function GET(req: NextRequest) {
   try {
     const storeParam = req.nextUrl.searchParams.get("store");
     const actorParam = req.nextUrl.searchParams.get("actor");
-    const { store, deny } = await resolveListStore(storeParam, actorParam);
-    if (deny) {
-      return NextResponse.json({ data: [] });
+    const { store, error } = await resolveListStore(storeParam, actorParam);
+    if (error) {
+      return NextResponse.json({ error }, { status: 400 });
     }
     const rows = await repoListPartInbounds(store);
     return NextResponse.json({ data: rows });

@@ -1148,6 +1148,11 @@ export default function Home() {
   const [partDistributorFilter, setPartDistributorFilter] = useState("all");
   /** Lọc grid theo loại linh kiện (`all` = mọi loại). */
   const [partTypeFilter, setPartTypeFilter] = useState("all");
+  /** Phân trang danh sách nhập hàng. */
+  const [partPage, setPartPage] = useState(1);
+  const partPageSize = 10;
+  /** Chọn nhiều phiếu nhập để xóa hàng loạt. */
+  const [selectedPartIds, setSelectedPartIds] = useState<string[]>([]);
   /** Form chỉ hiện khi bấm «Nhập hàng» / «Sửa». */
   const [isPartFormOpen, setIsPartFormOpen] = useState(false);
   const [editingPartId, setEditingPartId] = useState<string | null>(null);
@@ -1392,8 +1397,10 @@ export default function Home() {
       const rows = await apiListPartInbounds(scope, currentUser.username);
       const list = Array.isArray(rows) ? rows : [];
       setPartInbounds(list);
+      setPartPage(1);
+      setSelectedPartIds((prev) => prev.filter((id) => list.some((p) => p.id === id)));
     } catch (err) {
-      setPartInbounds([]);
+      // Giữ list cũ nếu đang có — tránh grid trống sau khi lưu thành công nhưng reload fail.
       setPartBackendError(toUiError(err));
     } finally {
       setPartLoading(false);
@@ -1558,6 +1565,12 @@ export default function Home() {
     reloadBanGaSalesFromDb,
     reloadCustomersFromDb,
   ]);
+
+  // Vào menu Nhập hàng → tải lại (tránh grid trống nếu boot fail / timeout).
+  useEffect(() => {
+    if (!currentUser || activePage !== "parts") return;
+    void reloadPartsFromDb();
+  }, [currentUser, activePage, reloadPartsFromDb]);
 
   useEffect(() => {
     return () => {
@@ -2812,6 +2825,26 @@ export default function Home() {
     setIsPartFormOpen(true);
   }
 
+  /** Nhân bản: form điền sẵn, lưu = phiếu mới (không gắn id cũ). */
+  function openClonePartInboundForm(id: string) {
+    const row = partInbounds.find((p) => p.id === id);
+    if (!row) return;
+    const ok = window.confirm(
+      `Nhân bản phiếu «${row.partName}»?\n\nForm sẽ điền sẵn thông tin. Lưu = tạo phiếu nhập mới.`
+    );
+    if (!ok) return;
+    setEditingPartId(null);
+    setPartDistributor(row.distributor);
+    setPartType(row.partType);
+    setPartBrand(row.brand || "");
+    setPartColor(row.color || "");
+    setPartName(row.partName);
+    setPartQuantity(String(row.quantity > 0 ? row.quantity : 1));
+    setPartFormKey((k) => k + 1);
+    setPartCascadeKey((k) => k + 1);
+    setIsPartFormOpen(true);
+  }
+
   /** Chọn NPP — chỉ ghi NPP; không auto-fill loại / hãng / màu / tên. */
   function applyPartDistributorCascade(name: string) {
     setPartDistributor(name);
@@ -2873,7 +2906,25 @@ export default function Home() {
         quantity,
         actorUsername: currentUser.username,
       });
-      await reloadPartsFromDb();
+      // Optimistic: hiện ngay trên grid (DB đã lưu), không phụ thuộc reload.
+      setPartInbounds((prev) => {
+        const next: PartInbound = {
+          id: saved.id,
+          createdAt: saved.createdAt,
+          storeId: saved.storeId,
+          distributor: saved.distributor,
+          partType: saved.partType,
+          partName: saved.partName,
+          brand: saved.brand || "",
+          color: saved.color || "",
+          quantity: saved.quantity,
+        };
+        if (isEdit) {
+          return prev.map((p) => (p.id === next.id ? next : p));
+        }
+        return [next, ...prev.filter((p) => p.id !== next.id)];
+      });
+      setPartPage(1);
       pushLog(
         isEdit ? "Sửa phiếu nhập hàng" : "Nhập hàng",
         `${saved.partType} — ${saved.brand ? `${saved.brand} · ` : ""}${saved.partName}${saved.color ? ` · ${saved.color}` : ""} ×${saved.quantity} (${saved.distributor})`,
@@ -2886,6 +2937,8 @@ export default function Home() {
           : `Đã lưu phiếu nhập «${saved.partName}».`
       );
       closePartInboundForm();
+      // Đồng bộ nền — lỗi không xóa list
+      void reloadPartsFromDb();
     } catch (err) {
       const msg = toUiError(err);
       setPartBackendError(msg);
@@ -2910,17 +2963,86 @@ export default function Home() {
     setPartBackendError("");
     try {
       await apiDeletePartInbound(id);
-      await reloadPartsFromDb();
+      setPartInbounds((prev) => prev.filter((p) => p.id !== id));
+      setSelectedPartIds((prev) => prev.filter((x) => x !== id));
       pushLog(
         "Xóa phiếu nhập hàng",
         `${row.partType} — ${row.partName} ×${row.quantity}`,
         row.storeId
       );
       showUiToast("success", `Đã xóa phiếu «${row.partName}».`);
+      void reloadPartsFromDb();
     } catch (err) {
       const msg = toUiError(err);
       setPartBackendError(msg);
       showUiToast("error", `Xóa phiếu nhập thất bại: ${msg}`);
+    } finally {
+      setPartSaving(false);
+    }
+  }
+
+  /** Xóa hàng loạt phiếu nhập đã chọn — bắt buộc confirm. */
+  async function deleteSelectedPartInbounds() {
+    if (partSaving || !currentUser) return;
+    const selectedSet = new Set(selectedPartIds);
+    const toDelete = partInbounds.filter((p) => selectedSet.has(p.id));
+    if (!toDelete.length) {
+      showUiToast("error", "Chưa chọn phiếu nhập nào để xóa.");
+      return;
+    }
+    const preview = toDelete
+      .slice(0, 5)
+      .map((p) => `• ${p.partName} ×${p.quantity}`)
+      .join("\n");
+    const more =
+      toDelete.length > 5 ? `\n… và ${toDelete.length - 5} phiếu khác` : "";
+    if (
+      !window.confirm(
+        `Xóa ${toDelete.length} phiếu nhập đã chọn?\n\n${preview}${more}\n\nThao tác xóa hẳn, không hoàn tác.`
+      )
+    ) {
+      return;
+    }
+    if (editingPartId && selectedSet.has(editingPartId)) {
+      closePartInboundForm();
+    }
+    setPartSaving(true);
+    setPartBackendError("");
+    const successIds: string[] = [];
+    const failedNames: string[] = [];
+    try {
+      // Tuần tự — pool DB max=1
+      for (const row of toDelete) {
+        try {
+          await apiDeletePartInbound(row.id);
+          successIds.push(row.id);
+        } catch (err) {
+          failedNames.push(row.partName || row.id);
+          console.warn("delete part", row.id, err);
+        }
+      }
+      if (successIds.length) {
+        const gone = new Set(successIds);
+        setPartInbounds((prev) => prev.filter((p) => !gone.has(p.id)));
+        setSelectedPartIds((prev) => prev.filter((id) => !gone.has(id)));
+        pushLog(
+          "Xóa hàng loạt phiếu nhập",
+          `${successIds.length} phiếu`,
+          storeFilter === "all" ? currentUser.storeId : storeFilter
+        );
+      }
+      if (failedNames.length === 0) {
+        showUiToast("success", `Đã xóa ${successIds.length} phiếu nhập.`);
+      } else if (successIds.length === 0) {
+        showUiToast("error", `Xóa thất bại: ${failedNames.slice(0, 3).join(", ")}`);
+        setPartBackendError(`Xóa thất bại ${failedNames.length} phiếu.`);
+      } else {
+        showUiToast(
+          "error",
+          `Đã xóa ${successIds.length}; lỗi ${failedNames.length}: ${failedNames.slice(0, 2).join(", ")}`
+        );
+      }
+      void reloadPartsFromDb();
     } finally {
       setPartSaving(false);
     }
@@ -6529,6 +6651,9 @@ export default function Home() {
               return hay.includes(q);
             })
             .sort((a, b) => {
+              // Grid: createdAt → nhà phân phối → loại → hãng
+              const byDate = b.createdAt.localeCompare(a.createdAt);
+              if (byDate !== 0) return byDate;
               const byDist = a.distributor.localeCompare(b.distributor, "vi", {
                 sensitivity: "base",
               });
@@ -6537,12 +6662,24 @@ export default function Home() {
                 sensitivity: "base",
               });
               if (byType !== 0) return byType;
-              return (
-                b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)
-              );
+              const byBrand = (a.brand || "").localeCompare(b.brand || "", "vi", {
+                sensitivity: "base",
+              });
+              if (byBrand !== 0) return byBrand;
+              return b.id.localeCompare(a.id);
             });
           const activeCount = list.length;
           const totalQty = list.reduce((s, p) => s + p.quantity, 0);
+          const partTotalPages = Math.max(1, Math.ceil(activeCount / partPageSize));
+          const safePartPage = Math.min(partPage, partTotalPages);
+          const partStart = (safePartPage - 1) * partPageSize;
+          const pagedList = list.slice(partStart, partStart + partPageSize);
+          const pageIds = pagedList.map((r) => r.id);
+          const allPageSelected =
+            pageIds.length > 0 && pageIds.every((id) => selectedPartIds.includes(id));
+          const selectedVisibleCount = list.filter((r) =>
+            selectedPartIds.includes(r.id)
+          ).length;
           const isEditMode = Boolean(editingPartId);
 
           return (
@@ -6555,8 +6692,15 @@ export default function Home() {
                   <div>
                     <h2 className="text-xl font-black text-ink">Nhập hàng</h2>
                     <p className="text-sm font-semibold text-muted">
-                      {storeName(storeFilter)} · {activeCount} phiếu / {totalQty} cái
+                      {storeName(storeFilter)} · {activeCount.toLocaleString("vi-VN")} phiếu /{" "}
+                      {totalQty.toLocaleString("vi-VN")} cái
+                      {partInbounds.length > 0 && activeCount === 0
+                        ? " · (lọc đang ẩn hết — chọn Tất cả NPP/loại)"
+                        : ""}
                       {partLoading ? " · Đang tải…" : ""}
+                      {!partLoading && partInbounds.length === 0 && !partBackendError
+                        ? " · Chưa có dữ liệu"
+                        : ""}
                     </p>
                   </div>
                 </div>
@@ -6794,7 +6938,8 @@ export default function Home() {
                   <div>
                     <h3 className="text-lg font-black text-ink">Danh sách nhập</h3>
                     <p className="text-xs font-semibold text-muted">
-                      Sắp xếp NPP → loại · lọc NPP / loại / tìm nhanh
+                      Sắp xếp ngày → NPP → loại → hãng · {activeCount.toLocaleString("vi-VN")} bản ghi
+                      · trang {safePartPage}/{partTotalPages}
                     </p>
                   </div>
                   <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
@@ -6807,6 +6952,8 @@ export default function Home() {
                         onChange={(e) => {
                           setPartDistributorFilter(e.target.value);
                           setPartTypeFilter("all");
+                          setPartPage(1);
+                          setSelectedPartIds([]);
                         }}
                         className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold outline-none ring-brand/30 focus:ring-2"
                       >
@@ -6824,7 +6971,11 @@ export default function Home() {
                       </span>
                       <select
                         value={effectiveTypeFilter}
-                        onChange={(e) => setPartTypeFilter(e.target.value)}
+                        onChange={(e) => {
+                          setPartTypeFilter(e.target.value);
+                          setPartPage(1);
+                          setSelectedPartIds([]);
+                        }}
                         className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold outline-none ring-brand/30 focus:ring-2"
                       >
                         <option value="all">Tất cả loại</option>
@@ -6842,17 +6993,55 @@ export default function Home() {
                       />
                       <input
                         value={partSearch}
-                        onChange={(e) => setPartSearch(e.target.value)}
+                        onChange={(e) => {
+                          setPartSearch(e.target.value);
+                          setPartPage(1);
+                          setSelectedPartIds([]);
+                        }}
                         placeholder="Tìm loại, hãng, tên, màu…"
                         className="h-10 w-full rounded-lg border border-line bg-slate-50 py-2 pl-9 pr-3 text-sm font-semibold outline-none ring-brand/30 focus:bg-white focus:ring-2"
                       />
                     </div>
+                    <button
+                      type="button"
+                      disabled={partSaving || selectedPartIds.length === 0}
+                      onClick={() => void deleteSelectedPartInbounds()}
+                      className="inline-flex h-10 shrink-0 items-center gap-2 self-end rounded-lg bg-red-50 px-3 text-sm font-bold text-danger ring-1 ring-red-200 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      {partSaving ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : (
+                        <Trash2 size={16} />
+                      )}
+                      Xóa đã chọn
+                      {selectedPartIds.length > 0 ? ` (${selectedPartIds.length})` : ""}
+                    </button>
                   </div>
                 </div>
-                <div className="max-h-[min(60vh,28rem)] overflow-auto">
+                <div className="overflow-x-auto">
                   <table className="min-w-full border-collapse text-left text-sm">
-                    <thead className="sticky top-0 z-10 bg-slate-50">
+                    <thead className="bg-slate-50">
                       <tr className="border-b border-line text-xs font-black uppercase tracking-wide text-muted">
+                        <th className="w-10 px-2 py-3 text-center">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 accent-brand"
+                            checked={allPageSelected}
+                            disabled={pageIds.length === 0 || partSaving}
+                            title="Chọn tất cả trên trang"
+                            onChange={(e) => {
+                              const on = e.target.checked;
+                              setSelectedPartIds((prev) => {
+                                if (on) {
+                                  const set = new Set(prev);
+                                  pageIds.forEach((id) => set.add(id));
+                                  return Array.from(set);
+                                }
+                                return prev.filter((id) => !pageIds.includes(id));
+                              });
+                            }}
+                          />
+                        </th>
                         <th className="whitespace-nowrap px-3 py-3">Ngày</th>
                         <th className="whitespace-nowrap px-3 py-3">CH</th>
                         <th className="min-w-[9rem] px-3 py-3">Nhà phân phối</th>
@@ -6865,23 +7054,48 @@ export default function Home() {
                       </tr>
                     </thead>
                     <tbody>
-                      {list.length === 0 ? (
+                      {activeCount === 0 ? (
                         <tr>
                           <td
-                            colSpan={9}
+                            colSpan={10}
                             className="px-4 py-10 text-center text-sm font-semibold text-muted"
                           >
                             Chưa có phiếu nhập phù hợp.
                           </td>
                         </tr>
                       ) : (
-                        list.map((row) => (
+                        pagedList.map((row) => {
+                          const checked = selectedPartIds.includes(row.id);
+                          return (
                           <tr
                             key={row.id}
                             className={`border-b border-line/80 last:border-0 hover:bg-slate-50/80 ${
-                              editingPartId === row.id ? "bg-brand-soft/40" : ""
+                              editingPartId === row.id
+                                ? "bg-brand-soft/40"
+                                : checked
+                                  ? "bg-amber-50/70"
+                                  : ""
                             }`}
                           >
+                            <td className="px-2 py-2.5 text-center">
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 cursor-pointer accent-brand"
+                                checked={checked}
+                                disabled={partSaving}
+                                title="Chọn để xóa"
+                                onChange={(e) => {
+                                  const on = e.target.checked;
+                                  setSelectedPartIds((prev) =>
+                                    on
+                                      ? prev.includes(row.id)
+                                        ? prev
+                                        : [...prev, row.id]
+                                      : prev.filter((x) => x !== row.id)
+                                  );
+                                }}
+                              />
+                            </td>
                             <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">
                               {formatDateVi(row.createdAt)}
                             </td>
@@ -6910,25 +7124,110 @@ export default function Home() {
                                   type="button"
                                   onClick={() => openEditPartInboundForm(row.id)}
                                   title="Sửa"
-                                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20"
+                                  disabled={partSaving}
+                                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20 disabled:opacity-45"
                                 >
                                   <Edit3 size={16} />
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => deletePartInbound(row.id)}
+                                  onClick={() => openClonePartInboundForm(row.id)}
+                                  title="Nhân bản"
+                                  disabled={partSaving}
+                                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100 disabled:opacity-45"
+                                >
+                                  <CopyPlus size={16} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void deletePartInbound(row.id)}
                                   title="Xóa"
-                                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100"
+                                  disabled={partSaving}
+                                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100 disabled:opacity-45"
                                 >
                                   <Trash2 size={16} />
                                 </button>
                               </div>
                             </td>
                           </tr>
-                        ))
+                          );
+                        })
                       )}
                     </tbody>
                   </table>
+                </div>
+                <div className="flex flex-col gap-3 border-t border-line p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+                    <span className="text-sm font-semibold text-muted">
+                      Hiển thị{" "}
+                      <strong className="text-ink">
+                        {activeCount === 0 ? 0 : partStart + 1}–
+                        {Math.min(partStart + partPageSize, activeCount)}
+                      </strong>{" "}
+                      / tổng{" "}
+                      <strong className="text-ink">{activeCount.toLocaleString("vi-VN")}</strong>{" "}
+                      bản ghi
+                      {activeCount > 0 ? (
+                        <span className="ml-1 text-muted">
+                          (trang {safePartPage}/{partTotalPages})
+                        </span>
+                      ) : null}
+                    </span>
+                    {activeCount > 0 ? (
+                      <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-bold text-slate-700">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-brand"
+                          checked={
+                            list.length > 0 &&
+                            list.every((r) => selectedPartIds.includes(r.id))
+                          }
+                          disabled={partSaving}
+                          onChange={(e) => {
+                            const on = e.target.checked;
+                            const allIds = list.map((r) => r.id);
+                            setSelectedPartIds((prev) => {
+                              if (on) {
+                                const set = new Set(prev);
+                                allIds.forEach((id) => set.add(id));
+                                return Array.from(set);
+                              }
+                              return prev.filter((id) => !allIds.includes(id));
+                            });
+                          }}
+                        />
+                        Chọn tất cả theo lọc ({activeCount})
+                        {selectedVisibleCount > 0 ? (
+                          <span className="font-semibold text-muted">
+                            · đã chọn {selectedPartIds.length}
+                          </span>
+                        ) : null}
+                      </label>
+                    ) : null}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={safePartPage <= 1}
+                      onClick={() => setPartPage((p) => Math.max(1, p - 1))}
+                      className="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      <ChevronLeft size={16} />
+                      Trước
+                    </button>
+                    <span className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-black text-slate-700">
+                      {safePartPage}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={safePartPage >= partTotalPages}
+                      onClick={() => setPartPage((p) => Math.min(partTotalPages, p + 1))}
+                      className="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      Sau
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
                 </div>
               </section>
             </section>
