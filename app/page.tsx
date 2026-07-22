@@ -637,7 +637,7 @@ const navItems = [
   { id: "inbound", label: "LINH KIỆN", icon: Cpu },
   { id: "customers", label: "KHÁCH HÀNG", icon: Users },
   { id: "ledger", label: "CÔNG NỢ", icon: CreditCard },
-  { id: "debt-notes", label: "GHI NỢ", icon: NotebookPen },
+  { id: "debt-notes", label: "MÌNH NỢ", icon: NotebookPen },
   { id: "logs", label: "NHẬT KÝ", icon: ClipboardList },
   { id: "accounts", label: "TÀI KHOẢN", icon: UserCog },
   { id: "dashboard", label: "BÁO CÁO / THỐNG KÊ", icon: LayoutDashboard },
@@ -9636,7 +9636,7 @@ export default function Home() {
                 của Chủ Shop cho đội ngũ phát triển chúng tôi!
               </p>
               <p className="mt-6 text-sm font-semibold text-muted">
-                Menu Ghi nợ — đang bảo trì / chờ update.
+                Menu Mình nợ — đang bảo trì / chờ update.
               </p>
             </div>
           </section>
