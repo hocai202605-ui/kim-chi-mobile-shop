@@ -1160,8 +1160,14 @@ export default function Home() {
   const [partType, setPartType] = useState("");
   const [partBrand, setPartBrand] = useState("");
   const [partColor, setPartColor] = useState("");
-  const [partName, setPartName] = useState("");
-  const [partQuantity, setPartQuantity] = useState("1");
+  /** Dòng linh kiện (tên + SL) — tạo mới nhiều dòng; sửa = 1 dòng. */
+  type PartLineDraft = { key: string; name: string; quantity: string };
+  const emptyPartLine = (): PartLineDraft => ({
+    key: "pl-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7),
+    name: "",
+    quantity: "1",
+  });
+  const [partLines, setPartLines] = useState<PartLineDraft[]>(() => [emptyPartLine()]);
 
   const [customers, setCustomers] = useState(customersSeed);
   const [phones, setPhones] = useState<PhoneItem[]>([]);
@@ -2792,8 +2798,7 @@ export default function Home() {
     setPartType("");
     setPartBrand("");
     setPartColor("");
-    setPartName("");
-    setPartQuantity("1");
+    setPartLines([emptyPartLine()]);
     setPartFormKey((k) => k + 1);
     setPartCascadeKey((k) => k + 1);
   }
@@ -2818,19 +2823,24 @@ export default function Home() {
     setPartType(row.partType);
     setPartBrand(row.brand || "");
     setPartColor(row.color || "");
-    setPartName(row.partName);
-    setPartQuantity(String(row.quantity > 0 ? row.quantity : 1));
+    setPartLines([
+      {
+        key: emptyPartLine().key,
+        name: row.partName,
+        quantity: String(row.quantity > 0 ? row.quantity : 1),
+      },
+    ]);
     setPartFormKey((k) => k + 1);
     setPartCascadeKey((k) => k + 1);
     setIsPartFormOpen(true);
   }
 
-  /** Nhân bản: form điền sẵn, lưu = phiếu mới (không gắn id cũ). */
+  /** Nhân bản: form điền sẵn, lưu = phiếu mới. */
   function openClonePartInboundForm(id: string) {
     const row = partInbounds.find((p) => p.id === id);
     if (!row) return;
     const ok = window.confirm(
-      `Nhân bản phiếu «${row.partName}»?\n\nForm sẽ điền sẵn thông tin. Lưu = tạo phiếu nhập mới.`
+      "Nhân bản phiếu «" + row.partName + "»?\n\nForm sẽ điền sẵn thông tin. Lưu = tạo phiếu nhập mới (có thể thêm nhiều dòng tên + SL)."
     );
     if (!ok) return;
     setEditingPartId(null);
@@ -2838,23 +2848,45 @@ export default function Home() {
     setPartType(row.partType);
     setPartBrand(row.brand || "");
     setPartColor(row.color || "");
-    setPartName(row.partName);
-    setPartQuantity(String(row.quantity > 0 ? row.quantity : 1));
+    setPartLines([
+      {
+        key: emptyPartLine().key,
+        name: row.partName,
+        quantity: String(row.quantity > 0 ? row.quantity : 1),
+      },
+    ]);
     setPartFormKey((k) => k + 1);
     setPartCascadeKey((k) => k + 1);
     setIsPartFormOpen(true);
   }
 
-  /** Chọn NPP — chỉ ghi NPP; không auto-fill loại / hãng / màu / tên. */
   function applyPartDistributorCascade(name: string) {
     setPartDistributor(name);
   }
 
-  function bumpPartQuantity(delta: number) {
-    const raw = String(partQuantity || "").replace(/[^\d]/g, "");
-    const current = Math.max(0, Number(raw) || 0);
-    const next = Math.max(1, current + delta);
-    setPartQuantity(String(next));
+  function addPartLine() {
+    setPartLines((prev) => [...prev, emptyPartLine()]);
+  }
+
+  function removePartLine(key: string) {
+    setPartLines((prev) => (prev.length <= 1 ? prev : prev.filter((l) => l.key !== key)));
+  }
+
+  function updatePartLine(
+    key: string,
+    patch: Partial<Pick<PartLineDraft, "name" | "quantity">>
+  ) {
+    setPartLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  }
+
+  function bumpPartLineQty(key: string, delta: number) {
+    setPartLines((prev) =>
+      prev.map((l) => {
+        if (l.key !== key) return l;
+        const current = Math.max(0, Number(String(l.quantity).replace(/[^\d]/g, "")) || 0);
+        return { ...l, quantity: String(Math.max(1, current + delta)) };
+      })
+    );
   }
 
   async function handleSavePartInbound(e: FormEvent<HTMLFormElement>) {
@@ -2865,11 +2897,6 @@ export default function Home() {
     const partTypeVal = String(form.get("partType") || partType || "").trim();
     const brandVal = String(form.get("brand") || partBrand || "").trim();
     const colorVal = String(form.get("color") || partColor || "").trim();
-    const partNameVal = String(form.get("partName") || partName || "").trim();
-    const qtyRaw = String(form.get("quantity") || partQuantity || "")
-      .trim()
-      .replace(/[^\d]/g, "");
-    const quantity = Math.max(0, Number(qtyRaw) || 0);
 
     if (!distributor) {
       window.alert("Nhập nhà phân phối.");
@@ -2879,12 +2906,21 @@ export default function Home() {
       window.alert("Nhập loại linh kiện.");
       return;
     }
-    if (!partNameVal) {
-      window.alert("Nhập tên linh kiện.");
+
+    const linesToSave = partLines
+      .map((l) => ({
+        name: l.name.trim(),
+        quantity: Math.max(0, Number(String(l.quantity).replace(/[^\d]/g, "")) || 0),
+      }))
+      .filter((l) => l.name.length > 0);
+
+    if (!linesToSave.length) {
+      window.alert("Nhập ít nhất một tên linh kiện.");
       return;
     }
-    if (quantity <= 0) {
-      window.alert("Số lượng phải lớn hơn 0.");
+    const badQty = linesToSave.find((l) => l.quantity <= 0);
+    if (badQty) {
+      window.alert("Số lượng «" + badQty.name + "» phải lớn hơn 0.");
       return;
     }
 
@@ -2892,22 +2928,22 @@ export default function Home() {
     const isEdit = Boolean(editingPartId);
     const existing = isEdit ? partInbounds.find((p) => p.id === editingPartId) : null;
 
-    setPartSaving(true);
-    setPartBackendError("");
-    try {
-      const saved = await apiUpsertPartInbound({
-        id: isEdit && existing ? existing.id : undefined,
-        storeId: isEdit && existing ? existing.storeId : storeId,
-        distributor,
-        partType: partTypeVal,
-        partName: partNameVal,
-        brand: brandVal,
-        color: colorVal,
-        quantity,
-        actorUsername: currentUser.username,
-      });
-      // Optimistic: hiện ngay trên grid (DB đã lưu), không phụ thuộc reload.
-      setPartInbounds((prev) => {
+    if (isEdit && existing) {
+      const only = linesToSave[0];
+      setPartSaving(true);
+      setPartBackendError("");
+      try {
+        const saved = await apiUpsertPartInbound({
+          id: existing.id,
+          storeId: existing.storeId,
+          distributor,
+          partType: partTypeVal,
+          partName: only.name,
+          brand: brandVal,
+          color: colorVal,
+          quantity: only.quantity,
+          actorUsername: currentUser.username,
+        });
         const next: PartInbound = {
           id: saved.id,
           createdAt: saved.createdAt,
@@ -2919,30 +2955,90 @@ export default function Home() {
           color: saved.color || "",
           quantity: saved.quantity,
         };
-        if (isEdit) {
-          return prev.map((p) => (p.id === next.id ? next : p));
+        setPartInbounds((prev) => prev.map((p) => (p.id === next.id ? next : p)));
+        pushLog(
+          "Sửa phiếu nhập hàng",
+          `${saved.partType} — ${saved.brand ? `${saved.brand} · ` : ""}${saved.partName}${saved.color ? ` · ${saved.color}` : ""} ×${saved.quantity} (${saved.distributor})`,
+          saved.storeId
+        );
+        showUiToast("success", "Đã cập nhật phiếu «" + saved.partName + "».");
+        closePartInboundForm();
+        void reloadPartsFromDb();
+      } catch (err) {
+        const msg = toUiError(err);
+        setPartBackendError(msg);
+        showUiToast("error", "Lưu phiếu nhập thất bại: " + msg);
+      } finally {
+        setPartSaving(false);
+      }
+      return;
+    }
+
+    setPartSaving(true);
+    setPartBackendError("");
+    const savedRows: PartInbound[] = [];
+    const failed: string[] = [];
+    try {
+      for (const line of linesToSave) {
+        try {
+          const saved = await apiUpsertPartInbound({
+            storeId,
+            distributor,
+            partType: partTypeVal,
+            partName: line.name,
+            brand: brandVal,
+            color: colorVal,
+            quantity: line.quantity,
+            actorUsername: currentUser.username,
+          });
+          savedRows.push({
+            id: saved.id,
+            createdAt: saved.createdAt,
+            storeId: saved.storeId,
+            distributor: saved.distributor,
+            partType: saved.partType,
+            partName: saved.partName,
+            brand: saved.brand || "",
+            color: saved.color || "",
+            quantity: saved.quantity,
+          });
+        } catch (err) {
+          failed.push(line.name);
+          console.warn("save part line", line.name, err);
         }
-        return [next, ...prev.filter((p) => p.id !== next.id)];
-      });
-      setPartPage(1);
-      pushLog(
-        isEdit ? "Sửa phiếu nhập hàng" : "Nhập hàng",
-        `${saved.partType} — ${saved.brand ? `${saved.brand} · ` : ""}${saved.partName}${saved.color ? ` · ${saved.color}` : ""} ×${saved.quantity} (${saved.distributor})`,
-        saved.storeId
-      );
-      showUiToast(
-        "success",
-        isEdit
-          ? `Đã cập nhật phiếu «${saved.partName}».`
-          : `Đã lưu phiếu nhập «${saved.partName}».`
-      );
-      closePartInboundForm();
-      // Đồng bộ nền — lỗi không xóa list
+      }
+      if (savedRows.length) {
+        setPartInbounds((prev) => {
+          const ids = new Set(savedRows.map((r) => r.id));
+          return [...savedRows, ...prev.filter((p) => !ids.has(p.id))];
+        });
+        setPartPage(1);
+        pushLog(
+          "Nhập hàng",
+          savedRows.length + " phiếu · " + partTypeVal + " · " + distributor,
+          storeId
+        );
+      }
+      if (failed.length === 0) {
+        showUiToast(
+          "success",
+          savedRows.length === 1
+            ? "Đã lưu phiếu nhập «" + savedRows[0].partName + "»."
+            : "Đã lưu " + savedRows.length + " phiếu nhập (tách từng tên + SL)."
+        );
+        closePartInboundForm();
+      } else if (savedRows.length === 0) {
+        showUiToast("error", "Lưu thất bại: " + failed.slice(0, 3).join(", "));
+        setPartBackendError("Lưu thất bại " + failed.length + " dòng.");
+      } else {
+        showUiToast(
+          "error",
+          "Đã lưu " + savedRows.length + "; lỗi " + failed.length + ": " + failed.slice(0, 2).join(", ")
+        );
+        setPartBackendError("Một số dòng lỗi: " + failed.join(", "));
+        closePartInboundForm();
+      }
       void reloadPartsFromDb();
-    } catch (err) {
-      const msg = toUiError(err);
-      setPartBackendError(msg);
-      showUiToast("error", `Lưu phiếu nhập thất bại: ${msg}`);
     } finally {
       setPartSaving(false);
     }
@@ -6838,63 +6934,112 @@ export default function Home() {
                           onValueChange={setPartColor}
                           onManageNotify={(type, message) => showUiToast(type, message)}
                         />
-                        <Field label="Tên linh kiện" required>
-                          <input
-                            name="partName"
-                            required
-                            value={partName}
-                            onChange={(e) => setPartName(e.target.value)}
-                            autoComplete="off"
-                            placeholder="Tên / model linh kiện"
-                            className="h-11 w-full rounded-lg border border-line px-3 text-sm font-semibold outline-none ring-brand/30 focus:ring-2"
-                          />
-                        </Field>
-                        <Field label="SL" required>
-                          <div className="flex h-11 w-full overflow-hidden rounded-lg border border-line bg-white focus-within:ring-2 focus-within:ring-brand/30">
-                            <input
-                              name="quantity"
-                              required
-                              value={partQuantity}
-                              onChange={(e) =>
-                                setPartQuantity(e.target.value.replace(/[^\d]/g, ""))
-                              }
-                              onBlur={() => {
-                                const n = Number(
-                                  String(partQuantity || "").replace(/[^\d]/g, "")
-                                );
-                                if (!n || n < 1) setPartQuantity("1");
-                              }}
-                              autoComplete="off"
-                              inputMode="numeric"
-                              placeholder="1"
-                              className="h-full min-w-0 flex-1 border-0 bg-transparent px-3 text-center text-sm font-black tabular-nums text-ink outline-none"
-                            />
-                            <div className="flex w-9 shrink-0 flex-col border-l border-line">
-                              <button
-                                type="button"
-                                onClick={() => bumpPartQuantity(1)}
-                                disabled={partSaving}
-                                title="Tăng 1"
-                                className="inline-flex h-1/2 w-full items-center justify-center border-b border-line bg-slate-50 text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
-                              >
-                                <Plus size={14} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => bumpPartQuantity(-1)}
-                                disabled={partSaving}
-                                title="Giảm 1"
-                                className="inline-flex h-1/2 w-full items-center justify-center bg-slate-50 text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
-                              >
-                                <Minus size={14} />
-                              </button>
-                            </div>
-                          </div>
-                        </Field>
                       </div>
+
+                      <div className="rounded-xl border border-line bg-slate-50/80 p-3 sm:p-4">
+                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-black text-ink">Linh kiện</p>
+                            <p className="text-xs font-semibold text-muted">
+                              {isEditMode
+                                ? "Sửa 1 phiếu: chỉ 1 dòng tên + SL"
+                                : "Cùng NPP/loại/hãng/màu — mỗi dòng tên + SL lưu thành 1 phiếu riêng trên grid"}
+                            </p>
+                          </div>
+                          {!isEditMode ? (
+                            <button
+                              type="button"
+                              onClick={addPartLine}
+                              disabled={partSaving || partLines.length >= 20}
+                              className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-3 text-sm font-bold text-white hover:bg-brand-dark disabled:opacity-50"
+                            >
+                              <Plus size={16} />
+                              Thêm linh kiện
+                            </button>
+                          ) : null}
+                        </div>
+                        <div className="grid gap-3">
+                          {partLines.map((line, idx) => (
+                            <div
+                              key={line.key}
+                              className="grid gap-2 rounded-lg border border-line bg-white p-3 sm:grid-cols-[minmax(0,1fr)_7.5rem_auto] sm:items-end"
+                            >
+                              <Field label={`Tên linh kiện #${idx + 1}`} required>
+                                <input
+                                  value={line.name}
+                                  onChange={(e) =>
+                                    updatePartLine(line.key, { name: e.target.value })
+                                  }
+                                  autoComplete="off"
+                                  placeholder="Tên / model linh kiện"
+                                  className="h-11 w-full rounded-lg border border-line px-3 text-sm font-semibold outline-none ring-brand/30 focus:ring-2"
+                                />
+                              </Field>
+                              <Field label="SL" required>
+                                <div className="flex h-11 w-full overflow-hidden rounded-lg border border-line bg-white focus-within:ring-2 focus-within:ring-brand/30">
+                                  <input
+                                    value={line.quantity}
+                                    onChange={(e) =>
+                                      updatePartLine(line.key, {
+                                        quantity: e.target.value.replace(/[^\d]/g, ""),
+                                      })
+                                    }
+                                    onBlur={() => {
+                                      const n = Number(
+                                        String(line.quantity || "").replace(/[^\d]/g, "")
+                                      );
+                                      if (!n || n < 1) {
+                                        updatePartLine(line.key, { quantity: "1" });
+                                      }
+                                    }}
+                                    autoComplete="off"
+                                    inputMode="numeric"
+                                    placeholder="1"
+                                    className="h-full min-w-0 flex-1 border-0 bg-transparent px-3 text-center text-sm font-black tabular-nums text-ink outline-none"
+                                  />
+                                  <div className="flex w-9 shrink-0 flex-col border-l border-line">
+                                    <button
+                                      type="button"
+                                      onClick={() => bumpPartLineQty(line.key, 1)}
+                                      disabled={partSaving}
+                                      title="Tăng 1"
+                                      className="inline-flex h-1/2 w-full items-center justify-center border-b border-line bg-slate-50 text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
+                                    >
+                                      <Plus size={14} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => bumpPartLineQty(line.key, -1)}
+                                      disabled={partSaving}
+                                      title="Giảm 1"
+                                      className="inline-flex h-1/2 w-full items-center justify-center bg-slate-50 text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
+                                    >
+                                      <Minus size={14} />
+                                    </button>
+                                  </div>
+                                </div>
+                              </Field>
+                              {!isEditMode && partLines.length > 1 ? (
+                                <button
+                                  type="button"
+                                  onClick={() => removePartLine(line.key)}
+                                  disabled={partSaving}
+                                  title="Xóa dòng"
+                                  className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-red-50 text-danger hover:bg-red-100 disabled:opacity-50 sm:mb-0"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              ) : (
+                                <span className="hidden sm:block" />
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
                       <p className="text-xs font-semibold text-muted">
-                        Chọn hoặc nhập từng trường. Dùng nút + / sửa / xóa để quản lý
-                        droplist (lưu theo cửa hàng). Hãng và màu không bắt buộc.
+                        Chọn hoặc nhập NPP / loại / hãng / màu một lần. Bấm «Thêm linh kiện»
+                        để thêm dòng tên + SL. Hãng và màu không bắt buộc.
                       </p>
                       <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line pt-4">
                         <button
@@ -6923,7 +7068,9 @@ export default function Home() {
                           ) : (
                             <>
                               <Plus size={18} />
-                              Lưu phiếu nhập
+                              {partLines.filter((l) => l.name.trim()).length > 1
+                                ? "Lưu " + partLines.filter((l) => l.name.trim()).length + " phiếu"
+                                : "Lưu phiếu nhập"}
                             </>
                           )}
                         </button>
