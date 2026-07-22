@@ -181,12 +181,11 @@ export async function repoListDebts(filters: DebtListFilters = {}): Promise<Debt
   const { idToCode } = await loadStoreMaps();
   const pool = getPool();
 
-  // Software: còn nợ + đã TT (để lọc "Đã TT" vẫn thấy). Không có store_id trên software_orders → gán store-1.
-  // Nếu sau này có store trên PM thì join.
+  // Software: còn nợ + đã TT (để lọc "Đã TT" vẫn thấy). Join stores lấy mã CH.
   const sw = await pool.query<SoftwareDebtRow>(
     `select
        o.id,
-       null::text as store_code,
+       st.code as store_code,
        o.customer_name,
        o.device_name,
        o.quote,
@@ -197,6 +196,7 @@ export async function repoListDebts(filters: DebtListFilters = {}): Promise<Debt
        o.payment_at,
        o.issue
      from public.software_orders o
+     left join public.stores st on st.id = o.store_id
      where o.payment_status in ('debt', 'paid')
      order by o.receive_at desc nulls last, o.created_at desc
      limit 2000`
@@ -306,12 +306,83 @@ export async function repoCancelManualDebt(
 
 export type MarkPaidRef = { source: DebtSource; sourceId: string };
 
+type RepairDebtRow = {
+  id: string;
+  store_code: string | null;
+  customer_name: string;
+  device_name: string;
+  quote: string | number;
+  deposit: string | number;
+  receive_at: Date | string | null;
+  created_at: Date | string;
+  payment_status: "paid" | "debt";
+  payment_at: Date | string | null;
+  issue: string | null;
+};
+
+type SaleDebtRow = {
+  id: string;
+  store_code: string | null;
+  customer_name: string | null;
+  item_name: string | null;
+  total_amount: string | number;
+  sold_at: Date | string | null;
+  created_at: Date | string;
+  payment_method: string;
+};
+
+function mapRepairDebt(row: RepairDebtRow): DebtItem {
+  const storeId =
+    row.store_code === "store-1" || row.store_code === "store-2" || row.store_code === "store-3"
+      ? row.store_code
+      : "store-1";
+  // Số nợ = doanh thu (báo giá), không dùng lãi (quote − phí DV).
+  const amount = moneyN(row.quote);
+  const isOpen = row.payment_status === "debt";
+  return {
+    id: `repair:${row.id}`,
+    source: "repair",
+    sourceId: String(row.id),
+    storeId,
+    customerName: String(row.customer_name ?? ""),
+    customerPhone: "",
+    title: String(row.device_name ?? "").trim(),
+    amount,
+    debtDate: toDateOnly(row.receive_at) || toDateOnly(row.created_at),
+    status: isOpen ? "open" : "paid",
+    note: String(row.issue ?? ""),
+    paidAt: row.payment_at ? toDateOnly(row.payment_at) : undefined,
+  };
+}
+
+function mapSaleDebt(row: SaleDebtRow): DebtItem {
+  const storeId =
+    row.store_code === "store-1" || row.store_code === "store-2" || row.store_code === "store-3"
+      ? row.store_code
+      : "store-1";
+  const amount = moneyN(row.total_amount);
+  const isOpen = String(row.payment_method) === "debt";
+  return {
+    id: `sale:${row.id}`,
+    source: "sale",
+    sourceId: String(row.id),
+    storeId,
+    customerName: String(row.customer_name ?? "").trim() || "Khách lẻ",
+    customerPhone: "",
+    title: String(row.item_name ?? "").trim() || "Phiếu bán",
+    amount,
+    debtDate: toDateOnly(row.sold_at) || toDateOnly(row.created_at),
+    status: isOpen ? "open" : "paid",
+    note: "",
+    paidAt: !isOpen ? toDateOnly(row.sold_at) || toDateOnly(row.created_at) : undefined,
+  };
+}
+
 export async function repoMarkDebtsPaid(
   refs: MarkPaidRef[],
   actorUsername?: string
 ): Promise<{ updated: number; items: DebtItem[] }> {
   const actor = normalizeActor(actorUsername);
-  const { idToCode } = await loadStoreMaps();
   const softwareIds = Array.from(
     new Set(
       refs
@@ -328,23 +399,41 @@ export async function repoMarkDebtsPaid(
         .filter(Boolean)
     )
   );
-  // sale / repair: chưa có mark-paid API — bỏ qua
+  const repairIds = Array.from(
+    new Set(
+      refs
+        .filter((r) => r.source === "repair")
+        .map((r) => r.sourceId.trim())
+        .filter(Boolean)
+    )
+  );
+  const saleIds = Array.from(
+    new Set(
+      refs
+        .filter((r) => r.source === "sale")
+        .map((r) => r.sourceId.trim())
+        .filter(Boolean)
+    )
+  );
 
   return withTransaction(async (client) => {
+    const { idToCode } = await loadStoreMaps();
     const items: DebtItem[] = [];
 
     if (softwareIds.length) {
       const { rows } = await client.query<SoftwareDebtRow>(
-        `update public.software_orders
+        `update public.software_orders o
          set payment_status = 'paid',
              payment_at = now(),
              updated_by = coalesce($2, updated_by),
              updated_at = now()
-         where id = any($1::uuid[])
-           and payment_status = 'debt'
+         where o.id = any($1::uuid[])
+           and o.payment_status = 'debt'
          returning
-           id, null::text as store_code, customer_name, device_name, quote, deposit,
-           receive_at, created_at, payment_status, payment_at, issue`,
+           o.id,
+           (select st.code from public.stores st where st.id = o.store_id) as store_code,
+           o.customer_name, o.device_name, o.quote, o.deposit,
+           o.receive_at, o.created_at, o.payment_status, o.payment_at, o.issue`,
         [softwareIds, actor]
       );
       items.push(...rows.map(mapSoftware));
@@ -363,6 +452,54 @@ export async function repoMarkDebtsPaid(
         [manualIds, actor]
       );
       items.push(...rows.map((r) => mapManual(r, idToCode)));
+    }
+
+    if (repairIds.length) {
+      const { rows } = await client.query<RepairDebtRow>(
+        `update public.repair_orders r
+         set payment_status = 'paid',
+             payment_at = now(),
+             updated_by = coalesce($2, updated_by),
+             updated_at = now()
+         where r.id = any($1::uuid[])
+           and r.payment_status = 'debt'
+         returning
+           r.id,
+           (select st.code from public.stores st where st.id = r.store_id) as store_code,
+           r.customer_name, r.device_name, r.quote, r.deposit,
+           r.receive_at, r.created_at, r.payment_status, r.payment_at, r.issue`,
+        [repairIds, actor]
+      );
+      items.push(...rows.map(mapRepairDebt));
+    }
+
+    if (saleIds.length) {
+      // Thu nợ bán hàng: debt → cash. Số nợ theo total_amount (doanh thu), không dùng total_profit.
+      const { rows } = await client.query<SaleDebtRow>(
+        `update public.sales s
+         set payment_method = 'cash',
+             updated_at = now()
+         where s.id = any($1::uuid[])
+           and s.payment_method = 'debt'
+           and s.status = 'completed'
+         returning
+           s.id,
+           (select st.code from public.stores st where st.id = s.store_id) as store_code,
+           (select c.name from public.customers c where c.id = s.customer_id) as customer_name,
+           (
+             select si.item_name
+             from public.sale_items si
+             where si.sale_id = s.id
+             order by si.id
+             limit 1
+           ) as item_name,
+           s.total_amount,
+           s.sold_at,
+           s.created_at,
+           s.payment_method`,
+        [saleIds]
+      );
+      items.push(...rows.map(mapSaleDebt));
     }
 
     return { updated: items.length, items };

@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
           };
         }
         const composite = String(r?.id || "").trim();
-        const m = composite.match(/^(software|manual):(.+)$/);
+        const m = composite.match(/^(software|manual|repair|sale):(.+)$/);
         if (m) return { source: m[1] as DebtSource, sourceId: m[2] };
         return null;
       })
