@@ -4707,18 +4707,72 @@ export default function Home() {
         `${result.updated} khoản`,
         storeFilter === "all" ? currentUser?.storeId ?? "store-1" : storeFilter
       );
+
+      // Optimistic UI: gỡ / đánh dấu đã TT ngay (không chờ reload).
+      const paidKeys = new Set(result.items.map((i) => `${i.source}:${i.sourceId}`));
+      const paidSoftwareIds = new Set(
+        result.items.filter((i) => i.source === "software").map((i) => i.sourceId)
+      );
+      const paidRepairIds = new Set(
+        result.items.filter((i) => i.source === "repair").map((i) => i.sourceId)
+      );
+      const paidSaleIds = new Set(
+        result.items.filter((i) => i.source === "sale").map((i) => i.sourceId)
+      );
+
+      if (paidKeys.size > 0) {
+        setDebts((prev) =>
+          prev
+            .map((d) => {
+              const key = `${d.source}:${d.sourceId}`;
+              if (!paidKeys.has(key)) return d;
+              return { ...d, status: "paid" as const };
+            })
+            .filter((d) => debtStatusFilter !== "open" || d.status === "open")
+        );
+      }
+      if (paidSoftwareIds.size > 0) {
+        setOnlineRepairs((prev) =>
+          prev.map((r) =>
+            paidSoftwareIds.has(r.id)
+              ? { ...r, paymentStatus: "Đã thanh toán" as const, isPaid: true }
+              : r
+          )
+        );
+      }
+      if (paidRepairIds.size > 0) {
+        setShopRepairs((prev) =>
+          prev.map((r) =>
+            paidRepairIds.has(r.id)
+              ? { ...r, paymentStatus: "Đã thanh toán" as const, isPaid: true }
+              : r
+          )
+        );
+      }
+      if (paidSaleIds.size > 0) {
+        const markSalePaid = (list: Sale[]) =>
+          list.map((s) =>
+            paidSaleIds.has(s.id) ? { ...s, payment: "Tiền mặt" as PaymentMethod } : s
+          );
+        setSales((prev) => markSalePaid(prev));
+        setSalesRetail((prev) => markSalePaid(prev));
+        setSalesBanGa((prev) => markSalePaid(prev));
+      }
+
       setSelectedDebtIds([]);
       showUiToast(
         "success",
         result.updated ? `Đã thu ${result.updated} khoản công nợ.` : "Không có khoản nào được cập nhật."
       );
+
+      // Reload tuần tự (pool max=1) — tránh timeout khi Promise.all tranh connection
       await reloadDebts();
-      await Promise.all([
-        reloadSoftwareFromDb(),
-        reloadShopRepairsFromDb(),
-        reloadSalesFromDb("retail"),
-        reloadBanGaSalesFromDb(),
-      ]);
+      if (paidSoftwareIds.size) await reloadSoftwareFromDb();
+      if (paidRepairIds.size) await reloadShopRepairsFromDb();
+      if (paidSaleIds.size) {
+        await reloadSalesFromDb("retail");
+        await reloadBanGaSalesFromDb();
+      }
     } catch (err) {
       showUiToast("error", toUiError(err));
     } finally {
@@ -9144,7 +9198,7 @@ export default function Home() {
 
         {activePage === "ledger" && (() => {
           // Sửa chữa: map đơn NỢ DAI từ repair_orders (API) → dòng công nợ ảo.
-          // Số nợ = báo giá (doanh thu), KHÔNG dùng lãi (quote − phí DV).
+          // Số nợ = lãi (báo giá − phí DV), như cũ.
           const repairDebtRows: DebtItem[] = shopRepairs
             .filter((r) => {
               const isDebt = r.paymentStatus === "NỢ DAI";
@@ -9165,7 +9219,7 @@ export default function Home() {
                 customerName: r.customerName,
                 customerPhone: "",
                 title: r.deviceName,
-                amount: Math.max(0, Number(r.quote) || 0),
+                amount: Math.max(0, (Number(r.quote) || 0) - (Number(r.deposit) || 0)),
                 debtDate: (r.receiveDate || r.createdAt || "").slice(0, 10),
                 status: (isOpen ? "open" : "paid") as DebtItem["status"],
                 note: [r.condition, r.warranty, r.issue].filter(Boolean).join(" · "),
@@ -9173,7 +9227,7 @@ export default function Home() {
             })
             .filter((r) => r.amount > 0 || r.status !== "open");
 
-          // Bán hàng / Bán Gà: phiếu payment = NỢ DAI → số nợ = amount (doanh thu), không dùng profit.
+          // Bán hàng / Bán Gà: phiếu NỢ DAI → số nợ = lãi (profit), như cũ.
           // Không có lịch sử “đã thu nợ” trên sales → filter paid/cancelled không liệt kê.
           const salePool = [...salesRetail, ...salesBanGa];
           const saleDebtRows: DebtItem[] = salePool
@@ -9192,8 +9246,7 @@ export default function Home() {
               customerName: s.customerName || "Khách lẻ",
               customerPhone: s.customerPhone || "",
               title: s.itemName || "Phiếu bán",
-              // Doanh thu phiếu (short shop), không lấy profit/lãi
-              amount: Math.max(0, Number(s.amount) || 0),
+              amount: Math.max(0, Number(s.profit) || 0),
               debtDate: String(s.createdAt || "").slice(0, 10),
               status: "open" as const,
               note: s.note || "",
@@ -9238,10 +9291,14 @@ export default function Home() {
                 (s.payment === "NỢ DAI" || s.payment === "Nợ") &&
                 (storeFilter === "all" || s.storeId === storeFilter)
             )
-            .reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+            .reduce((sum, s) => sum + (Number(s.profit) || 0), 0);
           const totalRepair = shopRepairs
             .filter((r) => r.paymentStatus === "NỢ DAI")
-            .reduce((sum, r) => sum + (Number(r.quote) || 0), 0);
+            .reduce(
+              (sum, r) =>
+                sum + Math.max(0, (Number(r.quote) || 0) - (Number(r.deposit) || 0)),
+              0
+            );
           const totalOpen = totalSoftware + totalManual + totalSale + totalRepair;
 
           /** Tổng nợ đang mở của khách đang lọc (gõ / chọn tên). */
@@ -9474,17 +9531,17 @@ export default function Home() {
 
                   {debtTab === "sale" ? (
                     <p className="mb-3 rounded-lg border border-fuchsia-100 bg-fuchsia-50 px-3 py-2 text-sm font-semibold text-fuchsia-900">
-                      Nợ bán hàng = doanh thu phiếu (NỢ DAI). Thu nợ → chuyển sang Tiền mặt.
+                      Nợ bán hàng = lãi phiếu (NỢ DAI). Thu nợ → chuyển sang Tiền mặt.
                     </p>
                   ) : null}
                   {debtTab === "repair" ? (
                     <p className="mb-3 rounded-lg border border-violet-100 bg-violet-50 px-3 py-2 text-sm font-semibold text-violet-900">
-                      Nợ sửa chữa = báo giá / doanh thu (không trừ phí DV). Thu nợ → Đã thanh toán.
+                      Nợ sửa chữa = lãi (báo giá − phí DV). Thu nợ → Đã thanh toán.
                     </p>
                   ) : null}
                   {debtTab === "software" ? (
                     <p className="mb-3 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-900">
-                      Nợ phần mềm = báo giá / doanh thu. Chọn dòng → Thu nợ → Đã thanh toán.
+                      Nợ phần mềm = báo giá đơn. Chọn dòng → Thu nợ → Đã thanh toán.
                     </p>
                   ) : null}
 

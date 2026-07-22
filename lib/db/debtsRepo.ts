@@ -336,8 +336,8 @@ function mapRepairDebt(row: RepairDebtRow): DebtItem {
     row.store_code === "store-1" || row.store_code === "store-2" || row.store_code === "store-3"
       ? row.store_code
       : "store-1";
-  // Số nợ = doanh thu (báo giá), không dùng lãi (quote − phí DV).
-  const amount = moneyN(row.quote);
+  // Số nợ = lãi (báo giá − phí DV), như UI cũ.
+  const amount = Math.max(0, moneyN(row.quote) - moneyN(row.deposit));
   const isOpen = row.payment_status === "debt";
   return {
     id: `repair:${row.id}`,
@@ -416,13 +416,16 @@ export async function repoMarkDebtsPaid(
     )
   );
 
+  // loadStoreMaps dùng getPool() — PHẢI gọi ngoài transaction.
+  // Pool max=1: nếu gọi trong withTransaction sẽ deadlock → "timeout exceeded when trying to connect".
+  const { idToCode } = manualIds.length ? await loadStoreMaps() : { idToCode: new Map<string, Exclude<StoreId, "all">>() };
+
   return withTransaction(async (client) => {
-    const { idToCode } = await loadStoreMaps();
     const items: DebtItem[] = [];
 
     if (softwareIds.length) {
       const { rows } = await client.query<SoftwareDebtRow>(
-        `update public.software_orders o
+        `update public.software_orders as o
          set payment_status = 'paid',
              payment_at = now(),
              updated_by = coalesce($2, updated_by),
@@ -431,7 +434,7 @@ export async function repoMarkDebtsPaid(
            and o.payment_status = 'debt'
          returning
            o.id,
-           (select st.code from public.stores st where st.id = o.store_id) as store_code,
+           (select st.code from public.stores st where st.id = o.store_id limit 1) as store_code,
            o.customer_name, o.device_name, o.quote, o.deposit,
            o.receive_at, o.created_at, o.payment_status, o.payment_at, o.issue`,
         [softwareIds, actor]
@@ -456,7 +459,7 @@ export async function repoMarkDebtsPaid(
 
     if (repairIds.length) {
       const { rows } = await client.query<RepairDebtRow>(
-        `update public.repair_orders r
+        `update public.repair_orders as r
          set payment_status = 'paid',
              payment_at = now(),
              updated_by = coalesce($2, updated_by),
@@ -465,7 +468,7 @@ export async function repoMarkDebtsPaid(
            and r.payment_status = 'debt'
          returning
            r.id,
-           (select st.code from public.stores st where st.id = r.store_id) as store_code,
+           (select st.code from public.stores st where st.id = r.store_id limit 1) as store_code,
            r.customer_name, r.device_name, r.quote, r.deposit,
            r.receive_at, r.created_at, r.payment_status, r.payment_at, r.issue`,
         [repairIds, actor]
@@ -474,9 +477,9 @@ export async function repoMarkDebtsPaid(
     }
 
     if (saleIds.length) {
-      // Thu nợ bán hàng: debt → cash. Số nợ theo total_amount (doanh thu), không dùng total_profit.
+      // Thu nợ bán hàng: debt → cash. (UI hiển thị số nợ theo lãi/profit.)
       const { rows } = await client.query<SaleDebtRow>(
-        `update public.sales s
+        `update public.sales as s
          set payment_method = 'cash',
              updated_at = now()
          where s.id = any($1::uuid[])
@@ -484,8 +487,8 @@ export async function repoMarkDebtsPaid(
            and s.status = 'completed'
          returning
            s.id,
-           (select st.code from public.stores st where st.id = s.store_id) as store_code,
-           (select c.name from public.customers c where c.id = s.customer_id) as customer_name,
+           (select st.code from public.stores st where st.id = s.store_id limit 1) as store_code,
+           (select c.name from public.customers c where c.id = s.customer_id limit 1) as customer_name,
            (
              select si.item_name
              from public.sale_items si
