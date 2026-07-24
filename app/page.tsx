@@ -1076,6 +1076,7 @@ export default function Home() {
   const [inventoryReportMonth, setInventoryReportMonth] = useState(() => vnNowMonth());
   const [inventoryTypeFilter, setInventoryTypeFilter] = useState("all");
   const [inventoryBrandFilter, setInventoryBrandFilter] = useState("all");
+  const [inventoryStorageFilter, setInventoryStorageFilter] = useState("all");
   const [inventoryNameFilter, setInventoryNameFilter] = useState("");
   const [inventoryPriceRange, setInventoryPriceRange] = useState("all");
   const [inventoryStatusFilter, setInventoryStatusFilter] = useState("Còn hàng");
@@ -1654,9 +1655,19 @@ export default function Home() {
       // Tên máy: khớp chính xác (freeText + droplist), không tìm gần đúng.
       const matchesName = !nameQ || item.name.trim().toLowerCase() === nameQ;
       const matchesBrand = inventoryBrandFilter === "all" || item.brand === inventoryBrandFilter;
+      const matchesStorage =
+        inventoryStorageFilter === "all" || item.storage === inventoryStorageFilter;
       const matchesPrice = priceMatchesInventoryRange(shopMoneyToVnd(item.expectedPrice), inventoryPriceRange);
       const matchesStatus = inventoryStatusFilter === "all" || item.status === inventoryStatusFilter;
-      return matchesStore && matchesQuickSearch && matchesName && matchesBrand && matchesPrice && matchesStatus;
+      return (
+        matchesStore &&
+        matchesQuickSearch &&
+        matchesName &&
+        matchesBrand &&
+        matchesStorage &&
+        matchesPrice &&
+        matchesStatus
+      );
     })
     .sort((a, b) => {
       if (!hasInventorySearch) return 0;
@@ -2106,6 +2117,29 @@ export default function Home() {
       if (p.name?.trim()) set.add(p.name.trim());
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b, "vi"));
+  }, [lookupsByStore, storeFilter, phones]);
+
+  /** Filter dung lượng máy: lookup storage + giá trị đang có trong kho. */
+  const filterStorageOptions = useMemo(() => {
+    const set = new Set<string>();
+    if (storeFilter !== "all") {
+      for (const s of lookupsByStore[storeFilter]?.[PHONE_LOOKUP_CATEGORIES.storage] ?? []) {
+        if (s.trim()) set.add(s.trim());
+      }
+    } else {
+      for (const storeMap of Object.values(lookupsByStore)) {
+        for (const s of storeMap[PHONE_LOOKUP_CATEGORIES.storage] ?? []) {
+          if (s.trim()) set.add(s.trim());
+        }
+      }
+    }
+    for (const p of phones) {
+      if (storeFilter !== "all" && p.storeId !== storeFilter) continue;
+      if (p.storage?.trim()) set.add(p.storage.trim());
+    }
+    return Array.from(set).sort((a, b) =>
+      a.localeCompare(b, "vi", { numeric: true, sensitivity: "base" })
+    );
   }, [lookupsByStore, storeFilter, phones]);
 
   const editingAccessory = editingAccessoryId ? accessories.find((item) => item.id === editingAccessoryId) : null;
@@ -7427,7 +7461,7 @@ export default function Home() {
                   <div>
                     <h2 className="text-xl font-black">Danh sách kho hàng</h2>
                     <p className="text-sm font-semibold text-muted">
-                      Tìm theo IMEI, tên máy (khớp chính xác), hãng, mức giá. Gõ tìm nhanh sẽ sắp xếp theo tên rồi giá.
+                      Tìm theo IMEI, tên máy (khớp chính xác), hãng, dung lượng, mức giá. Gõ tìm nhanh sẽ sắp xếp theo tên rồi giá.
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -7437,6 +7471,7 @@ export default function Home() {
                           setInventoryTab("phones");
                           setInventoryTypeFilter("all");
                           setInventoryBrandFilter("all");
+                          setInventoryStorageFilter("all");
                           setInventoryPage(1);
                         }}
                         className={`rounded-md px-3 py-2 text-sm font-bold ${inventoryTab === "phones" ? "bg-white text-brand shadow-sm" : "text-muted"}`}
@@ -7448,6 +7483,7 @@ export default function Home() {
                           setInventoryTab("accessories");
                           setInventoryTypeFilter("all");
                           setInventoryBrandFilter("all");
+                          setInventoryStorageFilter("all");
                           setInventoryPage(1);
                         }}
                         className={`rounded-md px-3 py-2 text-sm font-bold ${inventoryTab === "accessories" ? "bg-white text-brand shadow-sm" : "text-muted"}`}
@@ -7553,7 +7589,7 @@ export default function Home() {
                     </select>
                   </div>
                 ) : (
-                  <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1.3fr)_repeat(3,minmax(0,1fr))]">
+                  <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.2fr)_repeat(4,minmax(0,1fr))]">
                     <label className="relative">
                       <Search className="pointer-events-none absolute left-3 top-2.5 text-muted" size={18} />
                       <input
@@ -7590,6 +7626,21 @@ export default function Home() {
                       {filterBrandOptions.map((brand) => (
                         <option key={brand} value={brand}>
                           {brand}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={inventoryStorageFilter}
+                      onChange={(event) => {
+                        setInventoryStorageFilter(event.target.value);
+                        setInventoryPage(1);
+                      }}
+                      className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
+                    >
+                      <option value="all">Tất cả dung lượng</option>
+                      {filterStorageOptions.map((storage) => (
+                        <option key={storage} value={storage}>
+                          {storage}
                         </option>
                       ))}
                     </select>
