@@ -94,6 +94,7 @@ import {
   listPartInbounds as apiListPartInbounds,
   upsertPartInbound as apiUpsertPartInbound,
 } from "@/services/partsService";
+import { PartsCatalogSheet } from "@/components/features/parts/PartsCatalogSheet";
 import {
   cancelManualDebt as apiCancelManualDebt,
   listDebts as apiListDebts,
@@ -7435,22 +7436,16 @@ export default function Home() {
           );
         })()}
 
-        {activePage === "inbound" && (
-          <section className="grid gap-4">
-            <div className="rounded-xl border border-line bg-white p-8 shadow-panel">
-              <div className="flex items-start gap-4">
-                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-brand-soft text-brand">
-                  <Cpu size={24} />
-                </div>
-                <div>
-                  <h2 className="text-xl font-black text-ink">Linh kiện</h2>
-                  <p className="mt-2 text-sm font-semibold text-muted">
-                    Menu đã sẵn sàng. Tính năng quản lý linh kiện sẽ được phát triển sau.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </section>
+        {activePage === "inbound" && currentUser && (
+          <PartsCatalogSheet
+            storeFilter={storeFilter}
+            writeStoreId={
+              storeFilter !== "all" ? storeFilter : currentUser.storeId || "store-1"
+            }
+            role={currentUser.role}
+            isStatsHidden={isStatsHidden}
+            onNotify={(type, message) => showUiToast(type, message)}
+          />
         )}
 
         {activePage === "inventory" && (
