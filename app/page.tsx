@@ -1623,9 +1623,6 @@ export default function Home() {
     };
   }, [currentUser, inventoryReportMonth, reportYear, storeFilter]);
 
-  const phoneTypeOptions = Array.from(new Set(phones.map((item) => item.name.split(" ")[0]).filter(Boolean)));
-  const inventoryTypeOptions = phoneTypeOptions;
-
   /** Lọc phụ kiện: danh mục / hãng (từ lookup + dữ liệu thực tế). */
   const accessoryFilterCategoryOptions = useMemo(() => {
     const set = new Set<string>();
@@ -1644,20 +1641,22 @@ export default function Home() {
     return Array.from(set).sort((a, b) => a.localeCompare(b, "vi"));
   }, [accessories, lookupsByStore, storeFilter]);
 
-  const hasInventorySearch = query.trim().length > 0;
+  const hasInventorySearch = query.trim().length > 0 || inventoryNameFilter.trim().length > 0;
 
   const filteredPhones = phones
     .filter((item) => {
       const matchesStore = storeFilter === "all" || item.storeId === storeFilter;
       const q = query.toLowerCase();
-      const name = inventoryNameFilter.toLowerCase();
-      const matchesQuickSearch = [item.name, item.imei, item.condition, item.color, item.storage].join(" ").toLowerCase().includes(q);
-      const matchesName = item.name.toLowerCase().includes(name);
+      const nameQ = inventoryNameFilter.trim().toLowerCase();
+      const matchesQuickSearch =
+        !q ||
+        [item.name, item.imei, item.condition, item.color, item.storage].join(" ").toLowerCase().includes(q);
+      // Tên máy: khớp chính xác (freeText + droplist), không tìm gần đúng.
+      const matchesName = !nameQ || item.name.trim().toLowerCase() === nameQ;
       const matchesBrand = inventoryBrandFilter === "all" || item.brand === inventoryBrandFilter;
-      const matchesType = inventoryTypeFilter === "all" || item.name.toLowerCase().startsWith(inventoryTypeFilter.toLowerCase());
       const matchesPrice = priceMatchesInventoryRange(shopMoneyToVnd(item.expectedPrice), inventoryPriceRange);
       const matchesStatus = inventoryStatusFilter === "all" || item.status === inventoryStatusFilter;
-      return matchesStore && matchesQuickSearch && matchesName && matchesBrand && matchesType && matchesPrice && matchesStatus;
+      return matchesStore && matchesQuickSearch && matchesName && matchesBrand && matchesPrice && matchesStatus;
     })
     .sort((a, b) => {
       if (!hasInventorySearch) return 0;
@@ -2087,6 +2086,27 @@ export default function Home() {
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b, "vi"));
   }, [lookupsByStore, storeFilter]);
+
+  /** Filter tên máy (freeText + droplist): lookup model + tên đang có trong kho. */
+  const filterPhoneNameOptions = useMemo(() => {
+    const set = new Set<string>();
+    if (storeFilter !== "all") {
+      for (const n of lookupsByStore[storeFilter]?.[PHONE_LOOKUP_CATEGORIES.modelName] ?? []) {
+        if (n.trim()) set.add(n.trim());
+      }
+    } else {
+      for (const storeMap of Object.values(lookupsByStore)) {
+        for (const n of storeMap[PHONE_LOOKUP_CATEGORIES.modelName] ?? []) {
+          if (n.trim()) set.add(n.trim());
+        }
+      }
+    }
+    for (const p of phones) {
+      if (storeFilter !== "all" && p.storeId !== storeFilter) continue;
+      if (p.name?.trim()) set.add(p.name.trim());
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "vi"));
+  }, [lookupsByStore, storeFilter, phones]);
 
   const editingAccessory = editingAccessoryId ? accessories.find((item) => item.id === editingAccessoryId) : null;
   /** Defaults form phụ kiện: sửa theo id, hoặc draft clone khi thêm mới. */
@@ -7406,7 +7426,9 @@ export default function Home() {
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <h2 className="text-xl font-black">Danh sách kho hàng</h2>
-                    <p className="text-sm font-semibold text-muted">Tìm kiếm nâng cao theo loại, tên máy, khoảng giá. Gõ tìm nhanh sẽ sắp xếp theo tên rồi giá.</p>
+                    <p className="text-sm font-semibold text-muted">
+                      Tìm theo IMEI, tên máy (khớp chính xác), hãng, mức giá. Gõ tìm nhanh sẽ sắp xếp theo tên rồi giá.
+                    </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="inline-flex w-fit rounded-lg border border-line bg-slate-100 p-1">
@@ -7531,7 +7553,7 @@ export default function Home() {
                     </select>
                   </div>
                 ) : (
-                  <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_repeat(5,minmax(0,1fr))]">
+                  <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1.3fr)_repeat(3,minmax(0,1fr))]">
                     <label className="relative">
                       <Search className="pointer-events-none absolute left-3 top-2.5 text-muted" size={18} />
                       <input
@@ -7544,14 +7566,17 @@ export default function Home() {
                         placeholder="Tìm nhanh IMEI, mã hàng..."
                       />
                     </label>
-                    <input
+                    <ScrollableSelect
+                      name="inventoryPhoneNameFilter"
+                      allowFreeText
+                      required={false}
                       value={inventoryNameFilter}
-                      onChange={(event) => {
-                        setInventoryNameFilter(event.target.value);
+                      onChange={(next) => {
+                        setInventoryNameFilter(next);
                         setInventoryPage(1);
                       }}
-                      className="h-10 rounded-lg border border-line bg-white px-3 font-semibold outline-none focus:border-brand"
-                      placeholder="Tên máy..."
+                      options={filterPhoneNameOptions.map((n) => ({ value: n, label: n }))}
+                      placeholder="Tên máy (chính xác)..."
                     />
                     <select
                       value={inventoryBrandFilter}
@@ -7565,21 +7590,6 @@ export default function Home() {
                       {filterBrandOptions.map((brand) => (
                         <option key={brand} value={brand}>
                           {brand}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      value={inventoryTypeFilter}
-                      onChange={(event) => {
-                        setInventoryTypeFilter(event.target.value);
-                        setInventoryPage(1);
-                      }}
-                      className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
-                    >
-                      <option value="all">Tất cả loại máy</option>
-                      {inventoryTypeOptions.map((type) => (
-                        <option key={type} value={type}>
-                          {type}
                         </option>
                       ))}
                     </select>
