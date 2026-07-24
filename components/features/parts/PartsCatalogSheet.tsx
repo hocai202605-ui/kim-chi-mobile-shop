@@ -1,11 +1,12 @@
 "use client";
 
 /**
- * LINH KIỆN — Phase A: UI mock (state client), chưa gọi API/DB.
- * Phase B: thay setState bằng service, giữ shape PartCatalogItem.
+ * LINH KIỆN — Phase A mock, UI Excel-like:
+ * Không form trên — nhập/sửa trên grid.
+ * Android: mỗi hãng = 1 tab (Samsung / Oppo / Xiaomi), không gộp 3 cột.
  */
 
-import { Plus, Search, Trash2 } from "lucide-react";
+import { Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   clonePartCatalogSeed,
@@ -25,16 +26,65 @@ type Props = {
   onNotify: (type: "success" | "error", message: string) => void;
 };
 
-const TABS: { id: PartCatalogCategory; label: string }[] = [
-  { id: "man_android", label: "Màn Android" },
-  { id: "man_iphone", label: "Màn iPhone" },
-  { id: "pin", label: "Pin" },
-];
+/** Tab UI: 3 hãng Android tách riêng + iPhone + Pin */
+type SheetTabId =
+  | "android_samsung"
+  | "android_oppo"
+  | "android_xiaomi"
+  | "man_iphone"
+  | "pin";
 
-const ANDROID_BRANDS: { id: string; label: string; headClass: string }[] = [
-  { id: "samsung", label: "SAMSUNG LCD (RẺ)", headClass: "bg-slate-800 text-white" },
-  { id: "oppo_realme", label: "OPPO - REALME", headClass: "bg-slate-800 text-white" },
-  { id: "xiaomi_poco", label: "XIAOMI - POCO", headClass: "bg-slate-800 text-white" },
+type SheetTabDef = {
+  id: SheetTabId;
+  label: string;
+  category: PartCatalogCategory;
+  brandGroup: string;
+  /** Header màu bảng */
+  headClass: string;
+  headTitle: string;
+};
+
+const SHEET_TABS: SheetTabDef[] = [
+  {
+    id: "android_samsung",
+    label: "Samsung",
+    category: "man_android",
+    brandGroup: "samsung",
+    headClass: "bg-slate-800 text-white",
+    headTitle: "SAMSUNG LCD (RẺ)",
+  },
+  {
+    id: "android_oppo",
+    label: "Oppo-Realme",
+    category: "man_android",
+    brandGroup: "oppo_realme",
+    headClass: "bg-emerald-800 text-white",
+    headTitle: "OPPO - REALME",
+  },
+  {
+    id: "android_xiaomi",
+    label: "Xiaomi-Poco",
+    category: "man_android",
+    brandGroup: "xiaomi_poco",
+    headClass: "bg-orange-700 text-white",
+    headTitle: "XIAOMI - POCO",
+  },
+  {
+    id: "man_iphone",
+    label: "Màn iPhone",
+    category: "man_iphone",
+    brandGroup: "",
+    headClass: "bg-rose-600 text-white",
+    headTitle: "Màn iPhone",
+  },
+  {
+    id: "pin",
+    label: "Pin",
+    category: "pin",
+    brandGroup: "",
+    headClass: "bg-slate-900 text-white",
+    headTitle: "Pin",
+  },
 ];
 
 const IPHONE_GRADES: { key: string; label: string }[] = [
@@ -85,11 +135,14 @@ export function PartsCatalogSheet({
   isStatsHidden = false,
   onNotify,
 }: Props) {
-  const [tab, setTab] = useState<PartCatalogCategory>("man_android");
+  const [tabId, setTabId] = useState<SheetTabId>("android_samsung");
   const [items, setItems] = useState<PartCatalogItem[]>(() => clonePartCatalogSeed());
   const [query, setQuery] = useState("");
-  const [newName, setNewName] = useState("");
-  const [newBrand, setNewBrand] = useState("samsung");
+
+  const activeTab = useMemo(
+    () => SHEET_TABS.find((t) => t.id === tabId) ?? SHEET_TABS[0],
+    [tabId]
+  );
 
   const visibleByStore = useMemo(() => {
     return items.filter((it) => {
@@ -99,10 +152,15 @@ export function PartsCatalogSheet({
     });
   }, [items, storeFilter]);
 
-  const byTab = useMemo(
-    () => visibleByStore.filter((it) => it.category === tab),
-    [visibleByStore, tab]
-  );
+  const byTab = useMemo(() => {
+    return visibleByStore.filter((it) => {
+      if (it.category !== activeTab.category) return false;
+      if (activeTab.category === "man_android") {
+        return (it.brandGroup || "").toLowerCase() === activeTab.brandGroup.toLowerCase();
+      }
+      return true;
+    });
+  }, [visibleByStore, activeTab]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -133,7 +191,8 @@ export function PartsCatalogSheet({
         const prevCell = x.grades[gradeKey] || {};
         const nextCell: PartGradeCell = {
           ...prevCell,
-          [field]: field === "qty" && value !== null ? Math.max(0, Math.round(value)) : value,
+          [field]:
+            field === "qty" && value !== null ? Math.max(0, Math.round(value)) : value,
         };
         return {
           ...x,
@@ -143,38 +202,59 @@ export function PartsCatalogSheet({
     );
   }
 
-  function handleAddRow() {
-    const name = newName.trim();
+  function renameItem(item: PartCatalogItem, raw: string) {
+    const name = raw.trim();
     if (!name) {
-      onNotify("error", "Nhập tên model.");
+      onNotify("error", "Tên model không được trống.");
       return;
     }
-    if (tab === "man_android" && !newBrand.trim()) {
-      onNotify("error", "Chọn hãng.");
+    if (name.toLowerCase() === item.name.trim().toLowerCase()) return;
+
+    const dup = items.some(
+      (x) =>
+        x.id !== item.id &&
+        x.status === "active" &&
+        x.storeId === item.storeId &&
+        x.category === item.category &&
+        (x.brandGroup || "").toLowerCase() === (item.brandGroup || "").toLowerCase() &&
+        x.name.trim().toLowerCase() === name.toLowerCase()
+    );
+    if (dup) {
+      onNotify("error", `Model «${name}» đã có trong sheet.`);
       return;
     }
-    const brandKey = tab === "man_android" ? newBrand : "";
+
+    setItems((list) => list.map((x) => (x.id === item.id ? { ...x, name } : x)));
+  }
+
+  function addRow(nameRaw: string) {
+    const name = nameRaw.trim();
+    if (!name) return false;
+
+    const brandKey =
+      activeTab.category === "man_android" ? activeTab.brandGroup : "";
+
     const dup = items.some(
       (x) =>
         x.status === "active" &&
         x.storeId === writeStoreId &&
-        x.category === tab &&
+        x.category === activeTab.category &&
         (x.brandGroup || "").toLowerCase() === brandKey.toLowerCase() &&
         x.name.trim().toLowerCase() === name.toLowerCase()
     );
     if (dup) {
-      onNotify("error", "Model «" + name + "» đã có trong sheet (mock).");
-      return;
+      onNotify("error", `Model «${name}» đã có trong sheet.`);
+      return false;
     }
 
     const row: PartCatalogItem = {
       id: nextPartCatalogMockId(),
       storeId: writeStoreId,
-      category: tab,
+      category: activeTab.category,
       brandGroup: brandKey,
       name,
       note: "",
-      grades: emptyGradesFor(tab),
+      grades: emptyGradesFor(activeTab.category),
       status: "active",
     };
     setItems((list) =>
@@ -182,8 +262,7 @@ export function PartsCatalogSheet({
         a.name.localeCompare(b.name, "vi", { sensitivity: "base" })
       )
     );
-    setNewName("");
-    onNotify("success", "Đã thêm «" + name + "» (mock — chưa lưu DB).");
+    return true;
   }
 
   function handleHide(item: PartCatalogItem) {
@@ -191,17 +270,19 @@ export function PartsCatalogSheet({
       onNotify("error", "Chỉ chủ cửa hàng được ẩn dòng.");
       return;
     }
-    if (!window.confirm("Ẩn model «" + item.name + "» khỏi sheet?")) return;
+    if (!window.confirm(`Ẩn model «${item.name}» khỏi sheet?`)) return;
     setItems((list) =>
       list.map((x) => (x.id === item.id ? { ...x, status: "hidden" as const } : x))
     );
-    onNotify("success", "Đã ẩn «" + item.name + "» (mock).");
+    onNotify("success", `Đã ẩn «${item.name}» (mock).`);
   }
 
   function handleResetMock() {
     setItems(clonePartCatalogSeed());
     onNotify("success", "Đã nạp lại seed mock.");
   }
+
+  const isAndroidTab = activeTab.category === "man_android";
 
   return (
     <section className="grid gap-4">
@@ -210,27 +291,33 @@ export function PartsCatalogSheet({
           <div>
             <h2 className="text-xl font-black text-ink">Linh kiện</h2>
             <p className="text-sm font-semibold text-muted">
-              Sheet giá + tồn (giống Excel).{" "}
-              <span className="text-amber-700">Phase A: dữ liệu mock — F5 sẽ mất chỉnh sửa.</span>
+              Nhập / sửa trên lưới (như Excel). Mỗi hãng Android 1 tab.{" "}
+              <span className="text-amber-700">
+                Phase A mock — F5 mất chỉnh sửa. Gõ model ở hàng cuối để thêm.
+              </span>
             </p>
           </div>
-          <div className="inline-flex rounded-lg border border-line bg-slate-100 p-1">
-            {TABS.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => {
-                  setTab(t.id);
-                  setQuery("");
-                }}
-                className={`rounded-md px-3 py-2 text-sm font-bold ${
-                  tab === t.id ? "bg-white text-brand shadow-sm" : "text-muted"
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
+        </div>
+
+        {/* Tab: Samsung | Oppo | Xiaomi | iPhone | Pin */}
+        <div className="flex flex-wrap gap-1 border-b border-line bg-slate-50 p-2">
+          {SHEET_TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => {
+                setTabId(t.id);
+                setQuery("");
+              }}
+              className={`rounded-lg px-3 py-2 text-sm font-bold transition ${
+                tabId === t.id
+                  ? "bg-white text-brand shadow-sm ring-1 ring-line"
+                  : "text-muted hover:bg-white/70 hover:text-ink"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
 
         <div className="grid gap-3 border-b border-line p-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
@@ -240,7 +327,11 @@ export function PartsCatalogSheet({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="h-10 w-full rounded-lg border border-line bg-slate-50 pl-10 pr-3 font-semibold outline-none focus:border-brand focus:bg-white"
-              placeholder={tab === "pin" ? "Tìm model pin..." : "Tìm màn / model..."}
+              placeholder={
+                activeTab.category === "pin"
+                  ? "Tìm model pin..."
+                  : "Tìm màn / model..."
+              }
               autoComplete="off"
             />
           </label>
@@ -265,85 +356,50 @@ export function PartsCatalogSheet({
           </button>
         </div>
 
-        <div className="flex flex-wrap items-end gap-2 border-b border-line p-4">
-          {tab === "man_android" ? (
-            <label className="grid gap-1">
-              <span className="text-xs font-bold text-muted">Hãng</span>
-              <select
-                value={newBrand}
-                onChange={(e) => setNewBrand(e.target.value)}
-                className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-semibold"
-              >
-                {ANDROID_BRANDS.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          <label className="min-w-[12rem] flex-1 grid gap-1">
-            <span className="text-xs font-bold text-muted">Thêm model</span>
-            <input
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  handleAddRow();
-                }
-              }}
-              className="h-10 rounded-lg border border-line px-3 text-sm font-semibold outline-none focus:border-brand"
-              placeholder="VD: A13, 11 Pro, 12 - 12 Pro…"
-              autoComplete="off"
-            />
-          </label>
-          <button
-            type="button"
-            onClick={handleAddRow}
-            className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 text-sm font-black text-white hover:bg-brand-dark"
-          >
-            <Plus size={16} />
-            Thêm dòng
-          </button>
-          {storeFilter === "all" ? (
-            <p className="w-full text-xs font-semibold text-amber-700">
-              Toàn hệ thống — dòng mới gắn <strong>{writeStoreId}</strong> (mock). Seed demo hiện ở
-              store-1.
-            </p>
-          ) : storeFilter !== "store-1" ? (
-            <p className="w-full text-xs font-semibold text-muted">
-              Seed demo chỉ có store-1 — thêm dòng mới tại CH này hoặc chọn store-1 để xem mẫu.
-            </p>
-          ) : null}
-        </div>
+        {storeFilter === "all" ? (
+          <p className="border-b border-line px-4 py-2 text-xs font-semibold text-amber-700">
+            Toàn hệ thống — dòng mới gắn <strong>{writeStoreId}</strong>. Seed demo: store-1.
+          </p>
+        ) : storeFilter !== "store-1" ? (
+          <p className="border-b border-line px-4 py-2 text-xs font-semibold text-muted">
+            Seed demo ở store-1 — gõ hàng cuối để thêm model cho CH hiện tại.
+          </p>
+        ) : null}
 
         <div className="p-4">
-          {tab === "man_android" ? (
-            <AndroidSheet
+          {isAndroidTab ? (
+            <AndroidBrandSheet
+              title={activeTab.headTitle}
+              headClass={activeTab.headClass}
               items={filtered}
               role={role}
               onSaveField={saveGradeField}
+              onRename={renameItem}
+              onAdd={addRow}
               onHide={handleHide}
             />
-          ) : tab === "man_iphone" ? (
+          ) : activeTab.category === "man_iphone" ? (
             <GradePriceSheet
-              title="Màn iPhone"
-              headerClass="bg-rose-600 text-white"
+              title={activeTab.headTitle}
+              headerClass={activeTab.headClass}
               grades={IPHONE_GRADES}
               items={filtered}
               role={role}
               onSaveField={saveGradeField}
+              onRename={renameItem}
+              onAdd={addRow}
               onHide={handleHide}
             />
           ) : (
             <GradePriceSheet
-              title="Pin"
-              headerClass="bg-slate-900 text-white"
+              title={activeTab.headTitle}
+              headerClass={activeTab.headClass}
               grades={PIN_GRADES}
               items={filtered}
               role={role}
               onSaveField={saveGradeField}
+              onRename={renameItem}
+              onAdd={addRow}
               onHide={handleHide}
             />
           )}
@@ -391,12 +447,98 @@ function EditableNumCell({
   );
 }
 
-function AndroidSheet({
+function EditableTextCell({
+  value,
+  onCommit,
+  placeholder = "",
+  className = "",
+  bold = false,
+}: {
+  value: string;
+  onCommit: (raw: string) => void;
+  placeholder?: string;
+  className?: string;
+  bold?: boolean;
+}) {
+  const [draft, setDraft] = useState(value);
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) setDraft(value);
+  }, [value, focused]);
+
+  return (
+    <input
+      type="text"
+      value={draft}
+      onFocus={() => setFocused(true)}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        setFocused(false);
+        onCommit(draft);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+      placeholder={placeholder}
+      autoComplete="off"
+      className={`h-8 w-full min-w-0 rounded border border-transparent bg-transparent px-1 text-left text-sm outline-none hover:border-line focus:border-brand focus:bg-white ${
+        bold ? "font-bold text-ink" : "font-semibold text-ink"
+      } ${className}`}
+    />
+  );
+}
+
+function NewRowNameCell({
+  onAdd,
+  placeholder = "Gõ model mới…",
+}: {
+  onAdd: (name: string) => boolean;
+  placeholder?: string;
+}) {
+  const [draft, setDraft] = useState("");
+
+  function commit() {
+    const ok = onAdd(draft);
+    if (ok) setDraft("");
+  }
+
+  return (
+    <input
+      type="text"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        if (draft.trim()) commit();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          commit();
+        }
+      }}
+      placeholder={placeholder}
+      autoComplete="off"
+      className="h-8 w-full min-w-0 rounded border border-dashed border-line/80 bg-slate-50/80 px-1 text-left text-sm font-semibold text-ink outline-none placeholder:text-muted/80 focus:border-brand focus:bg-white"
+    />
+  );
+}
+
+/** 1 hãng Android = 1 bảng full width */
+function AndroidBrandSheet({
+  title,
+  headClass,
   items,
   role,
   onSaveField,
+  onRename,
+  onAdd,
   onHide,
 }: {
+  title: string;
+  headClass: string;
   items: PartCatalogItem[];
   role: Role;
   onSaveField: (
@@ -405,101 +547,100 @@ function AndroidSheet({
     field: "cost" | "price" | "qty",
     raw: string
   ) => void;
+  onRename: (item: PartCatalogItem, raw: string) => void;
+  onAdd: (name: string) => boolean;
   onHide: (item: PartCatalogItem) => void;
 }) {
   return (
-    <div className="grid gap-4 xl:grid-cols-3">
-      {ANDROID_BRANDS.map((brand) => {
-        const rows = items.filter(
-          (it) => (it.brandGroup || "").toLowerCase() === brand.id
-        );
-        return (
-          <div
-            key={brand.id}
-            className="overflow-hidden rounded-lg border border-line shadow-sm"
-          >
-            <div className={`px-3 py-2 text-center text-sm font-black ${brand.headClass}`}>
-              {brand.label}
-            </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full border-collapse text-sm">
-                <thead>
-                  <tr className="border-b border-line bg-amber-100 text-xs font-black text-ink">
-                    <th className="px-2 py-2 text-left">Model</th>
-                    <th className="px-1 py-2">Nhập</th>
-                    <th className="px-1 py-2">Bán</th>
-                    <th className="px-1 py-2">SL</th>
-                    {role === "owner" ? <th className="w-9 px-1 py-2" /> : null}
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={role === "owner" ? 5 : 4}
-                        className="px-3 py-6 text-center text-sm font-semibold text-muted"
-                      >
-                        Chưa có model
-                      </td>
-                    </tr>
-                  ) : (
-                    rows.map((item, idx) => {
-                      const g = item.grades.default || {};
-                      return (
-                        <tr
-                          key={item.id}
-                          className={`border-b border-line/70 ${
-                            idx % 2 === 0 ? "bg-white" : "bg-slate-50/80"
-                          }`}
+    <div className="overflow-hidden rounded-lg border border-line shadow-sm">
+      <div className={`px-3 py-2 text-center text-sm font-black ${headClass}`}>{title}</div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-line bg-amber-100 text-xs font-black text-ink">
+              <th className="min-w-[12rem] px-2 py-2 text-left">Model</th>
+              <th className="min-w-[5rem] px-1 py-2">Nhập</th>
+              <th className="min-w-[5rem] px-1 py-2">Bán</th>
+              <th className="min-w-[4rem] px-1 py-2">SL</th>
+              {role === "owner" ? <th className="w-9 px-1 py-2" /> : null}
+            </tr>
+          </thead>
+          <tbody>
+            {items.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={role === "owner" ? 5 : 4}
+                  className="px-3 py-6 text-center text-sm font-semibold text-muted"
+                >
+                  Chưa có model — gõ ở hàng cuối để thêm
+                </td>
+              </tr>
+            ) : (
+              items.map((item, idx) => {
+                const g = item.grades.default || {};
+                return (
+                  <tr
+                    key={item.id}
+                    className={`border-b border-line/70 ${
+                      idx % 2 === 0 ? "bg-white" : "bg-slate-50/80"
+                    }`}
+                  >
+                    <td className="px-1 py-0.5">
+                      <EditableTextCell
+                        value={item.name}
+                        bold
+                        onCommit={(raw) => onRename(item, raw)}
+                      />
+                    </td>
+                    <td className="px-0.5 py-1">
+                      <EditableNumCell
+                        value={g.cost}
+                        onCommit={(raw) => onSaveField(item, "default", "cost", raw)}
+                        className="text-slate-600"
+                      />
+                    </td>
+                    <td className="px-0.5 py-1">
+                      <EditableNumCell
+                        value={g.price}
+                        onCommit={(raw) => onSaveField(item, "default", "price", raw)}
+                        className="text-emerald-700"
+                      />
+                    </td>
+                    <td className="px-0.5 py-1">
+                      <EditableNumCell
+                        value={g.qty}
+                        onCommit={(raw) => onSaveField(item, "default", "qty", raw)}
+                        className="text-sky-700"
+                      />
+                    </td>
+                    {role === "owner" ? (
+                      <td className="px-1 py-1">
+                        <button
+                          type="button"
+                          onClick={() => onHide(item)}
+                          title="Ẩn dòng"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded text-danger hover:bg-red-50"
                         >
-                          <td className="max-w-[10rem] px-2 py-1 font-bold text-ink">
-                            <span className="line-clamp-2" title={item.name}>
-                              {item.name}
-                            </span>
-                          </td>
-                          <td className="px-0.5 py-1">
-                            <EditableNumCell
-                              value={g.cost}
-                              onCommit={(raw) => onSaveField(item, "default", "cost", raw)}
-                              className="text-slate-600"
-                            />
-                          </td>
-                          <td className="px-0.5 py-1">
-                            <EditableNumCell
-                              value={g.price}
-                              onCommit={(raw) => onSaveField(item, "default", "price", raw)}
-                              className="text-emerald-700"
-                            />
-                          </td>
-                          <td className="px-0.5 py-1">
-                            <EditableNumCell
-                              value={g.qty}
-                              onCommit={(raw) => onSaveField(item, "default", "qty", raw)}
-                              className="text-sky-700"
-                            />
-                          </td>
-                          {role === "owner" ? (
-                            <td className="px-1 py-1">
-                              <button
-                                type="button"
-                                onClick={() => onHide(item)}
-                                title="Ẩn dòng"
-                                className="inline-flex h-7 w-7 items-center justify-center rounded text-danger hover:bg-red-50"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </td>
-                          ) : null}
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        );
-      })}
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                    ) : null}
+                  </tr>
+                );
+              })
+            )}
+            <tr className="bg-slate-50/50">
+              <td className="px-1 py-1">
+                <NewRowNameCell placeholder="Model mới…" onAdd={onAdd} />
+              </td>
+              <td className="px-1 py-1 text-center text-xs text-muted" colSpan={3}>
+                —
+              </td>
+              {role === "owner" ? <td /> : null}
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -511,6 +652,8 @@ function GradePriceSheet({
   items,
   role,
   onSaveField,
+  onRename,
+  onAdd,
   onHide,
 }: {
   title: string;
@@ -524,6 +667,8 @@ function GradePriceSheet({
     field: "cost" | "price" | "qty",
     raw: string
   ) => void;
+  onRename: (item: PartCatalogItem, raw: string) => void;
+  onAdd: (name: string) => boolean;
   onHide: (item: PartCatalogItem) => void;
 }) {
   return (
@@ -533,7 +678,9 @@ function GradePriceSheet({
         <table className="min-w-full border-collapse text-sm">
           <thead>
             <tr className="border-b border-line bg-fuchsia-100 text-xs font-black text-ink">
-              <th className="sticky left-0 z-[1] bg-fuchsia-100 px-3 py-2 text-left">Model</th>
+              <th className="sticky left-0 z-[1] min-w-[10rem] bg-fuchsia-100 px-3 py-2 text-left">
+                Model
+              </th>
               {grades.map((g) => (
                 <th key={g.key} className="min-w-[4.5rem] px-1 py-2">
                   {g.label}
@@ -543,50 +690,54 @@ function GradePriceSheet({
             </tr>
           </thead>
           <tbody>
-            {items.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={grades.length + (role === "owner" ? 2 : 1)}
-                  className="px-3 py-8 text-center text-sm font-semibold text-muted"
-                >
-                  Chưa có model — thêm dòng phía trên
+            {items.map((item, idx) => (
+              <tr
+                key={item.id}
+                className={`border-b border-line/70 ${
+                  idx % 2 === 0 ? "bg-white" : "bg-slate-50/80"
+                }`}
+              >
+                <td className="sticky left-0 z-[1] bg-inherit px-1 py-0.5">
+                  <EditableTextCell
+                    value={item.name}
+                    bold
+                    onCommit={(raw) => onRename(item, raw)}
+                  />
                 </td>
-              </tr>
-            ) : (
-              items.map((item, idx) => (
-                <tr
-                  key={item.id}
-                  className={`border-b border-line/70 ${
-                    idx % 2 === 0 ? "bg-white" : "bg-slate-50/80"
-                  }`}
-                >
-                  <td className="sticky left-0 z-[1] bg-inherit px-3 py-1 font-black text-ink">
-                    {item.name}
+                {grades.map((g) => (
+                  <td key={g.key} className="px-0.5 py-1">
+                    <EditableNumCell
+                      value={cellPrice(item.grades, g.key)}
+                      onCommit={(raw) => onSaveField(item, g.key, "price", raw)}
+                      className="text-emerald-800"
+                    />
                   </td>
-                  {grades.map((g) => (
-                    <td key={g.key} className="px-0.5 py-1">
-                      <EditableNumCell
-                        value={cellPrice(item.grades, g.key)}
-                        onCommit={(raw) => onSaveField(item, g.key, "price", raw)}
-                        className="text-emerald-800"
-                      />
-                    </td>
-                  ))}
-                  {role === "owner" ? (
-                    <td className="px-1 py-1">
-                      <button
-                        type="button"
-                        onClick={() => onHide(item)}
-                        title="Ẩn dòng"
-                        className="inline-flex h-7 w-7 items-center justify-center rounded text-danger hover:bg-red-50"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </td>
-                  ) : null}
-                </tr>
-              ))
-            )}
+                ))}
+                {role === "owner" ? (
+                  <td className="px-1 py-1">
+                    <button
+                      type="button"
+                      onClick={() => onHide(item)}
+                      title="Ẩn dòng"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded text-danger hover:bg-red-50"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </td>
+                ) : null}
+              </tr>
+            ))}
+            <tr className="bg-slate-50/50">
+              <td className="sticky left-0 z-[1] bg-slate-50/50 px-1 py-1">
+                <NewRowNameCell placeholder="Gõ model mới…" onAdd={onAdd} />
+              </td>
+              {grades.map((g) => (
+                <td key={g.key} className="px-1 py-1 text-center text-xs text-muted">
+                  —
+                </td>
+              ))}
+              {role === "owner" ? <td /> : null}
+            </tr>
           </tbody>
         </table>
       </div>
