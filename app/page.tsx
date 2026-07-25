@@ -440,6 +440,64 @@ type AuditLog = {
   target: string;
 };
 
+/** Mình nợ (shop nợ người khác) — UI mock phase 1, chưa DB. */
+type OwnDebtStatus = "open" | "paid" | "cancelled";
+type OwnDebt = {
+  id: string;
+  storeId: Exclude<StoreId, "all">;
+  /** Người mình nợ */
+  creditorName: string;
+  /** YYYY-MM-DD */
+  debtDate: string;
+  /** Loại món nợ */
+  debtType: string;
+  /** Số tiền (short shop) */
+  amount: number;
+  note?: string;
+  status: OwnDebtStatus;
+};
+
+const OWN_DEBT_TYPES = [
+  "Tiền hàng NCC",
+  "Vay mượn",
+  "Cọc / đặt hàng",
+  "Chi hộ",
+  "Khác",
+] as const;
+
+const ownDebtsSeed: OwnDebt[] = [
+  {
+    id: "od1",
+    storeId: "store-1",
+    creditorName: "Anh Tuấn (NCC ốp)",
+    debtDate: "2026-07-20",
+    debtType: "Tiền hàng NCC",
+    amount: 2500,
+    note: "Lô ốp iPhone",
+    status: "open",
+  },
+  {
+    id: "od2",
+    storeId: "store-2",
+    creditorName: "Chị Hương",
+    debtDate: "2026-07-18",
+    debtType: "Vay mượn",
+    amount: 5000,
+    note: "",
+    status: "open",
+  },
+  {
+    id: "od3",
+    storeId: "store-1",
+    creditorName: "Shop pin Hà Nội",
+    debtDate: "2026-07-10",
+    debtType: "Cọc / đặt hàng",
+    amount: 1200,
+    note: "Đặt pin iP13",
+    status: "paid",
+  },
+];
+
 const stores = [
   { id: "store-1", name: "Kim Chi Mobile" },
   { id: "store-2", name: "Kiều Vy Mobile" },
@@ -1261,6 +1319,18 @@ export default function Home() {
   const [cloneManualDebtDraft, setCloneManualDebtDraft] = useState<DebtItem | null>(null);
   const [cloneManualDebtFormKey, setCloneManualDebtFormKey] = useState(0);
   const [isManualDebtModalOpen, setIsManualDebtModalOpen] = useState(false);
+  /** Mình nợ — mock UI (F5 mất). */
+  const [ownDebts, setOwnDebts] = useState<OwnDebt[]>(() => [...ownDebtsSeed]);
+  const [ownDebtStatusFilter, setOwnDebtStatusFilter] = useState<"all" | OwnDebtStatus>("open");
+  const [ownDebtQuery, setOwnDebtQuery] = useState("");
+  const [ownDebtFrom, setOwnDebtFrom] = useState("");
+  const [ownDebtTo, setOwnDebtTo] = useState("");
+  const [isOwnDebtSensitiveHidden, setIsOwnDebtSensitiveHidden] = useState(false);
+  const [isOwnDebtModalOpen, setIsOwnDebtModalOpen] = useState(false);
+  const [editingOwnDebtId, setEditingOwnDebtId] = useState<string | null>(null);
+  const [cloneOwnDebtDraft, setCloneOwnDebtDraft] = useState<OwnDebt | null>(null);
+  const [cloneOwnDebtFormKey, setCloneOwnDebtFormKey] = useState(0);
+  const [ownDebtSaving, setOwnDebtSaving] = useState(false);
   /** Nhật ký — load từ DB (audit_logs). */
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [logsTotal, setLogsTotal] = useState(0);
@@ -5026,6 +5096,162 @@ export default function Home() {
     } finally {
       setDebtsSaving(false);
     }
+  }
+
+  // ─── Mình nợ (UI mock) ───────────────────────────────────────────
+  function openOwnDebtCreateModal() {
+    setEditingOwnDebtId(null);
+    setCloneOwnDebtDraft(null);
+    setCloneOwnDebtFormKey((k) => k + 1);
+    setIsOwnDebtModalOpen(true);
+  }
+
+  function openOwnDebtEditModal(id: string) {
+    const row = ownDebts.find((d) => d.id === id);
+    if (!row) return;
+    if (row.status === "cancelled") {
+      showUiToast("error", "Khoản đã hủy — không sửa được.");
+      return;
+    }
+    setCloneOwnDebtDraft(null);
+    setEditingOwnDebtId(id);
+    setCloneOwnDebtFormKey((k) => k + 1);
+    setIsOwnDebtModalOpen(true);
+  }
+
+  function openOwnDebtCloneModal(id: string) {
+    const source = ownDebts.find((d) => d.id === id);
+    if (!source) return;
+    const ok = window.confirm(
+      `Nhân bản khoản nợ "${source.creditorName}" — ${source.debtType}?\n\nForm điền sẵn. Lưu = khoản mới (mặc định Đang nợ).`
+    );
+    if (!ok) return;
+    setEditingOwnDebtId(null);
+    setCloneOwnDebtDraft({ ...source, id: "", status: "open", debtDate: vnNowDate() });
+    setCloneOwnDebtFormKey((k) => k + 1);
+    setIsOwnDebtModalOpen(true);
+  }
+
+  function closeOwnDebtModal() {
+    if (ownDebtSaving) return;
+    setIsOwnDebtModalOpen(false);
+    setEditingOwnDebtId(null);
+    setCloneOwnDebtDraft(null);
+  }
+
+  function saveOwnDebt(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (ownDebtSaving || !currentUser) return;
+    const form = new FormData(event.currentTarget);
+    const formStoreRaw = String(form.get("storeId") || "").trim();
+    const storeId: Exclude<StoreId, "all"> =
+      currentUser.role === "staff"
+        ? currentUser.storeId
+        : formStoreRaw === "store-1" || formStoreRaw === "store-2" || formStoreRaw === "store-3"
+          ? formStoreRaw
+          : currentUser.storeId;
+
+    const creditorName = String(form.get("creditorName") || "").trim();
+    const debtType = String(form.get("debtType") || "").trim();
+    const debtDate = String(form.get("debtDate") || vnNowDate()).trim();
+    const amount = parseShopMoney(form.get("amount"));
+    const note = String(form.get("note") || "").trim();
+
+    if (!creditorName) {
+      showUiToast("error", "Vui lòng nhập người mình nợ.");
+      return;
+    }
+    if (!debtType) {
+      showUiToast("error", "Vui lòng chọn loại món nợ.");
+      return;
+    }
+    if (!amount || amount <= 0) {
+      showUiToast("error", "Số tiền nợ phải lớn hơn 0.");
+      return;
+    }
+
+    const isEdit = Boolean(editingOwnDebtId);
+    const isClone = !isEdit && Boolean(cloneOwnDebtDraft);
+    setOwnDebtSaving(true);
+    try {
+      if (isEdit && editingOwnDebtId) {
+        setOwnDebts((prev) =>
+          prev.map((d) =>
+            d.id === editingOwnDebtId
+              ? {
+                  ...d,
+                  storeId,
+                  creditorName,
+                  debtType,
+                  debtDate,
+                  amount,
+                  note,
+                }
+              : d
+          )
+        );
+        pushLog("Sửa mình nợ", `${creditorName} — ${debtType}`, storeId);
+        showUiToast("success", "Đã cập nhật khoản mình nợ.");
+      } else {
+        const id = `od${Date.now()}`;
+        setOwnDebts((prev) => [
+          {
+            id,
+            storeId,
+            creditorName,
+            debtType,
+            debtDate,
+            amount,
+            note,
+            status: "open",
+          },
+          ...prev,
+        ]);
+        pushLog(
+          isClone ? "Nhân bản mình nợ" : "Thêm mình nợ",
+          `${creditorName} — ${debtType}`,
+          storeId
+        );
+        showUiToast(
+          "success",
+          isClone ? "Đã nhân bản khoản mình nợ." : "Đã thêm khoản mình nợ."
+        );
+      }
+      setIsOwnDebtModalOpen(false);
+      setEditingOwnDebtId(null);
+      setCloneOwnDebtDraft(null);
+    } finally {
+      setOwnDebtSaving(false);
+    }
+  }
+
+  function markOwnDebtPaid(id: string) {
+    const row = ownDebts.find((d) => d.id === id);
+    if (!row || row.status !== "open") return;
+    if (!window.confirm(`Đánh dấu đã trả "${row.creditorName}" — ${formatMoney(row.amount)}?`)) {
+      return;
+    }
+    setOwnDebts((prev) =>
+      prev.map((d) => (d.id === id ? { ...d, status: "paid" as const } : d))
+    );
+    pushLog("Trả mình nợ", `${row.creditorName} — ${row.debtType}`, row.storeId);
+    showUiToast("success", "Đã đánh dấu trả xong.");
+  }
+
+  function cancelOwnDebtItem(id: string) {
+    if (!currentUser || currentUser.role !== "owner") {
+      showUiToast("error", "Chỉ chủ cửa hàng được hủy khoản mình nợ.");
+      return;
+    }
+    const row = ownDebts.find((d) => d.id === id);
+    if (!row || row.status === "cancelled") return;
+    if (!window.confirm(`Hủy khoản nợ "${row.creditorName}" — ${row.debtType}?`)) return;
+    setOwnDebts((prev) =>
+      prev.map((d) => (d.id === id ? { ...d, status: "cancelled" as const } : d))
+    );
+    pushLog("Hủy mình nợ", `${row.creditorName} — ${row.debtType}`, row.storeId);
+    showUiToast("success", "Đã hủy khoản mình nợ.");
+    if (editingOwnDebtId === id) closeOwnDebtModal();
   }
 
   async function markSelectedDebtsPaid() {
@@ -9785,22 +10011,369 @@ export default function Home() {
           </Panel>
         )}
 
-        {activePage === "debt-notes" && (
-          <section className="grid min-h-[min(70vh,36rem)] place-items-center rounded-2xl border border-line bg-white p-8 shadow-panel sm:p-12">
-            <div className="mx-auto max-w-3xl text-center">
-              <div className="mx-auto mb-6 grid h-16 w-16 place-items-center rounded-2xl bg-amber-50 text-amber-700 ring-1 ring-amber-200">
-                <NotebookPen size={32} />
+        {activePage === "debt-notes" && (() => {
+          const editingOwn = editingOwnDebtId
+            ? ownDebts.find((d) => d.id === editingOwnDebtId)
+            : null;
+          const ownFormDefaults = editingOwn ?? cloneOwnDebtDraft;
+          const isOwnClone = !editingOwn && Boolean(cloneOwnDebtDraft);
+
+          const scopedOwnDebts = ownDebts.filter((d) => {
+            if (currentUser.role === "staff" && d.storeId !== currentUser.storeId) return false;
+            if (storeFilter !== "all" && d.storeId !== storeFilter) return false;
+            return true;
+          });
+
+          const filteredOwnDebts = scopedOwnDebts.filter((d) => {
+            if (ownDebtStatusFilter !== "all" && d.status !== ownDebtStatusFilter) return false;
+            const q = ownDebtQuery.trim().toLowerCase();
+            if (q) {
+              const hay = `${d.creditorName} ${d.debtType} ${d.note || ""}`.toLowerCase();
+              if (!hay.includes(q)) return false;
+            }
+            if (ownDebtFrom && d.debtDate < ownDebtFrom) return false;
+            if (ownDebtTo && d.debtDate > ownDebtTo) return false;
+            return true;
+          });
+
+          const openOwnTotal = scopedOwnDebts
+            .filter((d) => d.status === "open")
+            .reduce((s, d) => s + d.amount, 0);
+          const openOwnCount = scopedOwnDebts.filter((d) => d.status === "open").length;
+
+          const ownStatusLabel = (st: OwnDebtStatus) =>
+            st === "open" ? "Đang nợ" : st === "paid" ? "Đã trả" : "Đã hủy";
+          const ownStatusTone = (st: OwnDebtStatus): "warn" | "ok" | "danger" =>
+            st === "open" ? "warn" : st === "paid" ? "ok" : "danger";
+
+          return (
+            <>
+              <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="rounded-xl border border-line bg-white p-4 shadow-panel">
+                  <p className="text-xs font-bold uppercase tracking-wide text-muted">Tổng đang nợ</p>
+                  <p className="mt-1 text-2xl font-black text-red-600">
+                    {isOwnDebtSensitiveHidden ? "***" : formatMoney(openOwnTotal)}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-line bg-white p-4 shadow-panel">
+                  <p className="text-xs font-bold uppercase tracking-wide text-muted">Số khoản đang nợ</p>
+                  <p className="mt-1 text-2xl font-black text-ink">{openOwnCount}</p>
+                </div>
+                <div className="rounded-xl border border-amber-100 bg-amber-50/80 p-4 shadow-panel sm:col-span-2 lg:col-span-1">
+                  <p className="text-xs font-bold uppercase tracking-wide text-amber-800">Ghi chú</p>
+                  <p className="mt-1 text-sm font-semibold text-amber-900">
+                    UI mock — dữ liệu local, F5 sẽ mất. Phase sau sẽ lưu DB.
+                  </p>
+                </div>
               </div>
-              <p className="text-2xl font-black leading-snug text-ink sm:text-3xl md:text-4xl">
-                Tính năng này sẽ được update sau bữa hải sản ngon. Tùy thuộc vào sự nhiệt tình
-                của Chủ Shop cho đội ngũ phát triển chúng tôi!
-              </p>
-              <p className="mt-6 text-sm font-semibold text-muted">
-                Menu Mình nợ — đang bảo trì / chờ update.
-              </p>
-            </div>
-          </section>
-        )}
+
+              <Panel title="Mình nợ">
+                <p className="mb-3 text-sm font-semibold text-muted">
+                  Theo dõi khoản <strong className="text-ink">shop nợ người khác</strong> (NCC, vay
+                  mượn…). Khác với menu Công nợ (khách nợ shop).
+                </p>
+
+                <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end">
+                  <Field label="Trạng thái">
+                    <select
+                      value={ownDebtStatusFilter}
+                      onChange={(e) =>
+                        setOwnDebtStatusFilter(e.target.value as "all" | OwnDebtStatus)
+                      }
+                      className="h-10 min-w-[9rem] rounded-lg border border-line bg-white px-3 text-sm font-semibold text-ink"
+                    >
+                      <option value="open">Đang nợ</option>
+                      <option value="paid">Đã trả</option>
+                      <option value="cancelled">Đã hủy</option>
+                      <option value="all">Tất cả</option>
+                    </select>
+                  </Field>
+                  <Field label="Từ ngày">
+                    <input
+                      type="date"
+                      value={ownDebtFrom}
+                      onChange={(e) => setOwnDebtFrom(e.target.value)}
+                      className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-semibold"
+                    />
+                  </Field>
+                  <Field label="Đến ngày">
+                    <input
+                      type="date"
+                      value={ownDebtTo}
+                      onChange={(e) => setOwnDebtTo(e.target.value)}
+                      className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-semibold"
+                    />
+                  </Field>
+                  <Field label="Tìm người / loại">
+                    <input
+                      type="text"
+                      value={ownDebtQuery}
+                      onChange={(e) => setOwnDebtQuery(e.target.value)}
+                      placeholder="Tên người nợ, loại…"
+                      className="h-10 min-w-[12rem] rounded-lg border border-line bg-white px-3 text-sm font-semibold"
+                    />
+                  </Field>
+                  <div className="flex flex-wrap items-center gap-2 pb-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOwnDebtStatusFilter("open");
+                        setOwnDebtFrom("");
+                        setOwnDebtTo("");
+                        setOwnDebtQuery("");
+                      }}
+                      className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold text-muted hover:bg-slate-50"
+                    >
+                      Xóa lọc
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsOwnDebtSensitiveHidden((v) => !v)}
+                      className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-3 font-bold text-slate-600"
+                    >
+                      {isOwnDebtSensitiveHidden ? <EyeOff size={18} /> : <Eye size={18} />}
+                      {isOwnDebtSensitiveHidden ? "Hiện" : "Ẩn"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={openOwnDebtCreateModal}
+                      className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark"
+                    >
+                      <Plus size={18} />
+                      Thêm khoản nợ
+                    </button>
+                  </div>
+                </div>
+
+                <DataTable
+                  compact
+                  headers={[
+                    "Người mình nợ",
+                    "Ngày nợ",
+                    "Loại món nợ",
+                    "Số tiền nợ",
+                    "Cửa hàng",
+                    "Trạng thái",
+                    "Thao tác",
+                  ]}
+                  emptyMessage="Chưa có khoản mình nợ phù hợp bộ lọc."
+                  rows={filteredOwnDebts.map((item) => {
+                    const isOpen = item.status === "open";
+                    return [
+                      <div key={`c-${item.id}`} className="flex flex-col items-center gap-0.5">
+                        <span className="text-base font-black text-brand">{item.creditorName}</span>
+                        {item.note ? (
+                          <span className="text-xs font-semibold text-muted">{item.note}</span>
+                        ) : null}
+                      </div>,
+                      <span key={`d-${item.id}`} className="text-sm font-bold text-slate-700">
+                        {formatDateVi(item.debtDate)}
+                      </span>,
+                      <span
+                        key={`t-${item.id}`}
+                        className="rounded-full bg-slate-100 px-2.5 py-1 text-sm font-bold text-slate-700"
+                      >
+                        {item.debtType}
+                      </span>,
+                      <span key={`a-${item.id}`} className="text-lg font-black text-red-600">
+                        {isOwnDebtSensitiveHidden ? "***" : formatMoney(item.amount)}
+                      </span>,
+                      <span key={`s-${item.id}`} className="text-sm font-semibold text-slate-600">
+                        {storeName(item.storeId)}
+                      </span>,
+                      <StatusBadge key={`st-${item.id}`} tone={ownStatusTone(item.status)}>
+                        {ownStatusLabel(item.status)}
+                      </StatusBadge>,
+                      <div key={`act-${item.id}`} className="flex flex-nowrap justify-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => openOwnDebtEditModal(item.id)}
+                          title="Sửa"
+                          disabled={item.status === "cancelled"}
+                          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <Edit3 size={18} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openOwnDebtCloneModal(item.id)}
+                          title="Nhân bản"
+                          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100"
+                        >
+                          <CopyPlus size={18} />
+                        </button>
+                        {isOpen ? (
+                          <button
+                            type="button"
+                            onClick={() => markOwnDebtPaid(item.id)}
+                            title="Đánh dấu đã trả"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100"
+                          >
+                            <CheckCircle2 size={18} />
+                          </button>
+                        ) : null}
+                        {item.status !== "cancelled" && currentUser.role === "owner" ? (
+                          <button
+                            type="button"
+                            onClick={() => cancelOwnDebtItem(item.id)}
+                            title="Hủy"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        ) : null}
+                      </div>,
+                    ];
+                  })}
+                />
+              </Panel>
+
+              {isOwnDebtModalOpen ? (
+                <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-md">
+                  <section className="relative max-h-[92vh] w-full max-w-[520px] overflow-auto rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
+                    {ownDebtSaving ? (
+                      <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-2xl bg-white/55 backdrop-blur-sm">
+                        <Loader2 size={36} className="animate-spin text-brand" />
+                        <p className="text-sm font-black text-ink">Đang lưu…</p>
+                      </div>
+                    ) : null}
+                    <div className="flex items-center justify-between border-b border-slate-200/60 bg-white/80 p-4">
+                      <div>
+                        <h2 className="text-lg font-black text-slate-800">
+                          {editingOwn
+                            ? "Sửa khoản mình nợ"
+                            : isOwnClone
+                              ? "Thêm mình nợ (nhân bản)"
+                              : "Thêm khoản mình nợ"}
+                        </h2>
+                        {isOwnClone ? (
+                          <p className="mt-1 text-sm font-semibold text-sky-700">
+                            Đã copy thông tin — sửa nếu cần rồi lưu khoản mới.
+                          </p>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={closeOwnDebtModal}
+                        disabled={ownDebtSaving}
+                        className="h-9 shrink-0 rounded-xl border border-slate-200/60 bg-white/50 px-4 text-sm font-black text-slate-600 hover:bg-white disabled:opacity-50"
+                      >
+                        Đóng
+                      </button>
+                    </div>
+                    <form
+                      key={
+                        editingOwnDebtId ??
+                        (cloneOwnDebtDraft
+                          ? `clone-own-${cloneOwnDebtFormKey}`
+                          : `new-own-${cloneOwnDebtFormKey}`)
+                      }
+                      onSubmit={saveOwnDebt}
+                      className={`grid gap-3 p-4 ${ownDebtSaving ? "pointer-events-none select-none" : ""}`}
+                      autoComplete="off"
+                    >
+                      {currentUser.role === "owner" ? (
+                        <SelectField
+                          label="Cửa hàng"
+                          name="storeId"
+                          options={stores.map((s) => [s.id, s.name])}
+                          defaultValue={
+                            ownFormDefaults?.storeId ??
+                            (storeFilter !== "all" ? storeFilter : currentUser.storeId)
+                          }
+                        />
+                      ) : (
+                        <Field label="Cửa hàng">
+                          <input type="hidden" name="storeId" value={currentUser.storeId} />
+                          <div className="flex h-10 items-center rounded-lg border border-line bg-slate-50 px-3 text-sm font-semibold">
+                            {storeName(currentUser.storeId)}
+                          </div>
+                        </Field>
+                      )}
+                      <Field label="Người mình nợ" required>
+                        <input
+                          name="creditorName"
+                          required
+                          defaultValue={ownFormDefaults?.creditorName ?? ""}
+                          placeholder="Tên NCC / người cho vay…"
+                          className="h-10 rounded-lg border border-line bg-white px-3"
+                        />
+                      </Field>
+                      <Field label="Ngày nợ" required>
+                        <input
+                          name="debtDate"
+                          type="date"
+                          required
+                          defaultValue={
+                            isOwnClone
+                              ? vnNowDate()
+                              : ownFormDefaults?.debtDate || vnNowDate()
+                          }
+                          className="h-10 rounded-lg border border-line bg-white px-3"
+                        />
+                      </Field>
+                      <Field label="Loại món nợ" required>
+                        <select
+                          name="debtType"
+                          required
+                          defaultValue={ownFormDefaults?.debtType ?? OWN_DEBT_TYPES[0]}
+                          className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-semibold"
+                        >
+                          {OWN_DEBT_TYPES.map((t) => (
+                            <option key={t} value={t}>
+                              {t}
+                            </option>
+                          ))}
+                          {ownFormDefaults?.debtType &&
+                          !(OWN_DEBT_TYPES as readonly string[]).includes(ownFormDefaults.debtType) ? (
+                            <option value={ownFormDefaults.debtType}>
+                              {ownFormDefaults.debtType}
+                            </option>
+                          ) : null}
+                        </select>
+                      </Field>
+                      <Field label="Số tiền nợ" required>
+                        <MoneyInput name="amount" defaultValue={ownFormDefaults?.amount} />
+                      </Field>
+                      <Field label="Ghi chú">
+                        <input
+                          name="note"
+                          defaultValue={ownFormDefaults?.note ?? ""}
+                          className="h-10 rounded-lg border border-line bg-white px-3"
+                          placeholder="Tuỳ chọn"
+                        />
+                      </Field>
+                      <div className="flex justify-end gap-2 border-t border-line pt-3">
+                        <button
+                          type="button"
+                          onClick={closeOwnDebtModal}
+                          disabled={ownDebtSaving}
+                          className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted disabled:opacity-50"
+                        >
+                          Hủy
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={ownDebtSaving}
+                          className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark disabled:opacity-60"
+                        >
+                          {ownDebtSaving ? (
+                            <Loader2 size={18} className="animate-spin" />
+                          ) : editingOwn ? (
+                            <Edit3 size={18} />
+                          ) : (
+                            <Plus size={18} />
+                          )}
+                          {editingOwn ? "Lưu sửa" : "Lưu khoản nợ"}
+                        </button>
+                      </div>
+                    </form>
+                  </section>
+                </div>
+              ) : null}
+            </>
+          );
+        })()}
 
         {activePage === "ledger" && (() => {
           // Sửa chữa: map đơn NỢ DAI từ repair_orders (API) → dòng công nợ ảo.
