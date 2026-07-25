@@ -445,6 +445,7 @@ type AuditLog = {
   storeId: Exclude<StoreId, "all">;
   action: string;
   target: string;
+  meta?: Record<string, unknown>;
 };
 
 /** Mình nợ (shop nợ người khác) — đồng bộ API/DB. */
@@ -1304,6 +1305,8 @@ export default function Home() {
   const [logsLoading, setLogsLoading] = useState(false);
   const [logsError, setLogsError] = useState("");
   const [logPage, setLogPage] = useState(1);
+  /** Popup chi tiết 1 dòng nhật ký. */
+  const [viewingLogId, setViewingLogId] = useState<string | null>(null);
   /** Draft trên form filter. */
   const [logStoreFilter, setLogStoreFilter] = useState<StoreId>("all");
   const [logFrom, setLogFrom] = useState(() => defaultLogFromDate());
@@ -10049,10 +10052,28 @@ export default function Home() {
             return true;
           });
 
-          const openOwnTotal = scopedOwnDebts
-            .filter((d) => d.status === "open")
-            .reduce((s, d) => s + d.amount, 0);
-          const openOwnCount = scopedOwnDebts.filter((d) => d.status === "open").length;
+          const openOwnRows = scopedOwnDebts.filter((d) => d.status === "open");
+          const openOwnTotal = openOwnRows.reduce((s, d) => s + d.amount, 0);
+          const openOwnCount = openOwnRows.length;
+
+          const sumByKey = (keyOf: (d: OwnDebt) => string) => {
+            const map = new Map<string, number>();
+            for (const d of openOwnRows) {
+              const k = keyOf(d).trim() || "—";
+              map.set(k, (map.get(k) || 0) + d.amount);
+            }
+            let bestName = "";
+            let bestAmt = 0;
+            for (const [name, amt] of map) {
+              if (amt > bestAmt) {
+                bestName = name;
+                bestAmt = amt;
+              }
+            }
+            return bestName ? { name: bestName, amount: bestAmt } : null;
+          };
+          const topCreditor = sumByKey((d) => d.creditorName);
+          const topDebtType = sumByKey((d) => d.debtType);
 
           const ownStatusLabel = (st: OwnDebtStatus) =>
             st === "open" ? "Đang nợ" : st === "paid" ? "Đã trả" : "Đã hủy";
@@ -10061,7 +10082,7 @@ export default function Home() {
 
           return (
             <>
-              <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="rounded-xl border border-line bg-white p-4 shadow-panel">
                   <p className="text-xs font-bold uppercase tracking-wide text-muted">Tổng đang nợ</p>
                   <p className="mt-1 text-2xl font-black text-red-600">
@@ -10072,11 +10093,35 @@ export default function Home() {
                   <p className="text-xs font-bold uppercase tracking-wide text-muted">Số khoản đang nợ</p>
                   <p className="mt-1 text-2xl font-black text-ink">{openOwnCount}</p>
                 </div>
-                <div className="rounded-xl border border-brand/20 bg-brand-soft p-4 shadow-panel sm:col-span-2 lg:col-span-1">
-                  <p className="text-xs font-bold uppercase tracking-wide text-brand-dark">Dữ liệu</p>
-                  <p className="mt-1 text-sm font-semibold text-ink">
-                    Đã lưu DB — F5 vẫn còn. {ownDebtsLoading ? "Đang tải…" : `${ownDebts.length} khoản (theo CH).`}
-                  </p>
+                <div className="rounded-xl border border-line bg-white p-4 shadow-panel">
+                  <p className="text-xs font-bold uppercase tracking-wide text-muted">Nợ ai nhiều nhất</p>
+                  {topCreditor ? (
+                    <>
+                      <p className="mt-1 truncate text-lg font-black text-brand" title={topCreditor.name}>
+                        {topCreditor.name}
+                      </p>
+                      <p className="text-sm font-bold text-red-600">
+                        {isOwnDebtSensitiveHidden ? "***" : formatMoney(topCreditor.amount)}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="mt-1 text-base font-semibold text-muted">—</p>
+                  )}
+                </div>
+                <div className="rounded-xl border border-line bg-white p-4 shadow-panel">
+                  <p className="text-xs font-bold uppercase tracking-wide text-muted">Món nợ nhiều nhất</p>
+                  {topDebtType ? (
+                    <>
+                      <p className="mt-1 truncate text-lg font-black text-ink" title={topDebtType.name}>
+                        {topDebtType.name}
+                      </p>
+                      <p className="text-sm font-bold text-red-600">
+                        {isOwnDebtSensitiveHidden ? "***" : formatMoney(topDebtType.amount)}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="mt-1 text-base font-semibold text-muted">—</p>
+                  )}
                 </div>
               </div>
 
@@ -11091,8 +11136,21 @@ export default function Home() {
           const logEnd = Math.min(safeLogPage * LOG_PAGE_SIZE, logsTotal);
           const logStoreSelectValue =
             currentUser.role === "staff" ? currentUser.storeId : logStoreFilter;
+          const viewingLog = viewingLogId
+            ? logs.find((l) => l.id === viewingLogId) ?? null
+            : null;
+          /** Cùng target trên trang hiện tại (gợi ý lịch sử liên quan). */
+          const relatedLogs =
+            viewingLog && viewingLog.target.trim()
+              ? logs.filter(
+                  (l) =>
+                    l.id !== viewingLog.id &&
+                    l.target.trim() === viewingLog.target.trim()
+                )
+              : [];
 
           return (
+            <>
             <Panel title="Nhật ký thao tác">
               <p className="mb-3 text-sm font-semibold text-muted">
                 Lưu trên máy chủ — vẫn còn sau khi tải lại trang. Mặc định 30 ngày gần nhất.
@@ -11219,13 +11277,45 @@ export default function Home() {
                 </div>
               ) : (
                 <DataTable
-                  headers={["Thời gian", "Người thao tác", "Cửa hàng", "Hành động", "Dữ liệu"]}
+                  compact
+                  headers={[
+                    "Thời gian",
+                    "Người thao tác",
+                    "Cửa hàng",
+                    "Hành động",
+                    "Dữ liệu",
+                    "Thao tác",
+                  ]}
                   rows={logs.map((item) => [
-                    item.createdAt,
-                    item.user,
-                    storeName(item.storeId),
-                    item.action,
-                    item.target,
+                    <span key={`t-${item.id}`} className="whitespace-nowrap text-sm font-semibold text-slate-700">
+                      {item.createdAt}
+                    </span>,
+                    <span key={`u-${item.id}`} className="font-bold text-ink">
+                      {item.user || "—"}
+                    </span>,
+                    <span key={`s-${item.id}`} className="text-sm font-semibold text-slate-600">
+                      {storeName(item.storeId)}
+                    </span>,
+                    <span key={`a-${item.id}`} className="font-bold text-brand">
+                      {item.action}
+                    </span>,
+                    <span
+                      key={`d-${item.id}`}
+                      className="max-w-[14rem] truncate text-sm font-semibold text-slate-700"
+                      title={item.target}
+                    >
+                      {item.target || "—"}
+                    </span>,
+                    <div key={`act-${item.id}`} className="flex justify-center">
+                      <button
+                        type="button"
+                        onClick={() => setViewingLogId(item.id)}
+                        title="Xem chi tiết lịch sử thao tác"
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-900"
+                      >
+                        <Eye size={18} />
+                      </button>
+                    </div>,
                   ])}
                   emptyMessage={
                     logsTotal === 0
@@ -11264,6 +11354,99 @@ export default function Home() {
                 </div>
               </div>
             </Panel>
+
+            {viewingLog ? (
+              <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-md">
+                <section className="max-h-[92vh] w-full max-w-[640px] overflow-auto rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
+                  <div className="flex items-center justify-between border-b border-slate-200/60 bg-gradient-to-r from-brand/10 to-transparent p-5">
+                    <div className="flex items-center gap-3">
+                      <div className="grid h-11 w-11 place-items-center rounded-full bg-brand-soft text-brand">
+                        <ClipboardList size={22} />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-black text-brand">Chi tiết lịch sử thao tác</h2>
+                        <p className="text-sm font-semibold text-muted">{viewingLog.action}</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setViewingLogId(null)}
+                      className="h-9 rounded-xl border border-slate-200/60 bg-white/50 px-4 text-sm font-bold text-slate-600 backdrop-blur-md transition hover:bg-white hover:text-slate-900"
+                    >
+                      Đóng
+                    </button>
+                  </div>
+                  <div className="grid gap-3 p-5">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label="Thời gian">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-sm font-semibold text-slate-800">
+                          {viewingLog.createdAt || "—"}
+                        </div>
+                      </Field>
+                      <Field label="Người thao tác">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-sm font-semibold text-slate-800">
+                          {viewingLog.user || "—"}
+                        </div>
+                      </Field>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label="Cửa hàng">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-sm font-semibold text-slate-800">
+                          {storeName(viewingLog.storeId)}
+                        </div>
+                      </Field>
+                      <Field label="Hành động">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-brand-soft px-3 text-sm font-black text-brand">
+                          {viewingLog.action || "—"}
+                        </div>
+                      </Field>
+                    </div>
+                    <Field label="Dữ liệu / đối tượng">
+                      <div className="min-h-10 w-full rounded-lg border border-line bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-800">
+                        {viewingLog.target || "—"}
+                      </div>
+                    </Field>
+                    <Field label="Mã nhật ký">
+                      <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-mono text-xs font-semibold text-slate-600">
+                        {viewingLog.id}
+                      </div>
+                    </Field>
+                    {viewingLog.meta && Object.keys(viewingLog.meta).length > 0 ? (
+                      <Field label="Chi tiết bổ sung (meta)">
+                        <pre className="max-h-40 overflow-auto rounded-lg border border-line bg-slate-50 p-3 text-xs font-semibold text-slate-700">
+                          {JSON.stringify(viewingLog.meta, null, 2)}
+                        </pre>
+                      </Field>
+                    ) : null}
+
+                    {relatedLogs.length > 0 ? (
+                      <div className="rounded-xl border border-line bg-slate-50/80 p-3">
+                        <p className="mb-2 text-xs font-black uppercase tracking-wide text-muted">
+                          Thao tác liên quan (cùng dữ liệu · trên trang này)
+                        </p>
+                        <ul className="grid max-h-40 gap-1.5 overflow-auto">
+                          {relatedLogs.map((r) => (
+                            <li key={r.id}>
+                              <button
+                                type="button"
+                                onClick={() => setViewingLogId(r.id)}
+                                className="flex w-full flex-col rounded-lg border border-line bg-white px-3 py-2 text-left transition hover:border-brand/40 hover:bg-brand-soft/40 sm:flex-row sm:items-center sm:justify-between sm:gap-2"
+                              >
+                                <span className="text-sm font-bold text-brand">{r.action}</span>
+                                <span className="text-xs font-semibold text-muted">
+                                  {r.createdAt} · {r.user}
+                                </span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </div>
+                </section>
+              </div>
+            ) : null}
+            </>
           );
         })()}
 
