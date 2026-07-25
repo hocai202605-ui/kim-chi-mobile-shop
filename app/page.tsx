@@ -3535,32 +3535,29 @@ export default function Home() {
 
   function openPhoneEditModal(id: string) {
     const phone = phones.find((item) => item.id === id);
-    if (phone?.status === "Đã bán") {
-      showUiToast("error", "Máy đã bán — không sửa được.");
-      return;
-    }
+    if (!phone) return;
     setInventoryTab("phones");
     setEditingPhoneId(id);
     setClonePhoneDraft(null);
     setEditingAccessoryId(null);
     setCloneAccessoryDraft(null);
-    setPhoneFormStoreId(resolvePhoneFormStore(phone?.storeId));
+    setPhoneFormStoreId(resolvePhoneFormStore(phone.storeId));
     setIsInventoryModalOpen(true);
   }
 
-  /** Clone máy → popup xác nhận → mở form thêm mới (prefill full, mọi ô vẫn sửa được). */
+  /** Clone máy → popup xác nhận → mở form thêm mới (prefill full, mọi ô vẫn sửa được). Hỗ trợ cả máy đã bán. */
   function openPhoneCloneModal(id: string) {
     const source = phones.find((item) => item.id === id);
     if (!source) return;
-    if (source.status === "Đã bán") {
-      showUiToast("error", "Máy đã bán — không nhân bản được.");
-      return;
-    }
 
     const label = `${source.brand} ${source.name}`.trim();
     const imeiHint = source.imei ? ` (…${source.imei.slice(-5)})` : "";
+    const soldHint =
+      source.status === "Đã bán"
+        ? "\nMáy gốc đã bán: bản mới mặc định «Còn hàng», xóa ngày bán — bạn vẫn chỉnh lại được."
+        : "";
     const ok = window.confirm(
-      `Nhân bản máy "${label}"${imeiHint}?\n\nForm sẽ điền sẵn toàn bộ thông tin. Bạn có thể sửa bất kỳ ô nào rồi lưu thành máy mới.\nLưu ý: IMEI phải khác máy gốc (IMEI không được trùng).`
+      `Nhân bản máy "${label}"${imeiHint}?\n\nForm sẽ điền sẵn toàn bộ thông tin. Bạn có thể sửa bất kỳ ô nào rồi lưu thành máy mới.\nLưu ý: IMEI nên khác máy gốc nếu cần phân biệt.${soldHint}`
     );
     if (!ok) return;
 
@@ -3568,10 +3565,13 @@ export default function Home() {
     setEditingPhoneId(null);
     setEditingAccessoryId(null);
     setCloneAccessoryDraft(null);
-    // Copy full; id rỗng = mode thêm mới. Mọi field form đều editable.
+    // Copy full; id rỗng = mode thêm mới. Máy đã bán → bản mới về kho (Còn hàng).
     setClonePhoneDraft({
       ...source,
       id: "",
+      ...(source.status === "Đã bán"
+        ? { status: "Còn hàng" as ProductStatus, saleDate: "" }
+        : {}),
     });
     setPhoneFormStoreId(resolvePhoneFormStore(source.storeId));
     setCloneFormKey((k) => k + 1);
@@ -3697,7 +3697,7 @@ export default function Home() {
     }
   }
 
-  /** Xóa cứng máy đã bán (grid: máy đã bán chỉ còn Chi tiết + Xóa). */
+  /** Xóa cứng máy đã bán (grid: Chi tiết + Sửa + Nhân bản + Xóa). */
   async function deleteSoldPhoneItem(id: string) {
     const source = phones.find((item) => item.id === id);
     if (!source) return;
@@ -7736,43 +7736,34 @@ export default function Home() {
                       >
                         <Eye size={18} />
                       </button>
-                      {item.status === "Đã bán" ? (
-                        <button
-                          type="button"
-                          onClick={() => void deleteSoldPhoneItem(item.id)}
-                          title="Xóa máy (xóa hẳn)"
-                          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => openPhoneEditModal(item.id)}
-                            title="Sửa"
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20"
-                          >
-                            <Edit3 size={18} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openPhoneCloneModal(item.id)}
-                            title="Nhân bản thêm mới"
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100"
-                          >
-                            <CopyPlus size={18} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openUnsoldPhoneHardDelete(item.id)}
-                            title="Xóa cứng máy chưa bán"
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        </>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => openPhoneEditModal(item.id)}
+                        title="Sửa"
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20"
+                      >
+                        <Edit3 size={18} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openPhoneCloneModal(item.id)}
+                        title="Nhân bản thêm mới"
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100"
+                      >
+                        <CopyPlus size={18} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          item.status === "Đã bán"
+                            ? void deleteSoldPhoneItem(item.id)
+                            : openUnsoldPhoneHardDelete(item.id)
+                        }
+                        title={item.status === "Đã bán" ? "Xóa máy (xóa hẳn)" : "Xóa cứng máy chưa bán"}
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100"
+                      >
+                        <Trash2 size={18} />
+                      </button>
                     </div>,
                   ])}
                 />
