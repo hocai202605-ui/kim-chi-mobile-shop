@@ -286,7 +286,11 @@ type SaleCartLine =
       cost: number;
     };
 
+/** Tặng PK mặc định khi tab Bán Máy (đã có trên droplist tên PK). */
+const SALE_GIFT_DEFAULT_NAME = "Sạc - Ốp - Cường lực";
+
 const SALE_ACC_NAME_SEED = [
+  SALE_GIFT_DEFAULT_NAME,
   "Ốp trong suốt",
   "Ốp chống sốc",
   "Cáp sạc Type-C",
@@ -1228,6 +1232,9 @@ export default function Home() {
   const [salePhoneListOpen, setSalePhoneListOpen] = useState(false);
   /** Tab form bán: phụ kiện (mặc định) | máy. */
   const [saleModalTab, setSaleModalTab] = useState<"accessory" | "phone">("accessory");
+  /** Tab Bán Máy: cụm form mặc định thu gọn, bấm mới mở. */
+  const [salePhoneSaleInfoOpen, setSalePhoneSaleInfoOpen] = useState(false);
+  const [salePhoneCustomerOpen, setSalePhoneCustomerOpen] = useState(false);
   const [saleAccQty, setSaleAccQty] = useState(1);
   /** Key remount ManageableSelect (tên / giá bán / giá nhập) khi mở phiếu mới hoặc Thêm PK. */
   const [saleAccFormKey, setSaleAccFormKey] = useState(0);
@@ -1299,6 +1306,8 @@ export default function Home() {
   const [ownDebtTypeOptions, setOwnDebtTypeOptions] = useState<string[]>(() => [
     ...OWN_DEBT_TYPES,
   ]);
+  /** Droplist người mình nợ — freeText + thêm/sửa/xóa local. */
+  const [ownDebtCreditorOptions, setOwnDebtCreditorOptions] = useState<string[]>([]);
   /** Nhật ký — load từ DB (audit_logs). */
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [logsTotal, setLogsTotal] = useState(0);
@@ -4407,6 +4416,8 @@ export default function Home() {
     setSalePhoneSearch("");
     setSalePhoneListOpen(false);
     setSaleModalTab("accessory");
+    setSalePhoneSaleInfoOpen(false);
+    setSalePhoneCustomerOpen(false);
     setSaleAccQty(1);
     setSaleAccFormKey((k) => k + 1);
     setSaleAccDefaultName("");
@@ -5094,6 +5105,14 @@ export default function Home() {
         }
         return Array.from(next);
       });
+      setOwnDebtCreditorOptions((prev) => {
+        const next = new Set(prev);
+        for (const r of rows) {
+          const name = r.creditorName?.trim();
+          if (name) next.add(name);
+        }
+        return Array.from(next).sort((a, b) => a.localeCompare(b, "vi"));
+      });
     } catch (err) {
       setOwnDebtsError(toUiError(err));
       setOwnDebts([]);
@@ -5186,6 +5205,11 @@ export default function Home() {
 
     if (debtType && !ownDebtTypeOptions.includes(debtType)) {
       setOwnDebtTypeOptions((prev) => [...prev, debtType]);
+    }
+    if (creditorName && !ownDebtCreditorOptions.includes(creditorName)) {
+      setOwnDebtCreditorOptions((prev) =>
+        [...prev, creditorName].sort((a, b) => a.localeCompare(b, "vi"))
+      );
     }
 
     const isEdit = Boolean(editingOwnDebtId);
@@ -9221,7 +9245,12 @@ export default function Home() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => setSaleModalTab("phone")}
+                          onClick={() => {
+                            setSaleModalTab("phone");
+                            // Vào tab Máy: thu gọn cụm form (bấm mới mở)
+                            setSalePhoneSaleInfoOpen(false);
+                            setSalePhoneCustomerOpen(false);
+                          }}
                           className={`inline-flex h-11 items-center justify-center gap-2 rounded-xl text-sm font-black shadow-sm ring-1 transition ${
                             saleModalTab === "phone"
                               ? "bg-indigo-600 text-white ring-indigo-400 hover:bg-indigo-700"
@@ -9234,6 +9263,50 @@ export default function Home() {
                       </div>
                     ) : null}
 
+                    {/* Tab Máy: nút ẩn/hiện 2 cụm — mặc định đóng */}
+                    {!isSaleReadOnly && saleModalTab === "phone" ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSalePhoneSaleInfoOpen((v) => !v)}
+                          className={`inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border px-2 text-xs font-black transition sm:text-sm ${
+                            salePhoneSaleInfoOpen
+                              ? "border-indigo-300 bg-indigo-50 text-indigo-800"
+                              : "border-line bg-white text-slate-700 hover:bg-slate-50"
+                          }`}
+                        >
+                          {salePhoneSaleInfoOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                          Thông tin bán hàng
+                          {salePhoneSaleInfoOpen ? (
+                            <EyeOff size={14} className="opacity-70" />
+                          ) : (
+                            <Eye size={14} className="opacity-70" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSalePhoneCustomerOpen((v) => !v)}
+                          className={`inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border px-2 text-xs font-black transition sm:text-sm ${
+                            salePhoneCustomerOpen
+                              ? "border-brand bg-brand-soft text-brand-dark"
+                              : "border-line bg-white text-slate-700 hover:bg-slate-50"
+                          }`}
+                        >
+                          {salePhoneCustomerOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                          Khách hàng
+                          {salePhoneCustomerOpen ? (
+                            <EyeOff size={14} className="opacity-70" />
+                          ) : (
+                            <Eye size={14} className="opacity-70" />
+                          )}
+                        </button>
+                      </div>
+                    ) : null}
+
+                    {/* Thông tin bán: luôn hiện ở tab PK; tab Máy chỉ khi bấm mở (hoặc xem/sửa readonly). */}
+                    {(isSaleReadOnly ||
+                      saleModalTab === "accessory" ||
+                      salePhoneSaleInfoOpen) && (
                     <div className="grid gap-2">
                       <div className="grid gap-2 sm:grid-cols-2">
                         <label className="grid gap-0.5">
@@ -9275,7 +9348,7 @@ export default function Home() {
                           </span>
                           <input
                             type="datetime-local"
-                            required={!isSaleReadOnly}
+                            required={!isSaleReadOnly && (saleModalTab === "accessory" || salePhoneSaleInfoOpen)}
                             value={saleSoldAt}
                             onChange={(e) => setSaleSoldAt(e.target.value)}
                             readOnly={isSaleReadOnly}
@@ -9292,7 +9365,7 @@ export default function Home() {
                             Hình thức thanh toán {!isSaleReadOnly ? <span className="text-red-500">*</span> : null}
                           </span>
                           <select
-                            required={!isSaleReadOnly}
+                            required={!isSaleReadOnly && (saleModalTab === "accessory" || salePhoneSaleInfoOpen)}
                             value={salePayMethod}
                             onChange={(e) => setSalePayMethod(e.target.value as SalePayMethod)}
                             disabled={isSaleReadOnly}
@@ -9312,7 +9385,7 @@ export default function Home() {
                             Trạng thái thanh toán {!isSaleReadOnly ? <span className="text-red-500">*</span> : null}
                           </span>
                           <select
-                            required={!isSaleReadOnly}
+                            required={!isSaleReadOnly && (saleModalTab === "accessory" || salePhoneSaleInfoOpen)}
                             value={salePayStatus}
                             onChange={(e) => setSalePayStatus(e.target.value as SalePayStatus)}
                             disabled={isSaleReadOnly}
@@ -9329,6 +9402,7 @@ export default function Home() {
                         </label>
                       </div>
                     </div>
+                    )}
 
                     {/* Nội dung theo tab — ẩn khi chỉ xem */}
                     {!isSaleReadOnly ? (
@@ -9441,20 +9515,31 @@ export default function Home() {
                           </div>
                         ) : (
                           <div className="grid gap-2">
-                            {/* Khách hàng — bắt buộc khi bán máy */}
+                            {/* Khách hàng — mặc định ẩn; bấm nút «Khách hàng» mới show */}
+                            {salePhoneCustomerOpen ? (
                             <div className="rounded-lg border border-line/80 bg-slate-50/80 px-2.5 py-2">
                               <div className="mb-1.5 flex flex-wrap items-center justify-between gap-1.5">
                                 <p className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-slate-600">
                                   <Users size={13} className="text-muted" />
                                   Khách hàng
                                 </p>
-                                <button
-                                  type="button"
-                                  onClick={resetSaleCustomerToWalkIn}
-                                  className="rounded-full border border-line bg-white px-2 py-0.5 text-[11px] font-bold text-muted hover:bg-white"
-                                >
-                                  Về khách lẻ
-                                </button>
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={resetSaleCustomerToWalkIn}
+                                    className="rounded-full border border-line bg-white px-2 py-0.5 text-[11px] font-bold text-muted hover:bg-white"
+                                  >
+                                    Về khách lẻ
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setSalePhoneCustomerOpen(false)}
+                                    className="rounded-full border border-line bg-white px-2 py-0.5 text-[11px] font-bold text-muted hover:bg-slate-100"
+                                    title="Ẩn cụm khách hàng"
+                                  >
+                                    Ẩn
+                                  </button>
+                                </div>
                               </div>
                               <div className="grid gap-2 sm:grid-cols-2">
                                 <label className="grid gap-0.5">
@@ -9473,7 +9558,10 @@ export default function Home() {
                                       onBlur={() => {
                                         window.setTimeout(() => setSaleCustomerSuggestOpen(false), 180);
                                       }}
-                                      required={saleCart.some((l) => l.kind === "phone")}
+                                      required={
+                                        salePhoneCustomerOpen &&
+                                        saleCart.some((l) => l.kind === "phone")
+                                      }
                                       className="h-9 w-full rounded-md border border-line bg-white px-2.5 text-sm font-semibold outline-none focus:border-brand"
                                       placeholder="Bắt buộc khi bán máy"
                                       autoComplete="off"
@@ -9567,8 +9655,9 @@ export default function Home() {
                                 </div>
                               </div>
                             </div>
+                            ) : null}
 
-                            {/* Tặng PK — giá bán 0, vốn nhập trừ lãi máy */}
+                            {/* Tặng PK — giá bán 0, giá nhập trừ lãi máy */}
                             <div className="relative overflow-hidden rounded-xl border border-fuchsia-200/80 bg-gradient-to-br from-fuchsia-50 via-pink-50/40 to-white p-2.5 shadow-sm ring-1 ring-fuchsia-100/80">
                               <div className="relative mb-1.5 flex items-center gap-1.5">
                                 <span className="grid h-7 w-7 place-items-center rounded-md bg-fuchsia-100 text-fuchsia-700 ring-1 ring-fuchsia-200/80">
@@ -9589,9 +9678,13 @@ export default function Home() {
                                       key={`sale-gift-name-${saleGiftFormKey}-${saleStoreId}`}
                                       label="Tên PK tặng"
                                       name="saleGiftName"
-                                      options={saleAccNameOptions}
+                                      options={
+                                        saleAccNameOptions.includes(SALE_GIFT_DEFAULT_NAME)
+                                          ? saleAccNameOptions
+                                          : [SALE_GIFT_DEFAULT_NAME, ...saleAccNameOptions]
+                                      }
                                       setOptions={setSaleAccNameOptions}
-                                      defaultValue=""
+                                      defaultValue={SALE_GIFT_DEFAULT_NAME}
                                       required={false}
                                       categoryCode={ACCESSORY_LOOKUP_CATEGORIES.name}
                                       storeId={saleStoreId}
@@ -10376,15 +10469,16 @@ export default function Home() {
                           </div>
                         </Field>
                       )}
-                      <Field label="Người mình nợ" required>
-                        <input
-                          name="creditorName"
-                          required
-                          defaultValue={ownFormDefaults?.creditorName ?? ""}
-                          placeholder="Tên NCC / người cho vay…"
-                          className="h-10 w-full rounded-lg border border-line bg-white px-3"
-                        />
-                      </Field>
+                      <ManageableSelect
+                        label="Người mình nợ"
+                        name="creditorName"
+                        options={ownDebtCreditorOptions}
+                        setOptions={setOwnDebtCreditorOptions}
+                        defaultValue={ownFormDefaults?.creditorName ?? ""}
+                        allowFreeText
+                        allowManage
+                        actorUsername={currentUser.username}
+                      />
                       <Field label="Ngày nợ" required>
                         <input
                           name="debtDate"
