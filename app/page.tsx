@@ -1232,9 +1232,8 @@ export default function Home() {
   const [salePhoneListOpen, setSalePhoneListOpen] = useState(false);
   /** Tab form bán: phụ kiện (mặc định) | máy. */
   const [saleModalTab, setSaleModalTab] = useState<"accessory" | "phone">("accessory");
-  /** Tab Bán Máy: cụm form mặc định thu gọn, bấm mới mở. */
-  const [salePhoneSaleInfoOpen, setSalePhoneSaleInfoOpen] = useState(false);
-  const [salePhoneCustomerOpen, setSalePhoneCustomerOpen] = useState(false);
+  /** Tab Bán Máy: 1 nút mở cả thông tin bán + khách hàng (mặc định ẩn). */
+  const [salePhoneDetailsOpen, setSalePhoneDetailsOpen] = useState(false);
   const [saleAccQty, setSaleAccQty] = useState(1);
   /** Key remount ManageableSelect (tên / giá bán / giá nhập) khi mở phiếu mới hoặc Thêm PK. */
   const [saleAccFormKey, setSaleAccFormKey] = useState(0);
@@ -4416,8 +4415,7 @@ export default function Home() {
     setSalePhoneSearch("");
     setSalePhoneListOpen(false);
     setSaleModalTab("accessory");
-    setSalePhoneSaleInfoOpen(false);
-    setSalePhoneCustomerOpen(false);
+    setSalePhoneDetailsOpen(false);
     setSaleAccQty(1);
     setSaleAccFormKey((k) => k + 1);
     setSaleAccDefaultName("");
@@ -9247,9 +9245,8 @@ export default function Home() {
                           type="button"
                           onClick={() => {
                             setSaleModalTab("phone");
-                            // Vào tab Máy: thu gọn cụm form (bấm mới mở)
-                            setSalePhoneSaleInfoOpen(false);
-                            setSalePhoneCustomerOpen(false);
+                            // Vào tab Máy: thu gọn (bấm 1 nút mới mở cả 2 cụm)
+                            setSalePhoneDetailsOpen(false);
                           }}
                           className={`inline-flex h-11 items-center justify-center gap-2 rounded-xl text-sm font-black shadow-sm ring-1 transition ${
                             saleModalTab === "phone"
@@ -9263,50 +9260,34 @@ export default function Home() {
                       </div>
                     ) : null}
 
-                    {/* Tab Máy: nút ẩn/hiện 2 cụm — mặc định đóng */}
+                    {/* Tab Máy: 1 nút ẩn/hiện thông tin bán + khách hàng */}
                     {!isSaleReadOnly && saleModalTab === "phone" ? (
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setSalePhoneSaleInfoOpen((v) => !v)}
-                          className={`inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border px-2 text-xs font-black transition sm:text-sm ${
-                            salePhoneSaleInfoOpen
-                              ? "border-indigo-300 bg-indigo-50 text-indigo-800"
-                              : "border-line bg-white text-slate-700 hover:bg-slate-50"
-                          }`}
-                        >
-                          {salePhoneSaleInfoOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                          Thông tin bán hàng
-                          {salePhoneSaleInfoOpen ? (
-                            <EyeOff size={14} className="opacity-70" />
-                          ) : (
-                            <Eye size={14} className="opacity-70" />
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setSalePhoneCustomerOpen((v) => !v)}
-                          className={`inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border px-2 text-xs font-black transition sm:text-sm ${
-                            salePhoneCustomerOpen
-                              ? "border-brand bg-brand-soft text-brand-dark"
-                              : "border-line bg-white text-slate-700 hover:bg-slate-50"
-                          }`}
-                        >
-                          {salePhoneCustomerOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                          Khách hàng
-                          {salePhoneCustomerOpen ? (
-                            <EyeOff size={14} className="opacity-70" />
-                          ) : (
-                            <Eye size={14} className="opacity-70" />
-                          )}
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSalePhoneDetailsOpen((v) => !v)}
+                        className={`inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border px-3 text-sm font-black transition ${
+                          salePhoneDetailsOpen
+                            ? "border-indigo-300 bg-indigo-50 text-indigo-800"
+                            : "border-line bg-white text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        {salePhoneDetailsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                        Thông tin bán hàng & khách hàng
+                        {salePhoneDetailsOpen ? (
+                          <EyeOff size={15} className="opacity-70" />
+                        ) : (
+                          <Eye size={15} className="opacity-70" />
+                        )}
+                        <span className="text-xs font-bold text-muted">
+                          {salePhoneDetailsOpen ? "(đang hiện)" : "(bấm để hiện)"}
+                        </span>
+                      </button>
                     ) : null}
 
                     {/* Thông tin bán: luôn hiện ở tab PK; tab Máy chỉ khi bấm mở (hoặc xem/sửa readonly). */}
                     {(isSaleReadOnly ||
                       saleModalTab === "accessory" ||
-                      salePhoneSaleInfoOpen) && (
+                      salePhoneDetailsOpen) && (
                     <div className="grid gap-2">
                       <div className="grid gap-2 sm:grid-cols-2">
                         <label className="grid gap-0.5">
@@ -9348,7 +9329,7 @@ export default function Home() {
                           </span>
                           <input
                             type="datetime-local"
-                            required={!isSaleReadOnly && (saleModalTab === "accessory" || salePhoneSaleInfoOpen)}
+                            required={!isSaleReadOnly && (saleModalTab === "accessory" || salePhoneDetailsOpen)}
                             value={saleSoldAt}
                             onChange={(e) => setSaleSoldAt(e.target.value)}
                             readOnly={isSaleReadOnly}
@@ -9365,7 +9346,7 @@ export default function Home() {
                             Hình thức thanh toán {!isSaleReadOnly ? <span className="text-red-500">*</span> : null}
                           </span>
                           <select
-                            required={!isSaleReadOnly && (saleModalTab === "accessory" || salePhoneSaleInfoOpen)}
+                            required={!isSaleReadOnly && (saleModalTab === "accessory" || salePhoneDetailsOpen)}
                             value={salePayMethod}
                             onChange={(e) => setSalePayMethod(e.target.value as SalePayMethod)}
                             disabled={isSaleReadOnly}
@@ -9385,7 +9366,7 @@ export default function Home() {
                             Trạng thái thanh toán {!isSaleReadOnly ? <span className="text-red-500">*</span> : null}
                           </span>
                           <select
-                            required={!isSaleReadOnly && (saleModalTab === "accessory" || salePhoneSaleInfoOpen)}
+                            required={!isSaleReadOnly && (saleModalTab === "accessory" || salePhoneDetailsOpen)}
                             value={salePayStatus}
                             onChange={(e) => setSalePayStatus(e.target.value as SalePayStatus)}
                             disabled={isSaleReadOnly}
@@ -9515,31 +9496,21 @@ export default function Home() {
                           </div>
                         ) : (
                           <div className="grid gap-2">
-                            {/* Khách hàng — mặc định ẩn; bấm nút «Khách hàng» mới show */}
-                            {salePhoneCustomerOpen ? (
+                            {/* Khách hàng — cùng nút «Thông tin bán hàng & khách hàng» */}
+                            {salePhoneDetailsOpen ? (
                             <div className="rounded-lg border border-line/80 bg-slate-50/80 px-2.5 py-2">
                               <div className="mb-1.5 flex flex-wrap items-center justify-between gap-1.5">
                                 <p className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-slate-600">
                                   <Users size={13} className="text-muted" />
                                   Khách hàng
                                 </p>
-                                <div className="flex items-center gap-1.5">
-                                  <button
-                                    type="button"
-                                    onClick={resetSaleCustomerToWalkIn}
-                                    className="rounded-full border border-line bg-white px-2 py-0.5 text-[11px] font-bold text-muted hover:bg-white"
-                                  >
-                                    Về khách lẻ
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setSalePhoneCustomerOpen(false)}
-                                    className="rounded-full border border-line bg-white px-2 py-0.5 text-[11px] font-bold text-muted hover:bg-slate-100"
-                                    title="Ẩn cụm khách hàng"
-                                  >
-                                    Ẩn
-                                  </button>
-                                </div>
+                                <button
+                                  type="button"
+                                  onClick={resetSaleCustomerToWalkIn}
+                                  className="rounded-full border border-line bg-white px-2 py-0.5 text-[11px] font-bold text-muted hover:bg-white"
+                                >
+                                  Về khách lẻ
+                                </button>
                               </div>
                               <div className="grid gap-2 sm:grid-cols-2">
                                 <label className="grid gap-0.5">
@@ -9559,7 +9530,7 @@ export default function Home() {
                                         window.setTimeout(() => setSaleCustomerSuggestOpen(false), 180);
                                       }}
                                       required={
-                                        salePhoneCustomerOpen &&
+                                        salePhoneDetailsOpen &&
                                         saleCart.some((l) => l.kind === "phone")
                                       }
                                       className="h-9 w-full rounded-md border border-line bg-white px-2.5 text-sm font-semibold outline-none focus:border-brand"
