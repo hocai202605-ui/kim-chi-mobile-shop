@@ -4432,6 +4432,11 @@ export default function Home() {
 
   function openSaleModal() {
     resetSaleFormDraft();
+    // Bán Gà: form đồng bộ bán máy — mở sẵn tab Bán Máy (cụm TT/khách vẫn thu gọn).
+    if (isBanGaContext) {
+      setSaleModalTab("phone");
+      setSalePhoneDetailsOpen(false);
+    }
     setIsSaleModalOpen(true);
   }
 
@@ -4517,8 +4522,14 @@ export default function Home() {
 
       if (lines && lines.length > 0) {
         const hasPhone = lines.some((l) => l.kind === "phone");
-        // View: chỉ xem giỏ. Edit: tab Máy nếu phiếu có máy, không thì tab PK.
-        setSaleModalTab(mode === "edit" && hasPhone ? "phone" : "accessory");
+        // View: chỉ xem giỏ. Edit/view có máy → tab Máy; sửa thì mở cụm TT bán + khách.
+        if (hasPhone && (mode === "edit" || mode === "view")) {
+          setSaleModalTab("phone");
+          setSalePhoneDetailsOpen(mode === "edit");
+        } else {
+          setSaleModalTab("accessory");
+          setSalePhoneDetailsOpen(false);
+        }
         setSaleCart(
           lines.map((line, idx) =>
             line.kind === "phone"
@@ -4560,7 +4571,14 @@ export default function Home() {
         const rawAmt = Number(sale.amount) || 0;
         const amountShort = rawAmt >= 1_000_000 ? Math.round(rawAmt / 1000) : rawAmt;
         const unitShort = Math.max(0, Math.round(amountShort / Math.max(1, sale.quantity)));
-        setSaleModalTab(mode === "edit" && sale.itemType === "Máy" ? "phone" : "accessory");
+        const legacyPhone = sale.itemType === "Máy";
+        if (legacyPhone && (mode === "edit" || mode === "view")) {
+          setSaleModalTab("phone");
+          setSalePhoneDetailsOpen(mode === "edit");
+        } else {
+          setSaleModalTab("accessory");
+          setSalePhoneDetailsOpen(false);
+        }
         setSaleCart([
           {
             key: `legacy-${sale.id}`,
@@ -9212,7 +9230,7 @@ export default function Home() {
                   </div>
 
                   <form id="sale-create-form" onSubmit={createSale} className="grid gap-2 p-3">
-                    {/* 2 nút tab lên đầu form — thay «Thêm máy» cũ, phân biệt rõ Bán PK / Bán Máy */}
+                    {/* 2 nút tab — dùng chung Bán hàng + Bán Gà (channel retail | ban_ga). */}
                     {!isSaleReadOnly ? (
                       <div className="grid grid-cols-2 gap-2">
                         <button
@@ -9258,6 +9276,11 @@ export default function Home() {
                           Bán Máy
                         </button>
                       </div>
+                    ) : null}
+                    {isBanGaContext && !isSaleReadOnly ? (
+                      <p className="text-center text-[11px] font-semibold text-muted">
+                        Phiếu <strong className="text-brand">Bán Gà</strong> — form giống Bán hàng, kênh riêng.
+                      </p>
                     ) : null}
 
                     {/* Tab Máy: 1 nút ẩn/hiện thông tin bán + khách hàng */}
