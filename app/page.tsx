@@ -114,6 +114,10 @@ import {
   saveCustomer as apiSaveCustomer,
 } from "@/services/customersService";
 import {
+  createAuditLog as apiCreateAuditLog,
+  listAuditLogs as apiListAuditLogs,
+} from "@/services/auditLogService";
+import {
   apiListAccounts,
   apiListLoginUsers,
   apiLogin,
@@ -624,10 +628,14 @@ function ColorDot({ color, size = "md" }: { color: string; size?: "sm" | "md" })
   );
 }
 
-const logSeed: AuditLog[] = [
-  { id: "g1", createdAt: "2026-07-06 09:15", user: "Chủ cửa hàng", storeId: "store-1", action: "Tạo phiếu bán", target: "s1" },
-  { id: "g2", createdAt: "2026-07-06 10:20", user: "Nhân viên CH2", storeId: "store-2", action: "Tạo phiếu sửa", target: "r1" },
-];
+const LOG_PAGE_SIZE = 50;
+
+/** Mặc định khoảng 30 ngày gần nhất (lịch VN). */
+function defaultLogFromDate(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 30);
+  return toVnDate(d) || vnNowDate();
+}
 
 const navItems = [
   { id: "sales", label: "BÁN HÀNG", icon: ReceiptText },
@@ -1253,7 +1261,30 @@ export default function Home() {
   const [cloneManualDebtDraft, setCloneManualDebtDraft] = useState<DebtItem | null>(null);
   const [cloneManualDebtFormKey, setCloneManualDebtFormKey] = useState(0);
   const [isManualDebtModalOpen, setIsManualDebtModalOpen] = useState(false);
-  const [logs, setLogs] = useState(logSeed);
+  /** Nhật ký — load từ DB (audit_logs). */
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [logsTotal, setLogsTotal] = useState(0);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [logsError, setLogsError] = useState("");
+  const [logPage, setLogPage] = useState(1);
+  /** Draft trên form filter. */
+  const [logStoreFilter, setLogStoreFilter] = useState<StoreId>("all");
+  const [logFrom, setLogFrom] = useState(() => defaultLogFromDate());
+  const [logTo, setLogTo] = useState(() => vnNowDate());
+  const [logUserQ, setLogUserQ] = useState("");
+  const [logActionQ, setLogActionQ] = useState("");
+  const [logSearchQ, setLogSearchQ] = useState("");
+  /** Bộ lọc đã áp dụng (chỉ đổi khi Lọc / Xóa lọc / reset). */
+  const [logApplied, setLogApplied] = useState(() => ({
+    storeId: "all" as StoreId,
+    from: defaultLogFromDate(),
+    to: vnNowDate(),
+    user: "",
+    action: "",
+    q: "",
+  }));
+  /** Tăng khi cần reload (sau ghi log / Tải lại). */
+  const [logFilterTick, setLogFilterTick] = useState(0);
   /** Droplist theo cửa hàng: storeCode → categoryCode → labels */
   const [lookupsByStore, setLookupsByStore] = useState<Record<string, Record<string, string[]>>>({});
   /** Cửa hàng đang gắn form máy (quyết định droplist +/sửa/xóa). */
@@ -2829,18 +2860,100 @@ export default function Home() {
     };
   }, [onlineRepairs, matchesReportPeriod, reportYear]);
 
-  function pushLog(action: string, target: string, storeId: Exclude<StoreId, "all">) {
-    setLogs((prev) => [
-      {
-        id: `g${Date.now()}`,
-        createdAt: new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }),
-        user: currentUser?.name ?? "Demo",
+  const reloadAuditLogs = useCallback(async () => {
+    if (!currentUser) return;
+    setLogsLoading(true);
+    setLogsError("");
+    try {
+      const storeId: StoreId =
+        currentUser.role === "staff" ? currentUser.storeId : logApplied.storeId;
+      const result = await apiListAuditLogs({
         storeId,
-        action,
-        target,
-      },
-      ...prev,
-    ]);
+        from: logApplied.from || undefined,
+        to: logApplied.to || undefined,
+        user: logApplied.user.trim() || undefined,
+        action: logApplied.action.trim() || undefined,
+        q: logApplied.q.trim() || undefined,
+        page: logPage,
+        pageSize: LOG_PAGE_SIZE,
+      });
+      setLogs(result.rows);
+      setLogsTotal(result.total);
+    } catch (err) {
+      setLogsError(toUiError(err));
+      setLogs([]);
+      setLogsTotal(0);
+    } finally {
+      setLogsLoading(false);
+    }
+  }, [currentUser, logApplied, logPage]);
+
+  useEffect(() => {
+    if (activePage !== "logs" || !currentUser) return;
+    void reloadAuditLogs();
+  }, [activePage, currentUser, logPage, logFilterTick, logApplied, reloadAuditLogs]);
+
+  /**
+   * Ghi nhật ký DB. Không chặn nghiệp vụ chính — lỗi chỉ toast nhẹ.
+   * Khi đang mở màn Nhật ký: reload list.
+   */
+  function pushLog(action: string, target: string, storeId: Exclude<StoreId, "all">) {
+    const actorName =
+      currentUser?.username?.trim() ||
+      currentUser?.name?.trim() ||
+      "unknown";
+    void (async () => {
+      try {
+        await apiCreateAuditLog({
+          actorName,
+          storeId,
+          action,
+          target,
+        });
+        if (activePage === "logs") {
+          if (logPage !== 1) setLogPage(1);
+          else setLogFilterTick((t) => t + 1);
+        }
+      } catch {
+        showUiToast(
+          "error",
+          "Ghi nhật ký thất bại (thao tác chính vẫn đã lưu)."
+        );
+      }
+    })();
+  }
+
+  function applyLogFilters() {
+    setLogApplied({
+      storeId: logStoreFilter,
+      from: logFrom,
+      to: logTo,
+      user: logUserQ,
+      action: logActionQ,
+      q: logSearchQ,
+    });
+    setLogPage(1);
+    setLogFilterTick((t) => t + 1);
+  }
+
+  function resetLogFilters() {
+    const from = defaultLogFromDate();
+    const to = vnNowDate();
+    setLogStoreFilter("all");
+    setLogFrom(from);
+    setLogTo(to);
+    setLogUserQ("");
+    setLogActionQ("");
+    setLogSearchQ("");
+    setLogApplied({
+      storeId: "all",
+      from,
+      to,
+      user: "",
+      action: "",
+      q: "",
+    });
+    setLogPage(1);
   }
 
   function resolvePartsStoreId(): Exclude<StoreId, "all"> {
@@ -10367,14 +10480,188 @@ export default function Home() {
           );
         })()}
 
-        {activePage === "logs" && (
-          <Panel title="Nhật ký thao tác">
-            <DataTable
-              headers={["Thời gian", "Người thao tác", "Cửa hàng", "Hành động", "Dữ liệu"]}
-              rows={logs.map((item) => [item.createdAt, item.user, storeName(item.storeId), item.action, item.target])}
-            />
-          </Panel>
-        )}
+        {activePage === "logs" && (() => {
+          const logTotalPages = Math.max(1, Math.ceil(logsTotal / LOG_PAGE_SIZE));
+          const safeLogPage = Math.min(logPage, logTotalPages);
+          const logStart = logsTotal === 0 ? 0 : (safeLogPage - 1) * LOG_PAGE_SIZE + 1;
+          const logEnd = Math.min(safeLogPage * LOG_PAGE_SIZE, logsTotal);
+          const logStoreSelectValue =
+            currentUser.role === "staff" ? currentUser.storeId : logStoreFilter;
+
+          return (
+            <Panel title="Nhật ký thao tác">
+              <p className="mb-3 text-sm font-semibold text-muted">
+                Lưu trên máy chủ — vẫn còn sau khi tải lại trang. Mặc định 30 ngày gần nhất.
+              </p>
+
+              <div className="mb-4 grid gap-3 rounded-xl border border-line bg-slate-50/80 p-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+                <Field label="Từ ngày">
+                  <input
+                    type="date"
+                    value={logFrom}
+                    onChange={(e) => setLogFrom(e.target.value)}
+                    className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-semibold text-ink"
+                  />
+                </Field>
+                <Field label="Đến ngày">
+                  <input
+                    type="date"
+                    value={logTo}
+                    onChange={(e) => setLogTo(e.target.value)}
+                    className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-semibold text-ink"
+                  />
+                </Field>
+                <Field label="Cửa hàng">
+                  {currentUser.role === "staff" ? (
+                    <div className="flex h-10 w-full items-center rounded-lg border border-line bg-white px-3 text-sm font-semibold text-slate-700">
+                      {storeName(currentUser.storeId)}
+                    </div>
+                  ) : (
+                    <select
+                      value={logStoreSelectValue}
+                      onChange={(e) => {
+                        const v = e.target.value as StoreId;
+                        setLogStoreFilter(v);
+                      }}
+                      className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-semibold text-ink"
+                    >
+                      <option value="all">Tất cả cửa hàng</option>
+                      {stores.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </Field>
+                <Field label="Người thao tác">
+                  <input
+                    type="text"
+                    value={logUserQ}
+                    onChange={(e) => setLogUserQ(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") applyLogFilters();
+                    }}
+                    placeholder="Username…"
+                    className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-semibold text-ink"
+                  />
+                </Field>
+                <Field label="Hành động">
+                  <input
+                    type="text"
+                    value={logActionQ}
+                    onChange={(e) => setLogActionQ(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") applyLogFilters();
+                    }}
+                    placeholder="VD: Thêm máy…"
+                    className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-semibold text-ink"
+                  />
+                </Field>
+                <Field label="Tìm kiếm">
+                  <input
+                    type="text"
+                    value={logSearchQ}
+                    onChange={(e) => setLogSearchQ(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") applyLogFilters();
+                    }}
+                    placeholder="Hành động + dữ liệu…"
+                    className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-semibold text-ink"
+                  />
+                </Field>
+              </div>
+
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={applyLogFilters}
+                  disabled={logsLoading}
+                  className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 text-sm font-bold text-white hover:bg-brand-dark disabled:opacity-60"
+                >
+                  {logsLoading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+                  Lọc
+                </button>
+                <button
+                  type="button"
+                  onClick={resetLogFilters}
+                  disabled={logsLoading}
+                  className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Xóa lọc
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLogFilterTick((t) => t + 1)}
+                  disabled={logsLoading}
+                  className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                  title="Tải lại"
+                >
+                  {logsLoading ? <Loader2 size={16} className="animate-spin" /> : <Activity size={16} />}
+                  Tải lại
+                </button>
+              </div>
+
+              {logsError ? (
+                <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-danger">
+                  {logsError}
+                </div>
+              ) : null}
+
+              {logsLoading && logs.length === 0 ? (
+                <div className="inline-flex items-center gap-2 py-8 text-sm font-bold text-muted">
+                  <Loader2 size={18} className="animate-spin text-brand" />
+                  Đang tải nhật ký…
+                </div>
+              ) : (
+                <DataTable
+                  headers={["Thời gian", "Người thao tác", "Cửa hàng", "Hành động", "Dữ liệu"]}
+                  rows={logs.map((item) => [
+                    item.createdAt,
+                    item.user,
+                    storeName(item.storeId),
+                    item.action,
+                    item.target,
+                  ])}
+                  emptyMessage={
+                    logsTotal === 0
+                      ? "Chưa có nhật ký trong khoảng lọc."
+                      : "Không có dòng trên trang này."
+                  }
+                />
+              )}
+
+              <div className="mt-4 flex flex-col gap-3 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <span className="text-sm font-semibold text-muted">
+                  Hiển thị {logsTotal === 0 ? 0 : logStart}–{logEnd} / {logsTotal}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={safeLogPage <= 1 || logsLoading}
+                    onClick={() => setLogPage((p) => Math.max(1, p - 1))}
+                    className="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <ChevronLeft size={16} />
+                    Trước
+                  </button>
+                  <span className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-black text-slate-700">
+                    {safeLogPage} / {logTotalPages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={safeLogPage >= logTotalPages || logsLoading}
+                    onClick={() => setLogPage((p) => Math.min(logTotalPages, p + 1))}
+                    className="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    Sau
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              </div>
+            </Panel>
+          );
+        })()}
 
         {activePage === "accounts" && currentUser.role === "owner" && (
           <Panel title="Quản lý tài khoản & menu">
@@ -12919,15 +13206,17 @@ function DataTable({
   headers,
   rows,
   compact = false,
+  emptyMessage = "Chưa có dữ liệu phù hợp.",
 }: {
   headers: ReactNode[];
   rows: ReactNode[][];
   compact?: boolean;
+  emptyMessage?: string;
 }) {
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
 
   if (!rows.length) {
-    return <div className="rounded-lg border border-dashed border-line p-8 text-center text-sm font-semibold text-muted">Chưa có dữ liệu phù hợp.</div>;
+    return <div className="rounded-lg border border-dashed border-line p-8 text-center text-sm font-semibold text-muted">{emptyMessage}</div>;
   }
 
   return (

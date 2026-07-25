@@ -124,11 +124,38 @@ export type Ledger = {
 
 export type AuditLog = {
   id: string;
+  /** Hiển thị: `YYYY-MM-DD HH:mm` (giờ VN). */
   createdAt: string;
+  /** Username / tên người thao tác (actor_name). */
   user: string;
   storeId: Exclude<StoreId, "all">;
   action: string;
   target: string;
+  meta?: Record<string, unknown>;
+};
+
+/** Filter list nhật ký (API GET /api/audit-logs). */
+export type AuditLogFilters = {
+  storeId?: StoreId;
+  /** YYYY-MM-DD (ngày lịch VN) */
+  from?: string;
+  /** YYYY-MM-DD (ngày lịch VN) */
+  to?: string;
+  /** ILIKE actor_name */
+  user?: string;
+  /** ILIKE action */
+  action?: string;
+  /** Free text action + target */
+  q?: string;
+  page?: number;
+  pageSize?: number;
+};
+
+export type AuditLogListResult = {
+  rows: AuditLog[];
+  total: number;
+  page: number;
+  pageSize: number;
 };
 
 export type SoftwareService = {
