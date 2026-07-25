@@ -10064,12 +10064,12 @@ export default function Home() {
             }
             let bestName = "";
             let bestAmt = 0;
-            for (const [name, amt] of map) {
+            Array.from(map.entries()).forEach(([name, amt]) => {
               if (amt > bestAmt) {
                 bestName = name;
                 bestAmt = amt;
               }
-            }
+            });
             return bestName ? { name: bestName, amount: bestAmt } : null;
           };
           const topCreditor = sumByKey((d) => d.creditorName);
