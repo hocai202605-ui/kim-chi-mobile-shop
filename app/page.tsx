@@ -5,6 +5,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  LabelList,
   Legend,
   ResponsiveContainer,
   Tooltip,
@@ -23,6 +24,7 @@ import {
   ClipboardList,
   CopyPlus,
   CreditCard,
+  Crown,
   Edit3,
   Eye,
   EyeOff,
@@ -45,6 +47,7 @@ import {
   Store,
   Terminal,
   Trash2,
+  Trophy,
   UserCog,
   Users,
   Wrench,
@@ -2943,7 +2946,7 @@ export default function Home() {
     };
   }, [shopRepairs, matchesReportPeriod, reportYear]);
 
-  /** Tab Phần mềm — KPI + danh sách kỳ + chart năm (cùng mô hình Sửa chữa). */
+  /** Tab Phần mềm — KPI + top khách (hoa hậu) + chart năm. */
   const softwareReportStats = useMemo(() => {
     const orderDate = (r: (typeof onlineRepairs)[number]) =>
       toReportDateKey(r.receiveDate) ||
@@ -2989,21 +2992,130 @@ export default function Home() {
       yearRows[m].orders += 1;
     }
 
-    const rows = inPeriod.map((r) => {
-      const quote = Number(r.quote) || 0;
-      const deposit = Number(r.deposit) || 0;
-      return {
-        id: r.id,
-        customerName: r.customerName || "Khách lẻ",
-        deviceName: r.deviceName || "Dịch vụ",
-        issue: r.issue || "",
-        quote,
-        deposit,
-        profit: quote - deposit,
-        paymentStatus: r.paymentStatus,
-        receiveDate: orderDate(r),
+    /** Xếp hạng khách trong kỳ (theo tên). */
+    type CustAgg = {
+      name: string;
+      visits: number;
+      revenue: number;
+      profit: number;
+      debtCount: number;
+    };
+    const byCustomer = new Map<string, CustAgg>();
+    for (const r of inPeriod) {
+      const name = (r.customerName || "Khách lẻ").trim() || "Khách lẻ";
+      const key = name.toLowerCase();
+      const q = Number(r.quote) || 0;
+      const dep = Number(r.deposit) || 0;
+      const isDebt =
+        r.paymentStatus === "NỢ DAI" ||
+        (!r.isPaid && r.paymentStatus !== "Đã thanh toán");
+      const cur = byCustomer.get(key) ?? {
+        name,
+        visits: 0,
+        revenue: 0,
+        profit: 0,
+        debtCount: 0,
       };
-    });
+      cur.visits += 1;
+      cur.revenue += q;
+      cur.profit += q - dep;
+      if (isDebt) cur.debtCount += 1;
+      byCustomer.set(key, cur);
+    }
+    const allCust = Array.from(byCustomer.values());
+    const topByRevenue = allCust
+      .filter((c) => c.revenue > 0)
+      .sort(
+        (a, b) =>
+          b.revenue - a.revenue ||
+          b.visits - a.visits ||
+          a.name.localeCompare(b.name, "vi")
+      )
+      .slice(0, 5);
+    const topByVisits = allCust
+      .filter((c) => c.visits > 0)
+      .sort(
+        (a, b) =>
+          b.visits - a.visits ||
+          b.revenue - a.revenue ||
+          a.name.localeCompare(b.name, "vi")
+      )
+      .slice(0, 5);
+    const topByProfit = allCust
+      .filter((c) => c.profit > 0)
+      .sort(
+        (a, b) =>
+          b.profit - a.profit ||
+          b.revenue - a.revenue ||
+          a.name.localeCompare(b.name, "vi")
+      )
+      .slice(0, 5);
+
+    const medalOf = (i: number) => (i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`);
+    const fillRevenue = (i: number) =>
+      i === 0 ? "#e2b33c" : i === 1 ? "#94a3b8" : i === 2 ? "#c2412d" : "#0f8b62";
+    const fillLoyalty = (i: number) =>
+      i === 0 ? "#0284c7" : i === 1 ? "#38bdf8" : i === 2 ? "#7dd3fc" : "#bae6fd";
+
+    const shortName = (name: string) =>
+      name.length > 12 ? `${name.slice(0, 10)}…` : name;
+
+    /**
+     * Biểu đồ 1 — Top góp tiền mua đất = top tổng DT phần mềm (top 5, kỳ ngày/tháng/năm).
+     * Podium cột: #2 · #1 · #3 rồi #4 #5 (nếu có) xếp sau theo rank.
+     */
+    const landPodium = topByRevenue.slice(0, 3);
+    const landRest = topByRevenue.slice(3, 5);
+    const landChart: {
+      label: string;
+      name: string;
+      shortName: string;
+      value: number;
+      revenue: number;
+      visits: number;
+      profit: number;
+      rank: number;
+      medal: string;
+      fill: string;
+    }[] = [];
+    const pushLand = (c: CustAgg, rank: number) => {
+      const i = rank - 1;
+      landChart.push({
+        label: `${medalOf(i)} #${rank}`,
+        name: c.name,
+        shortName: shortName(c.name),
+        value: c.revenue,
+        revenue: c.revenue,
+        visits: c.visits,
+        profit: c.profit,
+        rank,
+        medal: medalOf(i),
+        fill: fillRevenue(i),
+      });
+    };
+    if (landPodium[1]) pushLand(landPodium[1], 2);
+    if (landPodium[0]) pushLand(landPodium[0], 1);
+    if (landPodium[2]) pushLand(landPodium[2], 3);
+    landRest.forEach((c, idx) => pushLand(c, 4 + idx));
+
+    /**
+     * Biểu đồ 2 — Top góp gạch xây nhà = top lượt đơn PM trong kỳ (top 5).
+     * Cột xếp #1 → #5 (trái → phải).
+     */
+    const loyaltyChart = topByVisits.slice(0, 5).map((c, i) => ({
+      label: `${medalOf(i)} #${i + 1}`,
+      name: c.name,
+      shortName: shortName(c.name),
+      value: c.visits,
+      revenue: c.revenue,
+      visits: c.visits,
+      profit: c.profit,
+      rank: i + 1,
+      medal: medalOf(i),
+      fill: fillLoyalty(i),
+    }));
+
+    const uniqueCustomers = allCust.length;
 
     return {
       revenue,
@@ -3015,8 +3127,15 @@ export default function Home() {
       debtAmount,
       orderCount: inPeriod.length,
       totalLoaded: onlineRepairs.length,
+      uniqueCustomers,
       yearRows,
-      rows,
+      topByRevenue,
+      topByVisits,
+      topByProfit,
+      landChart,
+      loyaltyChart,
+      landLeader: topByRevenue[0] ?? null,
+      loyaltyLeader: topByVisits[0] ?? null,
     };
   }, [onlineRepairs, matchesReportPeriod, reportYear]);
 
@@ -7080,16 +7199,18 @@ export default function Home() {
             {reportHubTab === "software" && (
               <section className="grid gap-4">
                 <div className="rounded-lg border border-sky-100 bg-sky-50/80 p-3 text-sm font-semibold text-sky-950">
-                  Tab <strong>Phần mềm</strong> — thống kê đơn PM theo kỳ · {storeName(storeFilter)}
+                  Tab <strong>Phần mềm</strong> — KPI + 2 biểu đồ top (góp tiền mua đất · góp
+                  gạch xây nhà) · {storeName(storeFilter)}
                   {reportPeriod === "day"
                     ? ` · ${reportDay}`
                     : reportPeriod === "month"
                       ? ` · ${inventoryReportMonth}`
                       : ` · ${reportYear}`}
-                  . Doanh thu = báo giá · Vốn = phí DV · Lãi = báo giá − phí.
+                  . Doanh thu = báo giá · Vốn = phí DV · Lãi = báo giá − phí. Top theo kỳ
+                  Ngày/Tháng/Năm.
                   {softwareLoading
                     ? " · Đang tải đơn…"
-                    : ` · Đã tải ${softwareReportStats.totalLoaded} đơn`}
+                    : ` · ${softwareReportStats.totalLoaded} đơn · ${softwareReportStats.uniqueCustomers} khách trong kỳ`}
                   {softwareBackendError ? (
                     <span className="ml-1 text-danger"> · Lỗi: {softwareBackendError}</span>
                   ) : null}
@@ -7168,80 +7289,235 @@ export default function Home() {
                   </section>
                 </div>
 
-                <section className="overflow-hidden rounded-xl border border-line bg-white shadow-panel">
-                  <div className="border-b border-line px-4 py-3">
-                    <h2 className="text-lg font-black text-ink">Danh sách đơn trong kỳ</h2>
-                    <p className="text-xs font-semibold text-muted">
-                      {softwareReportStats.orderCount} đơn · Báo giá · Phí · Lãi · TT
-                    </p>
-                  </div>
-                  <div className="max-h-[min(50vh,24rem)] overflow-auto">
-                    <table className="min-w-full border-collapse text-left text-sm">
-                      <thead className="sticky top-0 z-10 bg-slate-50">
-                        <tr className="border-b border-line text-xs font-black uppercase tracking-wide text-muted">
-                          <th className="whitespace-nowrap px-3 py-2.5">Ngày</th>
-                          <th className="min-w-[8rem] px-3 py-2.5">Khách · Dịch vụ</th>
-                          <th className="whitespace-nowrap px-3 py-2.5">Báo giá</th>
-                          <th className="whitespace-nowrap px-3 py-2.5">Phí DV</th>
-                          <th className="whitespace-nowrap px-3 py-2.5">Lãi</th>
-                          <th className="whitespace-nowrap px-3 py-2.5">TT</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {softwareReportStats.rows.length === 0 ? (
-                          <tr>
-                            <td
-                              colSpan={6}
-                              className="px-4 py-10 text-center text-sm font-semibold text-muted"
+                {/* 2 biểu đồ top theo kỳ (Ngày / Tháng / Năm) */}
+                <div className="grid gap-4 xl:grid-cols-2">
+                  {/* 1) Top góp tiền mua đất (= tổng DT PM theo khách) */}
+                  <section className="overflow-hidden rounded-2xl border border-amber-200/80 bg-gradient-to-br from-amber-50 via-white to-orange-50/40 shadow-panel">
+                    <div className="flex flex-wrap items-start justify-between gap-2 border-b border-amber-100 px-4 py-3">
+                      <div className="flex items-start gap-2.5">
+                        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-amber-100 text-amber-700">
+                          <Crown size={20} />
+                        </div>
+                        <div>
+                          <h2 className="text-base font-black text-ink sm:text-lg">
+                            Top góp tiền mua đất
+                          </h2>
+                          <p className="text-xs font-semibold text-muted sm:text-sm">
+                            Ai góp tiền nhiều nhất (tổng báo giá PM) · kỳ Ngày/Tháng/Năm
+                          </p>
+                        </div>
+                      </div>
+                      {softwareReportStats.landLeader && !isStatsHidden ? (
+                        <div className="rounded-lg border border-amber-300 bg-white px-2.5 py-1.5 text-right">
+                          <p className="text-[10px] font-bold uppercase text-amber-800">
+                            🏆 Top 1 góp tiền
+                          </p>
+                          <p className="max-w-[10rem] truncate text-sm font-black text-ink">
+                            {softwareReportStats.landLeader.name}
+                          </p>
+                          <p className="text-xs font-bold text-amber-800">
+                            {formatMoney(softwareReportStats.landLeader.revenue)}
+                          </p>
+                        </div>
+                      ) : null}
+                    </div>
+                    {softwareReportStats.landChart.length === 0 ? (
+                      <div className="px-4 py-12 text-center text-sm font-semibold text-muted">
+                        Chưa có góp tiền PM trong kỳ.
+                      </div>
+                    ) : (
+                      <div className="h-[300px] w-full p-3 sm:h-[340px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart
+                            data={softwareReportStats.landChart}
+                            margin={{ top: 28, right: 8, left: 4, bottom: 4 }}
+                          >
+                            <CartesianGrid
+                              strokeDasharray="3 3"
+                              vertical={false}
+                              stroke="#e2e8f0"
+                            />
+                            <XAxis
+                              dataKey="label"
+                              axisLine={false}
+                              tickLine={false}
+                              tick={{ fill: "#475569", fontSize: 11, fontWeight: 700 }}
+                            />
+                            <YAxis
+                              axisLine={false}
+                              tickLine={false}
+                              width={44}
+                              tickFormatter={(val) =>
+                                Number(val) >= 1_000_000
+                                  ? `${(Number(val) / 1_000_000).toFixed(1)}M`
+                                  : Number(val) >= 1000
+                                    ? `${Math.round(Number(val) / 1000)}k`
+                                    : String(val)
+                              }
+                              tick={{ fill: "#64748b", fontSize: 11, fontWeight: 600 }}
+                            />
+                            <Tooltip
+                              cursor={{ fill: "rgba(226, 179, 60, 0.08)" }}
+                              contentStyle={{
+                                borderRadius: "10px",
+                                border: "1px solid #fde68a",
+                                fontWeight: 700,
+                              }}
+                              formatter={(value, name) => {
+                                const n = String(name ?? "");
+                                if (n === "Góp tiền mua đất") {
+                                  return [
+                                    isStatsHidden
+                                      ? "***"
+                                      : formatMoney(Number(value) || 0),
+                                    n,
+                                  ] as [string, string];
+                                }
+                                return [String(value ?? ""), n] as [string, string];
+                              }}
+                              labelFormatter={(_l, payload) => {
+                                const row = payload?.[0]?.payload as
+                                  | { medal?: string; name?: string; visits?: number }
+                                  | undefined;
+                                if (!row) return "";
+                                return `${row.medal || ""} ${row.name || ""} · ${row.visits ?? 0} lượt`;
+                              }}
+                            />
+                            <Bar
+                              dataKey="value"
+                              name="Góp tiền mua đất"
+                              radius={[8, 8, 0, 0]}
+                              maxBarSize={56}
                             >
-                              Không có đơn phần mềm trong kỳ đã chọn.
-                            </td>
-                          </tr>
-                        ) : (
-                          softwareReportStats.rows.map((row) => (
-                            <tr
-                              key={row.id}
-                              className="border-b border-line/80 hover:bg-slate-50/80"
+                              {softwareReportStats.landChart.map((e) => (
+                                <Cell key={`land-${e.rank}`} fill={e.fill} />
+                              ))}
+                              <LabelList
+                                dataKey="shortName"
+                                position="top"
+                                style={{
+                                  fill: "#17201c",
+                                  fontSize: 10,
+                                  fontWeight: 800,
+                                }}
+                              />
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
+                  </section>
+
+                  {/* 2) Top góp gạch xây nhà — lượt đơn PM */}
+                  <section className="overflow-hidden rounded-2xl border border-sky-200/80 bg-gradient-to-br from-sky-50 via-white to-brand-soft/30 shadow-panel">
+                    <div className="flex flex-wrap items-start justify-between gap-2 border-b border-sky-100 px-4 py-3">
+                      <div className="flex items-start gap-2.5">
+                        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-sky-100 text-sky-700">
+                          <Users size={20} />
+                        </div>
+                        <div>
+                          <h2 className="text-base font-black text-ink sm:text-lg">
+                            Top góp gạch xây nhà
+                          </h2>
+                          <p className="text-xs font-semibold text-muted sm:text-sm">
+                            Top theo <strong className="text-ink">số lần / lượt đơn PM</strong> ·
+                            kỳ Ngày / Tháng / Năm
+                          </p>
+                        </div>
+                      </div>
+                      {softwareReportStats.loyaltyLeader && !isStatsHidden ? (
+                        <div className="rounded-lg border border-sky-300 bg-white px-2.5 py-1.5 text-right">
+                          <p className="text-[10px] font-bold uppercase text-sky-800">
+                            🧱 Top 1 góp gạch
+                          </p>
+                          <p className="max-w-[10rem] truncate text-sm font-black text-ink">
+                            {softwareReportStats.loyaltyLeader.name}
+                          </p>
+                          <p className="text-xs font-bold text-sky-800">
+                            {softwareReportStats.loyaltyLeader.visits} lượt
+                          </p>
+                        </div>
+                      ) : null}
+                    </div>
+                    {softwareReportStats.loyaltyChart.length === 0 ? (
+                      <div className="px-4 py-12 text-center text-sm font-semibold text-muted">
+                        Chưa có lượt góp gạch (đơn PM) trong kỳ.
+                      </div>
+                    ) : (
+                      <div className="h-[300px] w-full p-3 sm:h-[340px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart
+                            data={softwareReportStats.loyaltyChart}
+                            margin={{ top: 28, right: 8, left: 4, bottom: 4 }}
+                          >
+                            <CartesianGrid
+                              strokeDasharray="3 3"
+                              vertical={false}
+                              stroke="#e2e8f0"
+                            />
+                            <XAxis
+                              dataKey="label"
+                              axisLine={false}
+                              tickLine={false}
+                              tick={{ fill: "#475569", fontSize: 11, fontWeight: 700 }}
+                            />
+                            <YAxis
+                              allowDecimals={false}
+                              axisLine={false}
+                              tickLine={false}
+                              width={36}
+                              tick={{ fill: "#64748b", fontSize: 11, fontWeight: 600 }}
+                            />
+                            <Tooltip
+                              cursor={{ fill: "rgba(14, 165, 233, 0.08)" }}
+                              contentStyle={{
+                                borderRadius: "10px",
+                                border: "1px solid #bae6fd",
+                                fontWeight: 700,
+                              }}
+                              formatter={(value, name) => {
+                                const n = String(name ?? "");
+                                if (n === "Góp gạch xây nhà") {
+                                  return [`${Number(value) || 0} lượt`, n] as [
+                                    string,
+                                    string,
+                                  ];
+                                }
+                                return [String(value ?? ""), n] as [string, string];
+                              }}
+                              labelFormatter={(_l, payload) => {
+                                const row = payload?.[0]?.payload as
+                                  | { medal?: string; name?: string; revenue?: number }
+                                  | undefined;
+                                if (!row) return "";
+                                return `${row.medal || ""} ${row.name || ""}`;
+                              }}
+                            />
+                            <Bar
+                              dataKey="value"
+                              name="Góp gạch xây nhà"
+                              radius={[8, 8, 0, 0]}
+                              maxBarSize={56}
                             >
-                              <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">
-                                {row.receiveDate || "—"}
-                              </td>
-                              <td className="px-3 py-2.5">
-                                <span className="block font-bold text-sky-700">
-                                  {row.customerName}
-                                </span>
-                                <span className="block text-xs font-semibold text-muted">
-                                  {row.deviceName}
-                                  {row.issue ? ` · ${row.issue}` : ""}
-                                </span>
-                              </td>
-                              <td className="whitespace-nowrap px-3 py-2.5 font-bold tabular-nums text-ink">
-                                {isStatsHidden ? "***" : formatMoney(row.quote)}
-                              </td>
-                              <td className="whitespace-nowrap px-3 py-2.5 font-semibold tabular-nums text-slate-700">
-                                {isStatsHidden ? "***" : formatMoney(row.deposit)}
-                              </td>
-                              <td className="whitespace-nowrap px-3 py-2.5 font-black tabular-nums text-amber-700">
-                                {isStatsHidden ? "***" : formatMoney(row.profit)}
-                              </td>
-                              <td className="whitespace-nowrap px-3 py-2.5">
-                                <span
-                                  className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${
-                                    row.paymentStatus === "Đã thanh toán"
-                                      ? "bg-emerald-50 text-emerald-700"
-                                      : "bg-red-50 text-red-600"
-                                  }`}
-                                >
-                                  {row.paymentStatus === "Đã thanh toán" ? "Đã TT" : "Nợ"}
-                                </span>
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
+                              {softwareReportStats.loyaltyChart.map((e) => (
+                                <Cell key={`loy-${e.rank}`} fill={e.fill} />
+                              ))}
+                              <LabelList
+                                dataKey="shortName"
+                                position="top"
+                                style={{
+                                  fill: "#17201c",
+                                  fontSize: 10,
+                                  fontWeight: 800,
+                                }}
+                              />
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
+                  </section>
+                </div>
 
                 <section className="rounded-lg border border-line bg-white p-5 shadow-panel">
                   <div className="mb-6">
@@ -10719,7 +10995,7 @@ export default function Home() {
                   </p>
                   <p className="mt-1 text-xs font-semibold text-fuchsia-800/80">
                     {topSpender
-                      ? `Top: ${topSpender.c.name} · ${formatMoney(topSpender.st.saleAmount)}`
+                      ? `Góp tiền: ${topSpender.c.name} · ${formatMoney(topSpender.st.saleAmount)}`
                       : "Chưa có phiếu bán trong kỳ"}
                   </p>
                 </div>
@@ -10734,7 +11010,7 @@ export default function Home() {
                     {repairDebtCustomers > 0
                       ? `${repairDebtCustomers} khách còn nợ SC`
                       : topVisitor
-                        ? `Top lượt: ${topVisitor.c.name} (${topVisitor.st.visits})`
+                        ? `Góp gạch: ${topVisitor.c.name} (${topVisitor.st.visits})`
                         : "Chưa có đơn dịch vụ trong kỳ"}
                   </p>
                 </div>
@@ -10742,14 +11018,14 @@ export default function Home() {
 
               <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-4">
                 <TopList
-                  title={`Top lượt ghé · ${periodLabel}`}
+                  title={`Top góp gạch xây nhà · ${periodLabel}`}
                   tone="border-line"
                   items={topVisits}
                   valueOf={(st) => `${st.visits} lượt`}
                   empty="Chưa có giao dịch trong kỳ."
                 />
                 <TopList
-                  title={`Top giá trị mua · ${periodLabel}`}
+                  title={`Top góp tiền mua đất · ${periodLabel}`}
                   tone="border-fuchsia-100"
                   items={topSaleValue}
                   valueOf={(st) => formatMoney(st.saleAmount)}
@@ -10878,8 +11154,8 @@ export default function Home() {
                     className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold"
                     title="Sắp xếp theo kỳ đang chọn"
                   >
-                    <option value="visits">Xếp theo lượt ({periodLabel})</option>
-                    <option value="saleValue">Xếp theo giá trị mua</option>
+                    <option value="visits">Xếp theo góp gạch / lượt ({periodLabel})</option>
+                    <option value="saleValue">Xếp theo góp tiền mua đất</option>
                     <option value="serviceValue">Xếp theo SC + PM</option>
                     <option value="recent">Xếp theo ghé gần đây</option>
                     <option value="name">Xếp theo tên A–Z</option>
