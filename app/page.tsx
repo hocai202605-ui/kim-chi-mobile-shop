@@ -456,14 +456,6 @@ type AuditLog = {
 type OwnDebtStatus = "open" | "paid" | "cancelled";
 type OwnDebt = ApiOwnDebt;
 
-const OWN_DEBT_TYPES = [
-  "Tiền hàng NCC",
-  "Vay mượn",
-  "Cọc / đặt hàng",
-  "Chi hộ",
-  "Khác",
-] as const;
-
 const stores = [
   { id: "store-1", name: "Kim Chi Mobile" },
   { id: "store-2", name: "Kiều Vy Mobile" },
@@ -1281,6 +1273,9 @@ export default function Home() {
   /** Tìm khách nợ: gõ tay + chọn droplist tên khách. */
   const [debtCustomerQuery, setDebtCustomerQuery] = useState("");
   const [selectedDebtIds, setSelectedDebtIds] = useState<string[]>([]);
+  /** Phân trang grid sổ công nợ. */
+  const [debtPage, setDebtPage] = useState(1);
+  const debtPageSize = 10;
   const [isDebtSensitiveHidden, setIsDebtSensitiveHidden] = useState(false);
   const [editingManualDebtId, setEditingManualDebtId] = useState<string | null>(null);
   /** Prefill form khi clone nợ tay (mode thêm mới). */
@@ -1301,10 +1296,8 @@ export default function Home() {
   const [cloneOwnDebtDraft, setCloneOwnDebtDraft] = useState<OwnDebt | null>(null);
   const [cloneOwnDebtFormKey, setCloneOwnDebtFormKey] = useState(0);
   const [ownDebtSaving, setOwnDebtSaving] = useState(false);
-  /** Droplist loại món nợ (local + merge từ DB khi load). */
-  const [ownDebtTypeOptions, setOwnDebtTypeOptions] = useState<string[]>(() => [
-    ...OWN_DEBT_TYPES,
-  ]);
+  /** Droplist loại món nợ — freeText + thêm/sửa/xóa local; không seed mặc định. */
+  const [ownDebtTypeOptions, setOwnDebtTypeOptions] = useState<string[]>([]);
   /** Droplist người mình nợ — freeText + thêm/sửa/xóa local. */
   const [ownDebtCreditorOptions, setOwnDebtCreditorOptions] = useState<string[]>([]);
   /** Nhật ký — load từ DB (audit_logs). */
@@ -4977,6 +4970,11 @@ export default function Home() {
     reloadSoftwareFromDb,
   ]);
 
+  /** Đổi cửa hàng / bộ lọc status → về trang 1 grid công nợ. */
+  useEffect(() => {
+    setDebtPage(1);
+  }, [storeFilter, debtStatusFilter]);
+
   async function saveManualDebt(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (debtsSaving || !currentUser) return;
@@ -5115,11 +5113,11 @@ export default function Home() {
       setOwnDebts(rows);
       setOwnDebtTypeOptions((prev) => {
         const next = new Set(prev);
-        for (const t of OWN_DEBT_TYPES) next.add(t);
         for (const r of rows) {
-          if (r.debtType) next.add(r.debtType);
+          const t = r.debtType?.trim();
+          if (t) next.add(t);
         }
-        return Array.from(next);
+        return Array.from(next).sort((a, b) => a.localeCompare(b, "vi"));
       });
       setOwnDebtCreditorOptions((prev) => {
         const next = new Set(prev);
@@ -5211,7 +5209,7 @@ export default function Home() {
       return;
     }
     if (!debtType) {
-      showUiToast("error", "Vui lòng chọn loại món nợ.");
+      showUiToast("error", "Vui lòng nhập hoặc chọn loại món nợ.");
       return;
     }
     if (!amount || amount <= 0) {
@@ -5220,7 +5218,9 @@ export default function Home() {
     }
 
     if (debtType && !ownDebtTypeOptions.includes(debtType)) {
-      setOwnDebtTypeOptions((prev) => [...prev, debtType]);
+      setOwnDebtTypeOptions((prev) =>
+        [...prev, debtType].sort((a, b) => a.localeCompare(b, "vi"))
+      );
     }
     if (creditorName && !ownDebtCreditorOptions.includes(creditorName)) {
       setOwnDebtCreditorOptions((prev) =>
@@ -10472,6 +10472,7 @@ export default function Home() {
                         allowFreeText
                         allowManage
                         actorUsername={currentUser.username}
+                        onManageNotify={(type, message) => showUiToast(type, message)}
                       />
                       <Field label="Ngày nợ" required>
                         <input
@@ -10491,10 +10492,11 @@ export default function Home() {
                         name="debtType"
                         options={ownDebtTypeOptions}
                         setOptions={setOwnDebtTypeOptions}
-                        defaultValue={ownFormDefaults?.debtType ?? OWN_DEBT_TYPES[0]}
+                        defaultValue={ownFormDefaults?.debtType ?? ""}
                         allowFreeText
                         allowManage
                         actorUsername={currentUser.username}
+                        onManageNotify={(type, message) => showUiToast(type, message)}
                       />
                       <Field label="Số tiền nợ" required>
                         <MoneyInput name="amount" defaultValue={ownFormDefaults?.amount} />
@@ -10613,10 +10615,17 @@ export default function Home() {
             ? tabRows
             : tabRows.filter((d) => d.customerName.toLowerCase().includes(customerQ));
 
+          const debtRowsCount = displayDebts.length;
+          const debtTotalPages = Math.max(1, Math.ceil(debtRowsCount / debtPageSize));
+          const safeDebtPage = Math.min(debtPage, debtTotalPages);
+          const debtStart = (safeDebtPage - 1) * debtPageSize;
+          const pagedDebts = displayDebts.slice(debtStart, debtStart + debtPageSize);
+
           const openDebtsApi = debts.filter((d) => d.status === "open");
           const openSelected = displayDebts.filter(
             (d) => selectedDebtIds.includes(d.id) && d.status === "open"
           );
+          const openSelectedTotal = openSelected.reduce((s, d) => s + (Number(d.amount) || 0), 0);
           const openIds = displayDebts.filter((d) => d.status === "open").map((d) => d.id);
           const allOpenSelected =
             openIds.length > 0 && openIds.every((id) => selectedDebtIds.includes(id));
@@ -10776,6 +10785,7 @@ export default function Home() {
                             setDebtTab(tab.id);
                             setSelectedDebtIds([]);
                             setDebtCustomerQuery("");
+                            setDebtPage(1);
                           }}
                           className={`inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-md px-3 text-sm font-bold transition ${
                             active ? activeCls : "text-muted hover:text-ink"
@@ -10800,6 +10810,7 @@ export default function Home() {
                       onChange={(e) => {
                         setDebtStatusFilter(e.target.value as typeof debtStatusFilter);
                         setSelectedDebtIds([]);
+                        setDebtPage(1);
                       }}
                       className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold"
                     >
@@ -10816,6 +10827,7 @@ export default function Home() {
                         onChange={(e) => {
                           setDebtCustomerQuery(e.target.value);
                           setSelectedDebtIds([]);
+                          setDebtPage(1);
                         }}
                         placeholder="Chọn hoặc gõ tên khách nợ…"
                         className="h-10 w-full rounded-lg border border-line bg-white py-2 pl-9 pr-3 text-sm font-semibold outline-none focus:border-brand"
@@ -10833,6 +10845,7 @@ export default function Home() {
                         onClick={() => {
                           setDebtCustomerQuery("");
                           setSelectedDebtIds([]);
+                          setDebtPage(1);
                         }}
                         className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold text-muted hover:bg-slate-50"
                       >
@@ -10932,7 +10945,7 @@ export default function Home() {
                         "Trạng thái",
                         "Thao tác",
                       ]}
-                      rows={displayDebts.map((item) => {
+                      rows={pagedDebts.map((item) => {
                         const isOpen = item.status === "open";
                         const checked = selectedDebtIds.includes(item.id);
                         return [
@@ -11045,30 +11058,92 @@ export default function Home() {
                     />
                   )}
 
-                  {openIds.length > 0 ? (
-                    <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-line pt-3">
-                      <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-bold text-slate-700">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 accent-brand"
-                          checked={allOpenSelected}
-                          disabled={debtsSaving}
-                          onChange={(e) => {
-                            const on = e.target.checked;
-                            setSelectedDebtIds((prev) => {
-                              if (on) {
-                                const set = new Set(prev);
-                                openIds.forEach((id) => set.add(id));
-                                return Array.from(set);
-                              }
-                              return prev.filter((id) => !openIds.includes(id));
-                            });
-                          }}
-                        />
-                        Chọn tất cả đang nợ ({openIds.length})
-                      </label>
+                  <div className="mt-3 flex flex-col gap-3 border-t border-line pt-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <span className="text-sm font-semibold text-muted">
+                        Hiển thị{" "}
+                        <strong className="text-ink">
+                          {debtRowsCount === 0 ? 0 : debtStart + 1}–
+                          {Math.min(debtStart + debtPageSize, debtRowsCount)}
+                        </strong>{" "}
+                        / tổng{" "}
+                        <strong className="text-ink">
+                          {debtRowsCount.toLocaleString("vi-VN")}
+                        </strong>{" "}
+                        khoản
+                        {debtRowsCount > 0 ? (
+                          <span className="ml-1 text-muted">
+                            (trang {safeDebtPage}/{debtTotalPages})
+                          </span>
+                        ) : null}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={safeDebtPage <= 1}
+                          onClick={() => setDebtPage((p) => Math.max(1, p - 1))}
+                          className="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          <ChevronLeft size={16} />
+                          Trước
+                        </button>
+                        <span className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-black text-slate-700">
+                          {safeDebtPage}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={safeDebtPage >= debtTotalPages}
+                          onClick={() =>
+                            setDebtPage((p) => Math.min(debtTotalPages, p + 1))
+                          }
+                          className="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          Sau
+                          <ChevronRight size={16} />
+                        </button>
+                      </div>
                     </div>
-                  ) : null}
+
+                    {openIds.length > 0 || openSelected.length > 0 ? (
+                      <div className="flex flex-wrap items-center gap-3">
+                        {openIds.length > 0 ? (
+                          <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-bold text-slate-700">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 accent-brand"
+                              checked={allOpenSelected}
+                              disabled={debtsSaving}
+                              onChange={(e) => {
+                                const on = e.target.checked;
+                                setSelectedDebtIds((prev) => {
+                                  if (on) {
+                                    const set = new Set(prev);
+                                    openIds.forEach((id) => set.add(id));
+                                    return Array.from(set);
+                                  }
+                                  return prev.filter((id) => !openIds.includes(id));
+                                });
+                              }}
+                            />
+                            Chọn tất cả đang nợ theo lọc ({openIds.length})
+                          </label>
+                        ) : null}
+                        {openSelected.length > 0 ? (
+                          <div className="ml-auto flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm">
+                            <span className="font-bold text-emerald-800">
+                              Tổng đã chọn
+                              <span className="ml-1 font-semibold text-muted">
+                                ({openSelected.length} khoản)
+                              </span>
+                            </span>
+                            <strong className="text-base font-black tabular-nums text-red-600">
+                              {isDebtSensitiveHidden ? "***" : formatMoney(openSelectedTotal)}
+                            </strong>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
               </Panel>
 
               {isManualDebtModalOpen ? (
@@ -13810,7 +13885,7 @@ function ManageableSelect({
         setOptions([...options, next]);
         setValue(next);
         cancelEditor();
-        flashSuccess(`Đã thêm "${next}" (chỉ phiên này — chưa gắn DB).`);
+        flashSuccess(`Đã thêm "${next}" vào danh sách thành công.`);
         return;
       }
       if (!actorUsername?.trim()) {
@@ -13843,7 +13918,7 @@ function ManageableSelect({
         setOptions(options.map((o) => (o === oldVal ? next : o)));
         setValue(next);
         cancelEditor();
-        flashSuccess(`Đã đổi tên option (chỉ phiên này).`);
+        flashSuccess(`Đã cập nhật "${next}" thành công.`);
         return;
       }
       if (!actorUsername?.trim()) {
@@ -13884,7 +13959,7 @@ function ManageableSelect({
     if (!categoryCode) {
       setOptions(options.filter((o) => o !== removed));
       setValue("");
-      flashSuccess(`Đã xóa "${removed}" (chỉ phiên này).`);
+      flashSuccess(`Đã xóa "${removed}" khỏi danh sách thành công.`);
       return;
     }
     if (!actorUsername?.trim()) {
