@@ -37,6 +37,7 @@ import {
   PackagePlus,
   Plus,
   ReceiptText,
+  RefreshCw,
   Search,
   ShieldCheck,
   ShoppingCart,
@@ -67,6 +68,7 @@ import {
 } from "@/services/inventoryReportService";
 import {
   ACCESSORY_LOOKUP_CATEGORIES,
+  OWN_DEBT_LOOKUP_CATEGORIES,
   PART_LOOKUP_CATEGORIES,
   PHONE_LOOKUP_CATEGORIES,
   REPAIR_LOOKUP_CATEGORIES,
@@ -110,8 +112,12 @@ import {
   type SaleChannel,
 } from "@/services/salesService";
 import {
+  deactivateCustomer as apiDeactivateCustomer,
   listCustomers as apiListCustomers,
+  listDuplicatePhoneGroups as apiListDuplicatePhoneGroups,
+  mergeCustomers as apiMergeCustomers,
   saveCustomer as apiSaveCustomer,
+  type DuplicatePhoneGroupDto,
 } from "@/services/customersService";
 import {
   createAuditLog as apiCreateAuditLog,
@@ -1195,7 +1201,36 @@ export default function Home() {
   });
   const [partLines, setPartLines] = useState<PartLineDraft[]>(() => [emptyPartLine()]);
 
-  const [customers, setCustomers] = useState(customersSeed);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customersLoading, setCustomersLoading] = useState(false);
+  const [customersError, setCustomersError] = useState("");
+  const [customersSaving, setCustomersSaving] = useState(false);
+  const [customerQuery, setCustomerQuery] = useState("");
+  const [customerPage, setCustomerPage] = useState(1);
+  const customerPageSize = 10;
+  /** Kỳ thống kê KH: hôm nay / tháng / năm / tất cả. */
+  const [customerStatsPeriod, setCustomerStatsPeriod] = useState<
+    "day" | "month" | "year" | "all"
+  >("month");
+  /** Sắp xếp grid KH. */
+  const [customerSort, setCustomerSort] = useState<
+    "name" | "visits" | "saleValue" | "serviceValue" | "recent"
+  >("visits");
+  const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
+  const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
+  const [viewingCustomerId, setViewingCustomerId] = useState<string | null>(null);
+  const [customerFormKey, setCustomerFormKey] = useState(0);
+  /** Nhóm SĐT trùng (Phase 2 gộp hồ sơ). */
+  const [customerDupGroups, setCustomerDupGroups] = useState<DuplicatePhoneGroupDto[]>([]);
+  const [customerDupLoading, setCustomerDupLoading] = useState(false);
+  const [mergeKeepId, setMergeKeepId] = useState<string | null>(null);
+  const [mergeGroupDigits, setMergeGroupDigits] = useState<string | null>(null);
+  const [customerMerging, setCustomerMerging] = useState(false);
+  /** Deep-link: mở chi tiết sau khi list KH load xong. */
+  const [pendingCustomerLookup, setPendingCustomerLookup] = useState<{
+    name: string;
+    phone?: string;
+  } | null>(null);
   const [phones, setPhones] = useState<PhoneItem[]>([]);
   const [accessories, setAccessories] = useState<Accessory[]>([]);
   /** Không seed multi-store — chỉ load từ DB (lọc CH ở UI). */
@@ -1296,10 +1331,9 @@ export default function Home() {
   const [cloneOwnDebtDraft, setCloneOwnDebtDraft] = useState<OwnDebt | null>(null);
   const [cloneOwnDebtFormKey, setCloneOwnDebtFormKey] = useState(0);
   const [ownDebtSaving, setOwnDebtSaving] = useState(false);
-  /** Droplist loại món nợ — freeText + thêm/sửa/xóa local; không seed mặc định. */
-  const [ownDebtTypeOptions, setOwnDebtTypeOptions] = useState<string[]>([]);
-  /** Droplist người mình nợ — freeText + thêm/sửa/xóa local. */
-  const [ownDebtCreditorOptions, setOwnDebtCreditorOptions] = useState<string[]>([]);
+  /** CH form Mình nợ — droplist lookup per-store. */
+  const [ownDebtFormStoreId, setOwnDebtFormStoreId] =
+    useState<Exclude<StoreId, "all">>("store-1");
   /** Nhật ký — load từ DB (audit_logs). */
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [logsTotal, setLogsTotal] = useState(0);
@@ -1559,21 +1593,38 @@ export default function Home() {
   }, []);
 
   const reloadCustomersFromDb = useCallback(async () => {
+    setCustomersLoading(true);
+    setCustomersError("");
     try {
       const rows = await apiListCustomers();
-      if (rows.length) {
-        setCustomers(
-          rows.map((c) => ({
-            id: c.id,
-            name: c.name,
-            phone: c.phone,
-            address: c.address || "",
-            note: c.note || "",
-          }))
-        );
-      }
+      setCustomers(
+        (Array.isArray(rows) ? rows : []).map((c) => ({
+          id: c.id,
+          name: c.name,
+          phone: c.phone || "",
+          address: c.address || "",
+          note: c.note || "",
+        }))
+      );
     } catch (err) {
       console.warn("load customers", err);
+      setCustomersError(toUiError(err));
+      setCustomers([]);
+    } finally {
+      setCustomersLoading(false);
+    }
+  }, []);
+
+  const reloadCustomerDuplicates = useCallback(async () => {
+    setCustomerDupLoading(true);
+    try {
+      const groups = await apiListDuplicatePhoneGroups();
+      setCustomerDupGroups(Array.isArray(groups) ? groups : []);
+    } catch (err) {
+      console.warn("load customer duplicates", err);
+      setCustomerDupGroups([]);
+    } finally {
+      setCustomerDupLoading(false);
     }
   }, []);
 
@@ -1651,6 +1702,48 @@ export default function Home() {
     if (!currentUser || activePage !== "parts") return;
     void reloadPartsFromDb();
   }, [currentUser, activePage, reloadPartsFromDb]);
+
+  // Vào menu Khách hàng → reload KH + phiếu liên quan (bán / PM / sửa) + SĐT trùng.
+  useEffect(() => {
+    if (!currentUser || activePage !== "customers") return;
+    void reloadCustomersFromDb();
+    void reloadCustomerDuplicates();
+    void reloadSalesFromDb("retail");
+    void reloadBanGaSalesFromDb();
+    void reloadSoftwareFromDb();
+    void reloadShopRepairsFromDb();
+  }, [
+    currentUser,
+    activePage,
+    reloadCustomersFromDb,
+    reloadCustomerDuplicates,
+    reloadSalesFromDb,
+    reloadBanGaSalesFromDb,
+    reloadSoftwareFromDb,
+    reloadShopRepairsFromDb,
+  ]);
+
+  // Deep-link: sau khi list KH sẵn sàng → mở chi tiết khớp SĐT/tên.
+  useEffect(() => {
+    if (!pendingCustomerLookup || activePage !== "customers" || customersLoading) return;
+    const nameT = pendingCustomerLookup.name.trim();
+    const dig = String(pendingCustomerLookup.phone || "").replace(/\D/g, "");
+    const match = customers.find((c) => {
+      const cDig = c.phone.replace(/\D/g, "");
+      if (dig.length >= 8 && cDig.length >= 8 && cDig === dig) return true;
+      if (
+        nameT &&
+        c.name.trim().toLowerCase() === nameT.toLowerCase() &&
+        nameT.toLowerCase() !== "khách lẻ" &&
+        nameT.toLowerCase() !== "khach le"
+      ) {
+        return true;
+      }
+      return false;
+    });
+    if (match) setViewingCustomerId(match.id);
+    setPendingCustomerLookup(null);
+  }, [pendingCustomerLookup, customers, customersLoading, activePage]);
 
   useEffect(() => {
     return () => {
@@ -2067,6 +2160,32 @@ export default function Home() {
   const partTypeOptions = partFormLookups[PART_LOOKUP_CATEGORIES.partType] ?? [];
   const partBrandOptions = partFormLookups[PART_LOOKUP_CATEGORIES.brand] ?? [];
   const partColorOptions = partFormLookups[PART_LOOKUP_CATEGORIES.color] ?? [];
+
+  /** Droplist form MÌNH NỢ — per CH form. */
+  const ownDebtFormLookups = lookupsByStore[ownDebtFormStoreId] ?? {};
+  const ownDebtCreditorOptions =
+    ownDebtFormLookups[OWN_DEBT_LOOKUP_CATEGORIES.creditor] ?? [];
+  const ownDebtTypeOptions =
+    ownDebtFormLookups[OWN_DEBT_LOOKUP_CATEGORIES.debtType] ?? [];
+  const setOwnDebtCreditorOptions = useCallback(
+    (next: string[]) => {
+      setFormLookupOptions(
+        OWN_DEBT_LOOKUP_CATEGORIES.creditor,
+        ownDebtFormStoreId
+      )(next);
+    },
+    [setFormLookupOptions, ownDebtFormStoreId]
+  );
+  const setOwnDebtTypeOptions = useCallback(
+    (next: string[]) => {
+      setFormLookupOptions(
+        OWN_DEBT_LOOKUP_CATEGORIES.debtType,
+        ownDebtFormStoreId
+      )(next);
+    },
+    [setFormLookupOptions, ownDebtFormStoreId]
+  );
+
   const setPartDistributorOptions = useCallback(
     (next: string[]) => {
       setFormLookupOptions(
@@ -5111,22 +5230,6 @@ export default function Home() {
         status: "all",
       });
       setOwnDebts(rows);
-      setOwnDebtTypeOptions((prev) => {
-        const next = new Set(prev);
-        for (const r of rows) {
-          const t = r.debtType?.trim();
-          if (t) next.add(t);
-        }
-        return Array.from(next).sort((a, b) => a.localeCompare(b, "vi"));
-      });
-      setOwnDebtCreditorOptions((prev) => {
-        const next = new Set(prev);
-        for (const r of rows) {
-          const name = r.creditorName?.trim();
-          if (name) next.add(name);
-        }
-        return Array.from(next).sort((a, b) => a.localeCompare(b, "vi"));
-      });
     } catch (err) {
       setOwnDebtsError(toUiError(err));
       setOwnDebts([]);
@@ -5140,9 +5243,207 @@ export default function Home() {
     void reloadOwnDebts();
   }, [activePage, currentUser, storeFilter, reloadOwnDebts]);
 
+  // ─── Khách hàng ────────────────────────────────────────────────
+  function openCustomerCreateModal() {
+    setEditingCustomerId(null);
+    setCustomerFormKey((k) => k + 1);
+    setIsCustomerModalOpen(true);
+  }
+
+  function openCustomerEditModal(id: string) {
+    const row = customers.find((c) => c.id === id);
+    if (!row) return;
+    setEditingCustomerId(id);
+    setCustomerFormKey((k) => k + 1);
+    setIsCustomerModalOpen(true);
+  }
+
+  function closeCustomerModal() {
+    if (customersSaving) return;
+    setIsCustomerModalOpen(false);
+    setEditingCustomerId(null);
+  }
+
+  /** Mở form bán hàng (retail) prefill hồ sơ khách. */
+  function startSaleWithCustomer(c: Customer) {
+    setViewingCustomerId(null);
+    setIsCustomerModalOpen(false);
+    setActivePage("sales");
+    resetSaleFormDraft();
+    setSaleCustomerId(c.id);
+    setSaleCustomerName(c.name);
+    setSaleCustomerPhone(c.phone);
+    setSaleCustomerAddress(c.address || "");
+    setSalePhoneDetailsOpen(true);
+    setIsSaleModalOpen(true);
+    showUiToast("success", `Đã mở phiếu bán cho ${c.name}.`);
+  }
+
+  /** Deep-link từ công nợ / nơi khác → menu KH + tìm + mở chi tiết nếu khớp. */
+  function openCustomerFromNamePhone(name: string, phone?: string) {
+    const nameT = String(name || "").trim();
+    const phoneT = String(phone || "").trim();
+    setActivePage("customers");
+    setCustomerQuery(phoneT || nameT);
+    setCustomerPage(1);
+    setViewingCustomerId(null);
+    setPendingCustomerLookup({ name: nameT, phone: phoneT || undefined });
+  }
+
+  async function saveCustomerForm(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (customersSaving || !currentUser) return;
+    const form = new FormData(event.currentTarget);
+    const name = String(form.get("name") || "").trim();
+    const phone = String(form.get("phone") || "").trim();
+    const address = String(form.get("address") || "").trim();
+    const note = String(form.get("note") || "").trim();
+    if (!name) {
+      showUiToast("error", "Vui lòng nhập tên khách hàng.");
+      return;
+    }
+    setCustomersSaving(true);
+    try {
+      const saved = await apiSaveCustomer({
+        id: editingCustomerId ?? undefined,
+        name,
+        phone,
+        address,
+        note,
+        actorUsername: currentUser.username,
+      });
+      pushLog(
+        editingCustomerId ? "Sửa khách hàng" : "Thêm khách hàng",
+        `${saved.name}${saved.phone ? ` · ${saved.phone}` : ""}`,
+        currentUser.storeId
+      );
+      showUiToast(
+        "success",
+        editingCustomerId ? "Đã cập nhật khách hàng." : "Đã thêm khách hàng."
+      );
+      setIsCustomerModalOpen(false);
+      setEditingCustomerId(null);
+      await reloadCustomersFromDb();
+      await reloadCustomerDuplicates();
+    } catch (err) {
+      showUiToast("error", toUiError(err));
+    } finally {
+      setCustomersSaving(false);
+    }
+  }
+
+  async function deactivateCustomerRow(id: string) {
+    if (!currentUser || currentUser.role !== "owner") {
+      showUiToast("error", "Chỉ chủ cửa hàng được xóa khách.");
+      return;
+    }
+    const row = customers.find((c) => c.id === id);
+    if (!row) return;
+    if (
+      !window.confirm(
+        `Xóa khách "${row.name}"${row.phone ? ` (${row.phone})` : ""} khỏi danh sách?\n\nKhông xóa phiếu bán/sửa đã phát sinh — chỉ ẩn hồ sơ.`
+      )
+    ) {
+      return;
+    }
+    setCustomersSaving(true);
+    try {
+      await apiDeactivateCustomer(id, currentUser.username);
+      pushLog(
+        "Xóa khách hàng",
+        `${row.name}${row.phone ? ` · ${row.phone}` : ""}`,
+        currentUser.storeId
+      );
+      showUiToast("success", "Đã xóa khách khỏi danh sách.");
+      if (viewingCustomerId === id) setViewingCustomerId(null);
+      if (editingCustomerId === id) closeCustomerModal();
+      await reloadCustomersFromDb();
+      await reloadCustomerDuplicates();
+    } catch (err) {
+      showUiToast("error", toUiError(err));
+    } finally {
+      setCustomersSaving(false);
+    }
+  }
+
+  function openMergeGroup(group: DuplicatePhoneGroupDto) {
+    setMergeGroupDigits(group.phoneDigits);
+    // Ưu tiên hồ sơ mới nhất (list API đã sort updated_at desc → phần tử 0)
+    setMergeKeepId(group.customers[0]?.id ?? null);
+  }
+
+  function closeMergePanel() {
+    if (customerMerging) return;
+    setMergeGroupDigits(null);
+    setMergeKeepId(null);
+  }
+
+  async function confirmMergeGroup() {
+    if (!currentUser || currentUser.role !== "owner") {
+      showUiToast("error", "Chỉ chủ cửa hàng được gộp khách trùng.");
+      return;
+    }
+    if (!mergeGroupDigits || !mergeKeepId) return;
+    const group = customerDupGroups.find((g) => g.phoneDigits === mergeGroupDigits);
+    if (!group) return;
+    const mergeIds = group.customers.map((c) => c.id).filter((id) => id !== mergeKeepId);
+    if (!mergeIds.length) {
+      showUiToast("error", "Không còn hồ sơ để gộp.");
+      return;
+    }
+    const keep = group.customers.find((c) => c.id === mergeKeepId);
+    if (
+      !window.confirm(
+        `Gộp ${mergeIds.length} hồ sơ trùng SĐT ${group.phoneDisplay} vào «${keep?.name || "hồ sơ giữ"}»?\n\nPhiếu bán gắn hồ sơ cũ sẽ chuyển sang hồ sơ giữ. Hồ sơ trùng bị ẩn.`
+      )
+    ) {
+      return;
+    }
+    setCustomerMerging(true);
+    try {
+      const saved = await apiMergeCustomers({
+        keepId: mergeKeepId,
+        mergeIds,
+        actorUsername: currentUser.username,
+      });
+      pushLog(
+        "Gộp khách trùng SĐT",
+        `${group.phoneDisplay} → ${saved.name} (−${mergeIds.length})`,
+        currentUser.storeId
+      );
+      showUiToast(
+        "success",
+        `Đã gộp ${mergeIds.length} hồ sơ vào «${saved.name}».`
+      );
+      closeMergePanel();
+      await reloadCustomersFromDb();
+      await reloadCustomerDuplicates();
+    } catch (err) {
+      showUiToast("error", toUiError(err));
+    } finally {
+      setCustomerMerging(false);
+    }
+  }
+
+  function resolveOwnDebtFormStore(
+    preferred?: string | null
+  ): Exclude<StoreId, "all"> {
+    if (
+      preferred === "store-1" ||
+      preferred === "store-2" ||
+      preferred === "store-3"
+    ) {
+      return preferred;
+    }
+    if (currentUser?.role === "staff") return currentUser.storeId;
+    if (storeFilter !== "all") return storeFilter;
+    return currentUser?.storeId ?? "store-1";
+  }
+
   function openOwnDebtCreateModal() {
     setEditingOwnDebtId(null);
     setCloneOwnDebtDraft(null);
+    setOwnDebtFormStoreId(resolveOwnDebtFormStore());
     setCloneOwnDebtFormKey((k) => k + 1);
     setIsOwnDebtModalOpen(true);
   }
@@ -5156,6 +5457,7 @@ export default function Home() {
     }
     setCloneOwnDebtDraft(null);
     setEditingOwnDebtId(id);
+    setOwnDebtFormStoreId(resolveOwnDebtFormStore(row.storeId));
     setCloneOwnDebtFormKey((k) => k + 1);
     setIsOwnDebtModalOpen(true);
   }
@@ -5175,6 +5477,7 @@ export default function Home() {
       debtDate: vnNowDate(),
       paidAt: undefined,
     });
+    setOwnDebtFormStoreId(resolveOwnDebtFormStore(source.storeId));
     setCloneOwnDebtFormKey((k) => k + 1);
     setIsOwnDebtModalOpen(true);
   }
@@ -5215,17 +5518,6 @@ export default function Home() {
     if (!amount || amount <= 0) {
       showUiToast("error", "Số tiền nợ phải lớn hơn 0.");
       return;
-    }
-
-    if (debtType && !ownDebtTypeOptions.includes(debtType)) {
-      setOwnDebtTypeOptions((prev) =>
-        [...prev, debtType].sort((a, b) => a.localeCompare(b, "vi"))
-      );
-    }
-    if (creditorName && !ownDebtCreditorOptions.includes(creditorName)) {
-      setOwnDebtCreditorOptions((prev) =>
-        [...prev, creditorName].sort((a, b) => a.localeCompare(b, "vi"))
-      );
     }
 
     const isEdit = Boolean(editingOwnDebtId);
@@ -10099,20 +10391,1090 @@ export default function Home() {
           </section>
         )}
 
-        {activePage === "customers" && (
-          <Panel title="Khách hàng">
-            <DataTable
-              headers={["Tên", "Số điện thoại", "Địa chỉ", "Ghi chú", "Số phiếu liên quan"]}
-              rows={customers.map((customer) => [
-                customer.name,
-                customer.phone || "—",
-                customer.address || "—",
-                customer.note || "—",
-                sales.filter((s) => s.customerId === customer.id).length + repairs.filter((r) => r.customerId === customer.id).length,
-              ])}
-            />
-          </Panel>
-        )}
+        {activePage === "customers" && (() => {
+          const digits = (s: string) => String(s || "").replace(/\D/g, "");
+          const dateKey = (raw?: string | null) => {
+            const s = String(raw || "").trim();
+            const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+            if (m) return m[1];
+            if (s.length >= 10) return s.slice(0, 10);
+            return "";
+          };
+          const nowKey = vnNowDate();
+          const inStatsPeriod = (raw?: string | null) => {
+            if (customerStatsPeriod === "all") return true;
+            const d = dateKey(raw);
+            if (!d) return false;
+            if (customerStatsPeriod === "day") return d === nowKey;
+            if (customerStatsPeriod === "month") return d.startsWith(nowKey.slice(0, 7));
+            if (customerStatsPeriod === "year") return d.startsWith(nowKey.slice(0, 4));
+            return true;
+          };
+          const periodLabel =
+            customerStatsPeriod === "day"
+              ? "Hôm nay"
+              : customerStatsPeriod === "month"
+                ? "Tháng này"
+                : customerStatsPeriod === "year"
+                  ? "Năm nay"
+                  : "Tất cả";
+
+          const matchCustomer = (
+            c: Customer,
+            ref: { id?: string; name?: string; phone?: string }
+          ) => {
+            if (ref.id && ref.id === c.id && !String(ref.id).startsWith("db")) return true;
+            const cPhone = digits(c.phone);
+            const rPhone = digits(ref.phone || "");
+            if (cPhone.length >= 8 && rPhone.length >= 8 && cPhone === rPhone) return true;
+            const cName = c.name.trim().toLowerCase();
+            const rName = String(ref.name || "").trim().toLowerCase();
+            if (
+              cName &&
+              rName &&
+              cName !== "khách lẻ" &&
+              cName !== "khach le" &&
+              rName !== "khách lẻ" &&
+              rName !== "khach le" &&
+              cName === rName
+            ) {
+              return true;
+            }
+            return false;
+          };
+
+          const allSales = [...salesRetail, ...salesBanGa].filter(
+            (s) => s.status !== "Đã hủy"
+          );
+          const relatedFor = (c: Customer) => {
+            const saleRows = allSales.filter((s) =>
+              matchCustomer(c, {
+                id: s.customerId,
+                name: s.customerName,
+                phone: s.customerPhone,
+              })
+            );
+            const softwareRows = onlineRepairs.filter((r) =>
+              matchCustomer(c, { name: r.customerName })
+            );
+            const repairRows = shopRepairs.filter((r) =>
+              matchCustomer(c, { name: r.customerName })
+            );
+            return { saleRows, softwareRows, repairRows };
+          };
+
+          type CustBizStats = {
+            saleCount: number;
+            saleAmount: number;
+            saleProfit: number;
+            softwareCount: number;
+            softwareAmount: number;
+            repairCount: number;
+            repairAmount: number;
+            repairDebtCount: number;
+            visits: number;
+            lastAt: string;
+          };
+          const emptyStats = (): CustBizStats => ({
+            saleCount: 0,
+            saleAmount: 0,
+            saleProfit: 0,
+            softwareCount: 0,
+            softwareAmount: 0,
+            repairCount: 0,
+            repairAmount: 0,
+            repairDebtCount: 0,
+            visits: 0,
+            lastAt: "",
+          });
+          const bumpLast = (st: CustBizStats, at: string) => {
+            const d = dateKey(at);
+            if (d && (!st.lastAt || d > st.lastAt)) st.lastAt = d;
+          };
+
+          const statsById = new Map<string, CustBizStats>();
+          for (const c of customers) statsById.set(c.id, emptyStats());
+
+          for (const c of customers) {
+            const st = statsById.get(c.id)!;
+            const rel = relatedFor(c);
+            for (const s of rel.saleRows) {
+              if (!inStatsPeriod(s.createdAt)) continue;
+              st.saleCount += 1;
+              st.saleAmount += Number(s.amount) || 0;
+              st.saleProfit += Number(s.profit) || 0;
+              bumpLast(st, s.createdAt);
+            }
+            for (const r of rel.softwareRows) {
+              const at = r.receiveDate || r.createdAt;
+              if (!inStatsPeriod(at)) continue;
+              st.softwareCount += 1;
+              st.softwareAmount += Number(r.quote) || 0;
+              bumpLast(st, at);
+            }
+            for (const r of rel.repairRows) {
+              const at = r.receiveDate || r.createdAt;
+              if (!inStatsPeriod(at)) continue;
+              st.repairCount += 1;
+              st.repairAmount += Number(r.quote) || 0;
+              if (r.paymentStatus === "NỢ DAI" || (!r.isPaid && r.paymentStatus !== "Đã thanh toán")) {
+                st.repairDebtCount += 1;
+              }
+              bumpLast(st, at);
+            }
+            st.visits = st.saleCount + st.softwareCount + st.repairCount;
+          }
+
+          const statsOf = (id: string) => statsById.get(id) ?? emptyStats();
+          const serviceValue = (st: CustBizStats) => st.softwareAmount + st.repairAmount;
+
+          const ranked = (scoreOf: (st: CustBizStats) => number, limit = 5) =>
+            customers
+              .map((c) => ({ c, st: statsOf(c.id), score: scoreOf(statsOf(c.id)) }))
+              .filter((x) => x.score > 0)
+              .sort((a, b) => b.score - a.score || a.c.name.localeCompare(b.c.name, "vi"))
+              .slice(0, limit);
+
+          const topVisits = ranked((st) => st.visits);
+          const topSaleValue = ranked((st) => st.saleAmount);
+          const topServiceValue = ranked((st) => serviceValue(st));
+          const topRecent = customers
+            .map((c) => ({ c, st: statsOf(c.id) }))
+            .filter((x) => x.st.lastAt)
+            .sort((a, b) => b.st.lastAt.localeCompare(a.st.lastAt))
+            .slice(0, 5);
+
+          const activeCustomers = customers.filter((c) => statsOf(c.id).visits > 0).length;
+          const totalVisits = customers.reduce((s, c) => s + statsOf(c.id).visits, 0);
+          const totalSaleAmount = customers.reduce((s, c) => s + statsOf(c.id).saleAmount, 0);
+          const totalServiceAmount = customers.reduce(
+            (s, c) => s + serviceValue(statsOf(c.id)),
+            0
+          );
+          const repairDebtCustomers = customers.filter(
+            (c) => statsOf(c.id).repairDebtCount > 0
+          ).length;
+          const topSpender = topSaleValue[0] ?? null;
+          const topVisitor = topVisits[0] ?? null;
+
+          const q = customerQuery.trim().toLowerCase();
+          let filteredCustomers = !q
+            ? [...customers]
+            : customers.filter((c) => {
+                const hay = `${c.name} ${c.phone} ${c.address} ${c.note}`.toLowerCase();
+                const qDigits = digits(customerQuery);
+                if (qDigits && digits(c.phone).includes(qDigits)) return true;
+                return hay.includes(q);
+              });
+
+          filteredCustomers.sort((a, b) => {
+            const sa = statsOf(a.id);
+            const sb = statsOf(b.id);
+            if (customerSort === "visits") {
+              if (sb.visits !== sa.visits) return sb.visits - sa.visits;
+            } else if (customerSort === "saleValue") {
+              if (sb.saleAmount !== sa.saleAmount) return sb.saleAmount - sa.saleAmount;
+            } else if (customerSort === "serviceValue") {
+              const va = serviceValue(sa);
+              const vb = serviceValue(sb);
+              if (vb !== va) return vb - va;
+            } else if (customerSort === "recent") {
+              if (sb.lastAt !== sa.lastAt) return sb.lastAt.localeCompare(sa.lastAt);
+            }
+            return a.name.localeCompare(b.name, "vi");
+          });
+
+          const rowsCount = filteredCustomers.length;
+          const totalPages = Math.max(1, Math.ceil(rowsCount / customerPageSize));
+          const safePage = Math.min(customerPage, totalPages);
+          const start = (safePage - 1) * customerPageSize;
+          const paged = filteredCustomers.slice(start, start + customerPageSize);
+
+          const withPhone = customers.filter((c) => digits(c.phone).length >= 9).length;
+          const withAddress = customers.filter((c) => c.address.trim()).length;
+          const coldCustomers = customers.filter((c) => statsOf(c.id).visits === 0).length;
+
+          const editingCustomer = editingCustomerId
+            ? customers.find((c) => c.id === editingCustomerId)
+            : null;
+          const viewingCustomer = viewingCustomerId
+            ? customers.find((c) => c.id === viewingCustomerId)
+            : null;
+          const viewingRelated = viewingCustomer
+            ? relatedFor(viewingCustomer)
+            : null;
+          const viewingStats = viewingCustomer ? statsOf(viewingCustomer.id) : null;
+
+          const TopList = ({
+            title,
+            tone,
+            items,
+            valueOf,
+            empty,
+          }: {
+            title: string;
+            tone: string;
+            items: { c: Customer; st: CustBizStats; score?: number }[];
+            valueOf: (st: CustBizStats, c: Customer) => string;
+            empty: string;
+          }) => (
+            <div className={`rounded-xl border bg-white p-3 shadow-panel ${tone}`}>
+              <h3 className="mb-2 text-sm font-black text-ink">{title}</h3>
+              {items.length === 0 ? (
+                <p className="text-sm font-semibold text-muted">{empty}</p>
+              ) : (
+                <ol className="grid gap-1.5">
+                  {items.map((row, i) => (
+                    <li key={row.c.id}>
+                      <button
+                        type="button"
+                        onClick={() => setViewingCustomerId(row.c.id)}
+                        className="flex w-full items-center gap-2 rounded-lg border border-line/80 bg-slate-50/80 px-2.5 py-1.5 text-left hover:border-brand/40 hover:bg-brand-soft/40"
+                      >
+                        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-white text-xs font-black text-muted">
+                          {i + 1}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-bold text-ink">
+                            {row.c.name}
+                          </span>
+                          <span className="block truncate text-[11px] font-semibold text-muted">
+                            {row.c.phone || "Không SĐT"}
+                          </span>
+                        </span>
+                        <strong className="shrink-0 text-sm font-black tabular-nums text-brand">
+                          {valueOf(row.st, row.c)}
+                        </strong>
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          );
+
+          return (
+            <section className="grid gap-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-lg font-black text-ink">Báo cáo khách hàng</h2>
+                  <p className="text-sm font-semibold text-muted">
+                    Ghép phiếu bán / phần mềm / sửa chữa theo SĐT hoặc tên · kỳ{" "}
+                    <strong className="text-ink">{periodLabel}</strong>
+                  </p>
+                </div>
+                <div className="inline-flex flex-wrap gap-1 rounded-lg border border-line bg-slate-100 p-1">
+                  {(
+                    [
+                      ["day", "Hôm nay"],
+                      ["month", "Tháng"],
+                      ["year", "Năm"],
+                      ["all", "Tất cả"],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => {
+                        setCustomerStatsPeriod(id);
+                        setCustomerPage(1);
+                      }}
+                      className={`h-9 rounded-md px-3 text-sm font-bold transition ${
+                        customerStatsPeriod === id
+                          ? "bg-white text-brand shadow-sm"
+                          : "text-muted hover:text-ink"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-xl border border-line bg-white p-4 shadow-panel">
+                  <p className="text-xs font-bold uppercase tracking-wide text-muted">
+                    Tổng hồ sơ
+                  </p>
+                  <p className="mt-1 text-2xl font-black text-ink">{customers.length}</p>
+                  <p className="mt-1 text-xs font-semibold text-muted">
+                    Có SĐT {withPhone} · Có địa chỉ {withAddress}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-line bg-white p-4 shadow-panel">
+                  <p className="text-xs font-bold uppercase tracking-wide text-muted">
+                    Có giao dịch ({periodLabel})
+                  </p>
+                  <p className="mt-1 text-2xl font-black text-brand">{activeCustomers}</p>
+                  <p className="mt-1 text-xs font-semibold text-muted">
+                    {totalVisits} lượt · {coldCustomers} chưa phát sinh
+                  </p>
+                </div>
+                <div className="rounded-xl border border-fuchsia-100 bg-fuchsia-50/80 p-4 shadow-panel">
+                  <p className="text-xs font-bold uppercase tracking-wide text-fuchsia-800">
+                    Giá trị bán hàng
+                  </p>
+                  <p className="mt-1 text-2xl font-black text-fuchsia-900">
+                    {formatMoney(totalSaleAmount)}
+                  </p>
+                  <p className="mt-1 text-xs font-semibold text-fuchsia-800/80">
+                    {topSpender
+                      ? `Top: ${topSpender.c.name} · ${formatMoney(topSpender.st.saleAmount)}`
+                      : "Chưa có phiếu bán trong kỳ"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-violet-100 bg-violet-50/80 p-4 shadow-panel">
+                  <p className="text-xs font-bold uppercase tracking-wide text-violet-800">
+                    SC + Phần mềm
+                  </p>
+                  <p className="mt-1 text-2xl font-black text-violet-900">
+                    {formatMoney(totalServiceAmount)}
+                  </p>
+                  <p className="mt-1 text-xs font-semibold text-violet-800/80">
+                    {repairDebtCustomers > 0
+                      ? `${repairDebtCustomers} khách còn nợ SC`
+                      : topVisitor
+                        ? `Top lượt: ${topVisitor.c.name} (${topVisitor.st.visits})`
+                        : "Chưa có đơn dịch vụ trong kỳ"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-4">
+                <TopList
+                  title={`Top lượt ghé · ${periodLabel}`}
+                  tone="border-line"
+                  items={topVisits}
+                  valueOf={(st) => `${st.visits} lượt`}
+                  empty="Chưa có giao dịch trong kỳ."
+                />
+                <TopList
+                  title={`Top giá trị mua · ${periodLabel}`}
+                  tone="border-fuchsia-100"
+                  items={topSaleValue}
+                  valueOf={(st) => formatMoney(st.saleAmount)}
+                  empty="Chưa có doanh số bán trong kỳ."
+                />
+                <TopList
+                  title={`Top SC + PM · ${periodLabel}`}
+                  tone="border-violet-100"
+                  items={topServiceValue}
+                  valueOf={(st) => formatMoney(serviceValue(st))}
+                  empty="Chưa có đơn sửa / phần mềm."
+                />
+                <TopList
+                  title="Ghé gần đây"
+                  tone="border-sky-100"
+                  items={topRecent}
+                  valueOf={(st) => formatDateVi(st.lastAt) || st.lastAt}
+                  empty="Chưa ghi nhận lần ghé."
+                />
+              </div>
+
+              {customerDupGroups.length > 0 ? (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 shadow-panel">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-black text-amber-900">
+                        Phát hiện {customerDupGroups.length} nhóm SĐT trùng
+                        {customerDupLoading ? "…" : ""}
+                      </p>
+                      <p className="mt-0.5 text-sm font-semibold text-amber-800/90">
+                        Cùng số (bỏ khoảng trắng/dấu) nhưng nhiều hồ sơ — gộp để gợi ý bán và
+                        lịch sử thống nhất. Chỉ owner gộp được.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void reloadCustomerDuplicates()}
+                      disabled={customerDupLoading}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 text-sm font-bold text-amber-900 disabled:opacity-50"
+                    >
+                      {customerDupLoading ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : (
+                        <RefreshCw size={16} />
+                      )}
+                      Kiểm tra lại
+                    </button>
+                  </div>
+                  <ul className="mt-3 grid gap-2">
+                    {customerDupGroups.slice(0, 8).map((g) => (
+                      <li
+                        key={g.phoneDigits}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200/80 bg-white px-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <strong className="text-sm font-black text-ink">
+                            {g.phoneDisplay}
+                          </strong>
+                          <span className="ml-2 text-xs font-semibold text-muted">
+                            {g.customers.length} hồ sơ:{" "}
+                            {g.customers.map((c) => c.name).join(" · ")}
+                          </span>
+                        </div>
+                        {currentUser.role === "owner" ? (
+                          <button
+                            type="button"
+                            onClick={() => openMergeGroup(g)}
+                            className="h-9 shrink-0 rounded-lg bg-amber-600 px-3 text-sm font-bold text-white hover:bg-amber-700"
+                          >
+                            Gộp…
+                          </button>
+                        ) : (
+                          <span className="text-xs font-bold text-muted">Chỉ owner gộp</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              <Panel title="Danh sách khách hàng">
+                <p className="mb-3 text-sm font-semibold text-muted">
+                  Hồ sơ dùng chung khi bán hàng / gợi ý tên. Ghép lịch sử theo{" "}
+                  <strong className="text-ink">SĐT hoặc tên</strong> (phiếu bán, phần mềm, sửa
+                  chữa). Bấm <strong className="text-ink">Bán</strong> để mở phiếu bán prefill
+                  khách.
+                </p>
+
+                {customersError ? (
+                  <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-danger">
+                    {customersError}
+                    <button
+                      type="button"
+                      className="ml-2 font-bold text-brand hover:underline"
+                      onClick={() => void reloadCustomersFromDb()}
+                    >
+                      Thử lại
+                    </button>
+                  </div>
+                ) : null}
+
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  <div className="relative min-w-[14rem] flex-1">
+                    <Search
+                      className="pointer-events-none absolute left-3 top-2.5 text-muted"
+                      size={16}
+                    />
+                    <input
+                      value={customerQuery}
+                      onChange={(e) => {
+                        setCustomerQuery(e.target.value);
+                        setCustomerPage(1);
+                      }}
+                      placeholder="Tìm tên, SĐT, địa chỉ, ghi chú…"
+                      className="h-10 w-full rounded-lg border border-line bg-white py-2 pl-9 pr-3 text-sm font-semibold outline-none focus:border-brand"
+                    />
+                  </div>
+                  <select
+                    value={customerSort}
+                    onChange={(e) => {
+                      setCustomerSort(
+                        e.target.value as typeof customerSort
+                      );
+                      setCustomerPage(1);
+                    }}
+                    className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold"
+                    title="Sắp xếp theo kỳ đang chọn"
+                  >
+                    <option value="visits">Xếp theo lượt ({periodLabel})</option>
+                    <option value="saleValue">Xếp theo giá trị mua</option>
+                    <option value="serviceValue">Xếp theo SC + PM</option>
+                    <option value="recent">Xếp theo ghé gần đây</option>
+                    <option value="name">Xếp theo tên A–Z</option>
+                  </select>
+                  {customerQuery.trim() ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCustomerQuery("");
+                        setCustomerPage(1);
+                      }}
+                      className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold text-muted hover:bg-slate-50"
+                    >
+                      Xóa tìm
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void reloadCustomersFromDb();
+                      void reloadCustomerDuplicates();
+                    }}
+                    disabled={customersLoading}
+                    className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-3 font-bold text-slate-600 disabled:opacity-50"
+                  >
+                    {customersLoading ? (
+                      <Loader2 size={18} className="animate-spin" />
+                    ) : (
+                      <RefreshCw size={18} />
+                    )}
+                    Tải lại
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openCustomerCreateModal}
+                    className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark"
+                  >
+                    <Plus size={18} />
+                    Thêm khách
+                  </button>
+                </div>
+
+                {customersLoading && customers.length === 0 ? (
+                  <div className="inline-flex items-center gap-2 text-sm font-bold text-muted">
+                    <Loader2 size={16} className="animate-spin" /> Đang tải khách hàng…
+                  </div>
+                ) : (
+                  <DataTable
+                    compact
+                    headers={[
+                      "Tên",
+                      "SĐT",
+                      `Lượt (${periodLabel})`,
+                      "Giá trị mua",
+                      "SC + PM",
+                      "Gần nhất",
+                      "Thao tác",
+                    ]}
+                    rows={paged.map((customer) => {
+                      const st = statsOf(customer.id);
+                      const svc = serviceValue(st);
+                      return [
+                        <div key={`n-${customer.id}`} className="text-left">
+                          <div className="font-bold text-brand">{customer.name}</div>
+                          {customer.note ? (
+                            <div
+                              className="max-w-[10rem] truncate text-[11px] font-semibold text-muted"
+                              title={customer.note}
+                            >
+                              {customer.note}
+                            </div>
+                          ) : null}
+                        </div>,
+                        <span key={`p-${customer.id}`} className="text-sm font-semibold">
+                          {customer.phone || "—"}
+                        </span>,
+                        <span
+                          key={`v-${customer.id}`}
+                          className={`font-black tabular-nums ${
+                            st.visits > 0 ? "text-ink" : "text-muted"
+                          }`}
+                          title={`Bán ${st.saleCount} · PM ${st.softwareCount} · SC ${st.repairCount}`}
+                        >
+                          {st.visits}
+                          {st.visits > 0 ? (
+                            <span className="ml-1 text-[10px] font-semibold text-muted">
+                              ({st.saleCount}/{st.softwareCount}/{st.repairCount})
+                            </span>
+                          ) : null}
+                        </span>,
+                        <span
+                          key={`sa-${customer.id}`}
+                          className={`font-black tabular-nums ${
+                            st.saleAmount > 0 ? "text-fuchsia-800" : "text-muted"
+                          }`}
+                        >
+                          {st.saleAmount > 0 ? formatMoney(st.saleAmount) : "—"}
+                        </span>,
+                        <span
+                          key={`sv-${customer.id}`}
+                          className={`font-black tabular-nums ${
+                            svc > 0 ? "text-violet-800" : "text-muted"
+                          }`}
+                        >
+                          {svc > 0 ? formatMoney(svc) : "—"}
+                          {st.repairDebtCount > 0 ? (
+                            <span className="ml-1 text-[10px] font-bold text-danger">
+                              nợ×{st.repairDebtCount}
+                            </span>
+                          ) : null}
+                        </span>,
+                        <span
+                          key={`last-${customer.id}`}
+                          className="text-sm font-semibold text-slate-600"
+                        >
+                          {st.lastAt ? formatDateVi(st.lastAt) : "—"}
+                        </span>,
+                        <div
+                          key={`act-${customer.id}`}
+                          className="flex flex-nowrap justify-center gap-1"
+                        >
+                          <button
+                            type="button"
+                            title="Mở phiếu bán (prefill khách)"
+                            onClick={() => startSaleWithCustomer(customer)}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                          >
+                            <ShoppingCart size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            title="Chi tiết / lịch sử"
+                            onClick={() => setViewingCustomerId(customer.id)}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100"
+                          >
+                            <Eye size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            title="Sửa"
+                            onClick={() => openCustomerEditModal(customer.id)}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-brand-soft text-brand hover:bg-brand/20"
+                          >
+                            <Edit3 size={16} />
+                          </button>
+                          {currentUser.role === "owner" ? (
+                            <button
+                              type="button"
+                              title="Xóa (ẩn hồ sơ)"
+                              disabled={customersSaving}
+                              onClick={() => void deactivateCustomerRow(customer.id)}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-danger hover:bg-red-100 disabled:opacity-45"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          ) : null}
+                        </div>,
+                      ];
+                    })}
+                  />
+                )}
+
+                <div className="mt-3 flex flex-col gap-3 border-t border-line pt-3 sm:flex-row sm:items-center sm:justify-between">
+                  <span className="text-sm font-semibold text-muted">
+                    Hiển thị{" "}
+                    <strong className="text-ink">
+                      {rowsCount === 0 ? 0 : start + 1}–
+                      {Math.min(start + customerPageSize, rowsCount)}
+                    </strong>{" "}
+                    / tổng{" "}
+                    <strong className="text-ink">
+                      {rowsCount.toLocaleString("vi-VN")}
+                    </strong>{" "}
+                    khách
+                    {rowsCount > 0 ? (
+                      <span className="ml-1 text-muted">
+                        (trang {safePage}/{totalPages})
+                      </span>
+                    ) : null}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={safePage <= 1}
+                      onClick={() => setCustomerPage((p) => Math.max(1, p - 1))}
+                      className="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      <ChevronLeft size={16} />
+                      Trước
+                    </button>
+                    <span className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-black text-slate-700">
+                      {safePage}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={safePage >= totalPages}
+                      onClick={() => setCustomerPage((p) => Math.min(totalPages, p + 1))}
+                      className="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      Sau
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                </div>
+              </Panel>
+
+              {isCustomerModalOpen ? (
+                <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-md">
+                  <section className="relative max-h-[92vh] w-full max-w-[480px] overflow-auto rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
+                    {customersSaving ? (
+                      <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-2xl bg-white/55 backdrop-blur-sm">
+                        <Loader2 size={36} className="animate-spin text-brand" />
+                        <p className="text-sm font-black text-ink">Đang lưu…</p>
+                      </div>
+                    ) : null}
+                    <div className="flex items-center justify-between border-b border-slate-200/60 bg-white/80 p-4">
+                      <h2 className="text-lg font-black text-slate-800">
+                        {editingCustomer ? "Sửa khách hàng" : "Thêm khách hàng"}
+                      </h2>
+                      <button
+                        type="button"
+                        onClick={closeCustomerModal}
+                        disabled={customersSaving}
+                        className="h-9 shrink-0 rounded-xl border border-slate-200/60 bg-white/50 px-4 text-sm font-black text-slate-600 hover:bg-white disabled:opacity-50"
+                      >
+                        Đóng
+                      </button>
+                    </div>
+                    <form
+                      key={editingCustomerId ?? `new-customer-${customerFormKey}`}
+                      onSubmit={saveCustomerForm}
+                      className={`grid gap-3 p-4 ${customersSaving ? "pointer-events-none select-none" : ""}`}
+                      autoComplete="off"
+                    >
+                      <Field label="Tên khách" required>
+                        <input
+                          name="name"
+                          required
+                          defaultValue={editingCustomer?.name ?? ""}
+                          className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-semibold"
+                          placeholder="VD: Anh Minh"
+                        />
+                      </Field>
+                      <Field label="Số điện thoại">
+                        <input
+                          name="phone"
+                          defaultValue={editingCustomer?.phone ?? ""}
+                          className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-semibold"
+                          placeholder="Tuỳ chọn — dùng để gộp hồ sơ khi bán"
+                        />
+                      </Field>
+                      <Field label="Địa chỉ">
+                        <input
+                          name="address"
+                          defaultValue={editingCustomer?.address ?? ""}
+                          className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-semibold"
+                          placeholder="Tuỳ chọn"
+                        />
+                      </Field>
+                      <Field label="Ghi chú">
+                        <input
+                          name="note"
+                          defaultValue={editingCustomer?.note ?? ""}
+                          className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-semibold"
+                          placeholder="VD: hay mua iPhone cũ"
+                        />
+                      </Field>
+                      <div className="flex justify-end gap-2 border-t border-line pt-3">
+                        <button
+                          type="button"
+                          onClick={closeCustomerModal}
+                          disabled={customersSaving}
+                          className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted disabled:opacity-50"
+                        >
+                          Hủy
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={customersSaving}
+                          className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark disabled:opacity-60"
+                        >
+                          {customersSaving ? (
+                            <Loader2 size={18} className="animate-spin" />
+                          ) : editingCustomer ? (
+                            <Edit3 size={18} />
+                          ) : (
+                            <Plus size={18} />
+                          )}
+                          {editingCustomer ? "Lưu sửa" : "Lưu khách"}
+                        </button>
+                      </div>
+                    </form>
+                  </section>
+                </div>
+              ) : null}
+
+              {viewingCustomer && viewingRelated && viewingStats ? (
+                <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-md">
+                  <section className="max-h-[92vh] w-full max-w-[640px] overflow-auto rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
+                    <div className="flex items-center justify-between border-b border-slate-200/60 bg-gradient-to-r from-brand/10 to-transparent p-4">
+                      <div>
+                        <h2 className="text-lg font-black text-brand">
+                          {viewingCustomer.name}
+                        </h2>
+                        <p className="mt-0.5 text-sm font-semibold text-muted">
+                          {[viewingCustomer.phone, viewingCustomer.address]
+                            .filter(Boolean)
+                            .join(" · ") || "Chưa có SĐT / địa chỉ"}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setViewingCustomerId(null)}
+                        className="h-9 rounded-xl border border-slate-200/60 bg-white/50 px-4 text-sm font-bold text-slate-600 hover:bg-white"
+                      >
+                        Đóng
+                      </button>
+                    </div>
+                    <div className="grid gap-4 p-4">
+                      {viewingCustomer.note ? (
+                        <p className="rounded-lg border border-line bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+                          <span className="text-muted">Ghi chú: </span>
+                          {viewingCustomer.note}
+                        </p>
+                      ) : null}
+
+                      <div className="rounded-lg border border-brand/20 bg-brand-soft/50 px-3 py-2 text-sm font-semibold text-brand-dark">
+                        Thống kê kỳ <strong>{periodLabel}</strong>
+                        {viewingStats.lastAt ? (
+                          <span className="ml-2 text-muted">
+                            · Ghé gần nhất {formatDateVi(viewingStats.lastAt)}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                        <div className="rounded-lg border border-line bg-white px-3 py-2">
+                          <p className="text-xs font-bold text-muted">Lượt ({periodLabel})</p>
+                          <p className="text-xl font-black text-ink">{viewingStats.visits}</p>
+                        </div>
+                        <div className="rounded-lg border border-fuchsia-100 bg-fuchsia-50 px-3 py-2">
+                          <p className="text-xs font-bold text-fuchsia-800">
+                            Bán · {viewingStats.saleCount} phiếu
+                          </p>
+                          <p className="text-xl font-black text-fuchsia-900">
+                            {formatMoney(viewingStats.saleAmount)}
+                          </p>
+                          <p className="text-[11px] font-semibold text-fuchsia-800/80">
+                            Lãi ~ {formatMoney(viewingStats.saleProfit)}
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-sky-100 bg-sky-50 px-3 py-2">
+                          <p className="text-xs font-bold text-sky-800">
+                            Phần mềm · {viewingStats.softwareCount}
+                          </p>
+                          <p className="text-xl font-black text-sky-900">
+                            {formatMoney(viewingStats.softwareAmount)}
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-violet-100 bg-violet-50 px-3 py-2">
+                          <p className="text-xs font-bold text-violet-800">
+                            Sửa chữa · {viewingStats.repairCount}
+                          </p>
+                          <p className="text-xl font-black text-violet-900">
+                            {formatMoney(viewingStats.repairAmount)}
+                          </p>
+                          {viewingStats.repairDebtCount > 0 ? (
+                            <p className="text-[11px] font-bold text-danger">
+                              Còn nợ {viewingStats.repairDebtCount} đơn
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <div className="grid gap-2 sm:grid-cols-3">
+                        <div className="rounded-lg border border-fuchsia-100 bg-fuchsia-50/60 px-3 py-2">
+                          <p className="text-xs font-bold text-fuchsia-800">Bán (tất cả)</p>
+                          <p className="text-lg font-black text-fuchsia-900">
+                            {viewingRelated.saleRows.length}
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-sky-100 bg-sky-50/60 px-3 py-2">
+                          <p className="text-xs font-bold text-sky-800">PM (tất cả)</p>
+                          <p className="text-lg font-black text-sky-900">
+                            {viewingRelated.softwareRows.length}
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-violet-100 bg-violet-50/60 px-3 py-2">
+                          <p className="text-xs font-bold text-violet-800">SC (tất cả)</p>
+                          <p className="text-lg font-black text-violet-900">
+                            {viewingRelated.repairRows.length}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div>
+                        <h3 className="mb-2 text-sm font-black text-ink">Phiếu bán gần đây</h3>
+                        {viewingRelated.saleRows.length === 0 ? (
+                          <p className="text-sm font-semibold text-muted">Chưa có phiếu bán.</p>
+                        ) : (
+                          <ul className="grid max-h-40 gap-1.5 overflow-auto">
+                            {viewingRelated.saleRows.slice(0, 12).map((s) => (
+                              <li
+                                key={s.id}
+                                className="flex items-center justify-between gap-2 rounded-lg border border-line bg-white px-3 py-2 text-sm"
+                              >
+                                <span className="min-w-0 truncate font-semibold">
+                                  {String(s.createdAt || "").slice(0, 10)} · {s.itemName}
+                                </span>
+                                <strong className="shrink-0 tabular-nums text-brand">
+                                  {formatMoney(s.amount)}
+                                </strong>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+
+                      <div>
+                        <h3 className="mb-2 text-sm font-black text-ink">Đơn phần mềm</h3>
+                        {viewingRelated.softwareRows.length === 0 ? (
+                          <p className="text-sm font-semibold text-muted">Chưa có đơn PM.</p>
+                        ) : (
+                          <ul className="grid max-h-36 gap-1.5 overflow-auto">
+                            {viewingRelated.softwareRows.slice(0, 10).map((r) => (
+                              <li
+                                key={r.id}
+                                className="flex items-center justify-between gap-2 rounded-lg border border-line bg-white px-3 py-2 text-sm"
+                              >
+                                <span className="min-w-0 truncate font-semibold">
+                                  {r.deviceName} · {r.paymentStatus}
+                                </span>
+                                <strong className="shrink-0 tabular-nums text-sky-700">
+                                  {formatMoney(r.quote)}
+                                </strong>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+
+                      <div>
+                        <h3 className="mb-2 text-sm font-black text-ink">Đơn sửa chữa</h3>
+                        {viewingRelated.repairRows.length === 0 ? (
+                          <p className="text-sm font-semibold text-muted">Chưa có đơn sửa.</p>
+                        ) : (
+                          <ul className="grid max-h-36 gap-1.5 overflow-auto">
+                            {viewingRelated.repairRows.slice(0, 10).map((r) => (
+                              <li
+                                key={r.id}
+                                className="flex items-center justify-between gap-2 rounded-lg border border-line bg-white px-3 py-2 text-sm"
+                              >
+                                <span className="min-w-0 truncate font-semibold">
+                                  {r.deviceName} · {r.paymentStatus}
+                                </span>
+                                <strong className="shrink-0 tabular-nums text-violet-700">
+                                  {formatMoney(r.quote)}
+                                </strong>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap justify-end gap-2 border-t border-line pt-3">
+                        <button
+                          type="button"
+                          onClick={() => startSaleWithCustomer(viewingCustomer)}
+                          className="inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-600 px-4 font-bold text-white hover:bg-emerald-700"
+                        >
+                          <ShoppingCart size={16} />
+                          Bán cho khách
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setViewingCustomerId(null);
+                            openCustomerEditModal(viewingCustomer.id);
+                          }}
+                          className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark"
+                        >
+                          <Edit3 size={16} />
+                          Sửa hồ sơ
+                        </button>
+                      </div>
+                    </div>
+                  </section>
+                </div>
+              ) : null}
+
+              {mergeGroupDigits && currentUser.role === "owner"
+                ? (() => {
+                    const group = customerDupGroups.find(
+                      (g) => g.phoneDigits === mergeGroupDigits
+                    );
+                    if (!group) return null;
+                    return (
+                      <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-md">
+                        <section className="relative max-h-[92vh] w-full max-w-[520px] overflow-auto rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
+                          {customerMerging ? (
+                            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-2xl bg-white/55 backdrop-blur-sm">
+                              <Loader2 size={36} className="animate-spin text-brand" />
+                              <p className="text-sm font-black text-ink">Đang gộp…</p>
+                            </div>
+                          ) : null}
+                          <div className="flex items-center justify-between border-b border-slate-200/60 p-4">
+                            <div>
+                              <h2 className="text-lg font-black text-slate-800">
+                                Gộp SĐT trùng
+                              </h2>
+                              <p className="mt-0.5 text-sm font-semibold text-muted">
+                                {group.phoneDisplay} · {group.customers.length} hồ sơ
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={closeMergePanel}
+                              disabled={customerMerging}
+                              className="h-9 rounded-xl border border-slate-200/60 bg-white/50 px-4 text-sm font-black text-slate-600 hover:bg-white disabled:opacity-50"
+                            >
+                              Đóng
+                            </button>
+                          </div>
+                          <div className="grid gap-3 p-4">
+                            <p className="text-sm font-semibold text-muted">
+                              Chọn <strong className="text-ink">hồ sơ giữ lại</strong>. Các hồ
+                              sơ còn lại sẽ ẩn; phiếu bán chuyển về hồ sơ giữ.
+                            </p>
+                            <ul className="grid gap-2">
+                              {group.customers.map((c) => {
+                                const selected = mergeKeepId === c.id;
+                                return (
+                                  <li key={c.id}>
+                                    <label
+                                      className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 ${
+                                        selected
+                                          ? "border-brand bg-brand-soft"
+                                          : "border-line bg-white hover:bg-slate-50"
+                                      }`}
+                                    >
+                                      <input
+                                        type="radio"
+                                        name="merge-keep"
+                                        className="mt-1 accent-brand"
+                                        checked={selected}
+                                        onChange={() => setMergeKeepId(c.id)}
+                                        disabled={customerMerging}
+                                      />
+                                      <div className="min-w-0">
+                                        <div className="font-bold text-ink">{c.name}</div>
+                                        <div className="text-xs font-semibold text-muted">
+                                          {c.phone || "—"}
+                                          {c.address ? ` · ${c.address}` : ""}
+                                        </div>
+                                        {c.note ? (
+                                          <div className="mt-0.5 text-xs font-semibold text-slate-600">
+                                            {c.note}
+                                          </div>
+                                        ) : null}
+                                      </div>
+                                    </label>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                            <div className="flex justify-end gap-2 border-t border-line pt-3">
+                              <button
+                                type="button"
+                                onClick={closeMergePanel}
+                                disabled={customerMerging}
+                                className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted disabled:opacity-50"
+                              >
+                                Hủy
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void confirmMergeGroup()}
+                                disabled={customerMerging || !mergeKeepId}
+                                className="inline-flex h-10 items-center gap-2 rounded-lg bg-amber-600 px-4 font-bold text-white hover:bg-amber-700 disabled:opacity-50"
+                              >
+                                {customerMerging ? (
+                                  <Loader2 size={18} className="animate-spin" />
+                                ) : null}
+                                Xác nhận gộp
+                              </button>
+                            </div>
+                          </div>
+                        </section>
+                      </div>
+                    );
+                  })()
+                : null}
+            </section>
+          );
+        })()}
 
         {activePage === "debt-notes" && (() => {
           const editingOwn = editingOwnDebtId
@@ -10450,10 +11812,12 @@ export default function Home() {
                           label="Cửa hàng"
                           name="storeId"
                           options={stores.map((s) => [s.id, s.name])}
-                          defaultValue={
-                            ownFormDefaults?.storeId ??
-                            (storeFilter !== "all" ? storeFilter : currentUser.storeId)
-                          }
+                          defaultValue={ownDebtFormStoreId}
+                          onValueChange={(v) => {
+                            if (v === "store-1" || v === "store-2" || v === "store-3") {
+                              setOwnDebtFormStoreId(v);
+                            }
+                          }}
                         />
                       ) : (
                         <Field label="Cửa hàng">
@@ -10471,6 +11835,12 @@ export default function Home() {
                         defaultValue={ownFormDefaults?.creditorName ?? ""}
                         allowFreeText
                         allowManage
+                        categoryCode={OWN_DEBT_LOOKUP_CATEGORIES.creditor}
+                        storeId={ownDebtFormStoreId}
+                        onRenameCascade={async () => {
+                          await reloadInventoryFromDb();
+                          await reloadOwnDebts();
+                        }}
                         actorUsername={currentUser.username}
                         onManageNotify={(type, message) => showUiToast(type, message)}
                       />
@@ -10495,6 +11865,12 @@ export default function Home() {
                         defaultValue={ownFormDefaults?.debtType ?? ""}
                         allowFreeText
                         allowManage
+                        categoryCode={OWN_DEBT_LOOKUP_CATEGORIES.debtType}
+                        storeId={ownDebtFormStoreId}
+                        onRenameCascade={async () => {
+                          await reloadInventoryFromDb();
+                          await reloadOwnDebts();
+                        }}
                         actorUsername={currentUser.username}
                         onManageNotify={(type, message) => showUiToast(type, message)}
                       />
@@ -10928,6 +12304,46 @@ export default function Home() {
                     </div>
                   ) : null}
 
+                  {openIds.length > 0 || openSelected.length > 0 ? (
+                    <div className="mb-3 flex flex-wrap items-center gap-3">
+                      {openIds.length > 0 ? (
+                        <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-bold text-slate-700">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 accent-brand"
+                            checked={allOpenSelected}
+                            disabled={debtsSaving}
+                            onChange={(e) => {
+                              const on = e.target.checked;
+                              setSelectedDebtIds((prev) => {
+                                if (on) {
+                                  const set = new Set(prev);
+                                  openIds.forEach((id) => set.add(id));
+                                  return Array.from(set);
+                                }
+                                return prev.filter((id) => !openIds.includes(id));
+                              });
+                            }}
+                          />
+                          Chọn tất cả đang nợ theo lọc ({openIds.length})
+                        </label>
+                      ) : null}
+                      {openSelected.length > 0 ? (
+                        <div className="ml-auto flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm">
+                          <span className="font-bold text-emerald-800">
+                            Tổng đã chọn
+                            <span className="ml-1 font-semibold text-muted">
+                              ({openSelected.length} khoản)
+                            </span>
+                          </span>
+                          <strong className="text-base font-black tabular-nums text-red-600">
+                            {isDebtSensitiveHidden ? "***" : formatMoney(openSelectedTotal)}
+                          </strong>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
                   {debtsLoading ? (
                     <div className="inline-flex items-center gap-2 text-sm font-bold text-muted">
                       <Loader2 size={16} className="animate-spin" /> Đang tải công nợ…
@@ -10980,7 +12396,19 @@ export default function Home() {
                           </span>,
                           sourceBadge(item.source),
                           <div key={`info-${item.id}`} className="text-left">
-                            <div className="font-bold text-brand">{item.customerName}</div>
+                            <button
+                              type="button"
+                              title="Mở hồ sơ khách hàng"
+                              onClick={() =>
+                                openCustomerFromNamePhone(
+                                  item.customerName,
+                                  item.customerPhone
+                                )
+                              }
+                              className="text-left font-bold text-brand hover:underline"
+                            >
+                              {item.customerName}
+                            </button>
                             <div className="text-sm font-semibold text-slate-600">{item.title}</div>
                             {item.customerPhone ? (
                               <div className="text-xs font-semibold text-muted">{item.customerPhone}</div>
@@ -10999,6 +12427,19 @@ export default function Home() {
                             {statusLabel(item.status)}
                           </StatusBadge>,
                           <div key={`act-${item.id}`} className="flex flex-nowrap justify-center gap-1">
+                            <button
+                              type="button"
+                              title="Mở khách hàng"
+                              onClick={() =>
+                                openCustomerFromNamePhone(
+                                  item.customerName,
+                                  item.customerPhone
+                                )
+                              }
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-slate-50 text-slate-700 hover:bg-slate-100"
+                            >
+                              <Users size={16} />
+                            </button>
                             {item.source === "manual" && isOpen ? (
                               <button
                                 type="button"
@@ -11058,91 +12499,49 @@ export default function Home() {
                     />
                   )}
 
-                  <div className="mt-3 flex flex-col gap-3 border-t border-line pt-3">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <span className="text-sm font-semibold text-muted">
-                        Hiển thị{" "}
-                        <strong className="text-ink">
-                          {debtRowsCount === 0 ? 0 : debtStart + 1}–
-                          {Math.min(debtStart + debtPageSize, debtRowsCount)}
-                        </strong>{" "}
-                        / tổng{" "}
-                        <strong className="text-ink">
-                          {debtRowsCount.toLocaleString("vi-VN")}
-                        </strong>{" "}
-                        khoản
-                        {debtRowsCount > 0 ? (
-                          <span className="ml-1 text-muted">
-                            (trang {safeDebtPage}/{debtTotalPages})
-                          </span>
-                        ) : null}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          disabled={safeDebtPage <= 1}
-                          onClick={() => setDebtPage((p) => Math.max(1, p - 1))}
-                          className="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-45"
-                        >
-                          <ChevronLeft size={16} />
-                          Trước
-                        </button>
-                        <span className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-black text-slate-700">
-                          {safeDebtPage}
+                  <div className="mt-3 flex flex-col gap-3 border-t border-line pt-3 sm:flex-row sm:items-center sm:justify-between">
+                    <span className="text-sm font-semibold text-muted">
+                      Hiển thị{" "}
+                      <strong className="text-ink">
+                        {debtRowsCount === 0 ? 0 : debtStart + 1}–
+                        {Math.min(debtStart + debtPageSize, debtRowsCount)}
+                      </strong>{" "}
+                      / tổng{" "}
+                      <strong className="text-ink">
+                        {debtRowsCount.toLocaleString("vi-VN")}
+                      </strong>{" "}
+                      khoản
+                      {debtRowsCount > 0 ? (
+                        <span className="ml-1 text-muted">
+                          (trang {safeDebtPage}/{debtTotalPages})
                         </span>
-                        <button
-                          type="button"
-                          disabled={safeDebtPage >= debtTotalPages}
-                          onClick={() =>
-                            setDebtPage((p) => Math.min(debtTotalPages, p + 1))
-                          }
-                          className="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-45"
-                        >
-                          Sau
-                          <ChevronRight size={16} />
-                        </button>
-                      </div>
+                      ) : null}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={safeDebtPage <= 1}
+                        onClick={() => setDebtPage((p) => Math.max(1, p - 1))}
+                        className="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        <ChevronLeft size={16} />
+                        Trước
+                      </button>
+                      <span className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-black text-slate-700">
+                        {safeDebtPage}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={safeDebtPage >= debtTotalPages}
+                        onClick={() =>
+                          setDebtPage((p) => Math.min(debtTotalPages, p + 1))
+                        }
+                        className="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        Sau
+                        <ChevronRight size={16} />
+                      </button>
                     </div>
-
-                    {openIds.length > 0 || openSelected.length > 0 ? (
-                      <div className="flex flex-wrap items-center gap-3">
-                        {openIds.length > 0 ? (
-                          <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-bold text-slate-700">
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4 accent-brand"
-                              checked={allOpenSelected}
-                              disabled={debtsSaving}
-                              onChange={(e) => {
-                                const on = e.target.checked;
-                                setSelectedDebtIds((prev) => {
-                                  if (on) {
-                                    const set = new Set(prev);
-                                    openIds.forEach((id) => set.add(id));
-                                    return Array.from(set);
-                                  }
-                                  return prev.filter((id) => !openIds.includes(id));
-                                });
-                              }}
-                            />
-                            Chọn tất cả đang nợ theo lọc ({openIds.length})
-                          </label>
-                        ) : null}
-                        {openSelected.length > 0 ? (
-                          <div className="ml-auto flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm">
-                            <span className="font-bold text-emerald-800">
-                              Tổng đã chọn
-                              <span className="ml-1 font-semibold text-muted">
-                                ({openSelected.length} khoản)
-                              </span>
-                            </span>
-                            <strong className="text-base font-black tabular-nums text-red-600">
-                              {isDebtSensitiveHidden ? "***" : formatMoney(openSelectedTotal)}
-                            </strong>
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
                   </div>
               </Panel>
 

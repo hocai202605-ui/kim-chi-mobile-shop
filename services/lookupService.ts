@@ -77,6 +77,15 @@ export const PART_LOOKUP_CATEGORIES = {
 export type PartLookupCategoryCode =
   (typeof PART_LOOKUP_CATEGORIES)[keyof typeof PART_LOOKUP_CATEGORIES];
 
+/** Droplist form Mình nợ (per-store lookup_items). Không seed mặc định — user thêm/sửa/xóa. */
+export const OWN_DEBT_LOOKUP_CATEGORIES = {
+  creditor: "own_debt_creditor",
+  debtType: "own_debt_type",
+} as const;
+
+export type OwnDebtLookupCategoryCode =
+  (typeof OWN_DEBT_LOOKUP_CATEGORIES)[keyof typeof OWN_DEBT_LOOKUP_CATEGORIES];
+
 async function parseJson<T>(res: Response): Promise<T> {
   const body = await res.json();
   if (!res.ok) {

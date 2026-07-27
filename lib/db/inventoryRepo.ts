@@ -593,6 +593,12 @@ const LOOKUP_PART_INBOUND_COLUMN: Record<string, string> = {
   part_color: "color",
 };
 
+/** Own debts text columns (scoped by store_id). */
+const LOOKUP_OWN_DEBT_COLUMN: Record<string, string> = {
+  own_debt_creditor: "creditor_name",
+  own_debt_type: "debt_type",
+};
+
 function parseLookupMoneyLabel(label: string): number | null {
   const n = Number(String(label ?? "").replace(/\D/g, "") || "");
   if (!Number.isFinite(n) || n < 0) return null;
@@ -867,6 +873,16 @@ export async function repoRenameLookupLabel(
           [to, from, storeUuid, actor]
         );
       }
+
+      const ownDebtCol = LOOKUP_OWN_DEBT_COLUMN[categoryCode];
+      if (ownDebtCol) {
+        await client.query(
+          `update public.own_debts set ${ownDebtCol} = $1,
+             updated_by = coalesce($4, updated_by), updated_at = now()
+           where ${ownDebtCol} = $2 and store_id = $3`,
+          [to, from, storeUuid, actor]
+        );
+      }
     }
 
     return rows[0]?.label ?? to;
@@ -1034,9 +1050,35 @@ async function ensureCustomerId(
 ): Promise<string> {
   const n = (name || "Khách lẻ").trim() || "Khách lẻ";
   const p = (phone || "").trim();
+  const phoneDigits = p.replace(/\D/g, "");
   const addr = (address || "").trim();
 
-  if (p) {
+  // Khớp SĐT theo digits (tránh tạo trùng vì space / dấu)
+  if (phoneDigits.length >= 8) {
+    const existing = await client.query<{ id: string }>(
+      `select id from public.customers
+       where is_active
+         and length(regexp_replace(coalesce(phone, ''), '\\D', '', 'g')) >= 8
+         and regexp_replace(coalesce(phone, ''), '\\D', '', 'g') = $1
+       order by updated_at desc nulls last
+       limit 1`,
+      [phoneDigits]
+    );
+    if (existing.rows[0]?.id) {
+      await client.query(
+        `update public.customers
+         set name = $2,
+             phone = case when $3 = '' then phone else $3 end,
+             address = case when $4 = '' then address else $4 end,
+             updated_by = coalesce($5, updated_by),
+             updated_at = now()
+         where id = $1`,
+        [existing.rows[0].id, n, p, addr, actor ?? null]
+      );
+      return existing.rows[0].id;
+    }
+  } else if (p) {
+    // SĐT ngắn: khớp exact text như cũ
     const existing = await client.query<{ id: string }>(
       `select id from public.customers
        where is_active and phone = $1

@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { repoListCustomers, repoUpsertCustomer } from "@/lib/db/customersRepo";
+import {
+  repoDeactivateCustomer,
+  repoListCustomers,
+  repoUpsertCustomer,
+} from "@/lib/db/customersRepo";
 import { isMaxConnSessionError } from "@/lib/db/pool";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +35,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ data });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Lỗi lưu khách hàng";
+    if (isMaxConnSessionError(err)) {
+      return NextResponse.json({ error: message }, { status: 503 });
+    }
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+}
+
+/** Soft-delete: body { id, actorUsername } */
+export async function DELETE(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const id = String(body?.id ?? "").trim();
+    if (!id) throw new Error("Thiếu id khách hàng.");
+    await repoDeactivateCustomer(
+      id,
+      body?.actorUsername ? String(body.actorUsername) : undefined
+    );
+    return NextResponse.json({ data: { id } });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Lỗi xóa khách hàng";
     if (isMaxConnSessionError(err)) {
       return NextResponse.json({ error: message }, { status: 503 });
     }

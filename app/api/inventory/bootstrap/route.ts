@@ -35,6 +35,8 @@ const BOOTSTRAP_LOOKUP_CODES = [
   "part_type",
   "part_brand",
   "part_color",
+  "own_debt_creditor",
+  "own_debt_type",
 ];
 
 export async function GET() {
