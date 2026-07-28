@@ -173,13 +173,8 @@ function toUiError(err: unknown): string {
 }
 
 const SESSION_KEY = "kimchi.session";
-/** Tự đăng xuất sau 8 giờ không thao tác (idle). Có dùng thì gia hạn lại. */
-const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
-/** Không ghi sessionStorage quá dày khi user click liên tục. */
-const SESSION_TOUCH_THROTTLE_MS = 60_000;
 /** Thứ tự droplist đăng nhập (còn lại xếp sau theo tên). */
 const LOGIN_USER_ORDER = ["quynhbupbe", "kimchi", "kieuvy", "caobac", "admin"] as const;
-let lastSessionTouchAt = 0;
 
 function sortLoginUsers(users: LoginUserOption[]): LoginUserOption[] {
   const order = LOGIN_USER_ORDER as readonly string[];
@@ -266,13 +261,13 @@ type User = {
   allowedMenus: string[];
 };
 
-/** Chỉ lưu user + mốc hết hạn — không bao giờ lưu chuỗi password. */
+/** Chỉ lưu user — không bao giờ lưu chuỗi password. Không idle timeout. */
 type SessionPayload = {
   user: User;
   loggedInAt: number;
-  /** Khi remember = true: phiên vĩnh viễn (localStorage), không idle logout. */
-  expiresAt: number;
-  /** Tích «Lưu mật khẩu» → giữ đăng nhập qua đóng tab / idle. */
+  /** Legacy field (phiên cũ có expiresAt) — không còn dùng để auto-logout. */
+  expiresAt?: number;
+  /** Tích «Lưu mật khẩu» → localStorage, giữ đăng nhập mãi đến khi Đăng xuất. */
   remember?: boolean;
 };
 
@@ -773,14 +768,12 @@ function saveSession(user: User, remember = false) {
     const payload: SessionPayload = {
       user,
       loggedInAt: now,
-      // remember: không idle timeout; expiresAt chỉ để tương thích schema cũ
-      expiresAt: remember ? Number.MAX_SAFE_INTEGER : now + SESSION_TTL_MS,
       remember,
     };
-    // Chỉ user + thời hạn — tuyệt đối không ghi chuỗi password
+    // Chỉ user — tuyệt đối không ghi chuỗi password; không TTL / idle logout
     const json = JSON.stringify(payload);
     if (remember) {
-      // localStorage: sống qua đóng tab / mở lại trình duyệt
+      // localStorage: giữ mãi đến khi bấm Đăng xuất
       localStorage.setItem(SESSION_KEY, json);
       try {
         sessionStorage.setItem(SESSION_KEY, json);
@@ -788,6 +781,7 @@ function saveSession(user: User, remember = false) {
         /* ignore */
       }
     } else {
+      // sessionStorage: hết khi đóng tab (không auto-logout 8h)
       sessionStorage.setItem(SESSION_KEY, json);
       try {
         localStorage.removeItem(SESSION_KEY);
@@ -795,30 +789,6 @@ function saveSession(user: User, remember = false) {
         /* ignore */
       }
     }
-    lastSessionTouchAt = now;
-  } catch {
-    /* ignore */
-  }
-}
-
-/**
- * Gia hạn phiên khi user còn thao tác (sliding idle timeout).
- * Bỏ qua nếu đã «Lưu mật khẩu» (remember).
- */
-function touchSession(force = false) {
-  try {
-    const now = Date.now();
-    if (!force && now - lastSessionTouchAt < SESSION_TOUCH_THROTTLE_MS) return;
-    const raw = readSessionRaw();
-    if (!raw) return;
-    const payload = JSON.parse(raw) as SessionPayload;
-    if (!payload?.user?.id || !payload.user?.username) return;
-    if (payload.remember) return;
-    if (typeof payload.expiresAt !== "number") return;
-    if (now >= payload.expiresAt) return;
-    payload.expiresAt = now + SESSION_TTL_MS;
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(payload));
-    lastSessionTouchAt = now;
   } catch {
     /* ignore */
   }
@@ -835,32 +805,28 @@ function clearSession() {
   } catch {
     /* ignore */
   }
-  lastSessionTouchAt = 0;
 }
 
-function loadSession(): { user: User; expiresAt: number; remember: boolean } | null {
+function loadSession(): { user: User; remember: boolean } | null {
   try {
     const raw = readSessionRaw();
     if (!raw) return null;
     const parsed = JSON.parse(raw) as SessionPayload | User;
-    // Hỗ trợ session cũ (chỉ User) — coi là hết hạn, bắt login lại
     if (!parsed || typeof parsed !== "object") return null;
-    if (!("expiresAt" in parsed) || !("user" in parsed)) {
-      clearSession();
-      return null;
-    }
-    const payload = parsed as SessionPayload;
+    // Session cũ chỉ User (không có wrapper) — chấp nhận nếu còn id/username
+    const payload: SessionPayload =
+      "user" in parsed && parsed.user
+        ? (parsed as SessionPayload)
+        : {
+            user: parsed as User,
+            loggedInAt: Date.now(),
+            remember: false,
+          };
     if (!payload.user?.id || !payload.user?.username) {
       clearSession();
       return null;
     }
-    const remember = Boolean(payload.remember);
-    // remember: không auto-logout; còn lại kiểm tra idle expiry
-    if (!remember && Date.now() >= payload.expiresAt) {
-      clearSession();
-      return null;
-    }
-    // Đảm bảo không dính field password nếu từng bị ghi nhầm
+    // Không kiểm tra expiresAt — đã bỏ rule logout 8h
     const { user } = payload;
     return {
       user: {
@@ -872,8 +838,7 @@ function loadSession(): { user: User; expiresAt: number; remember: boolean } | n
         storeId: user.storeId,
         allowedMenus: Array.isArray(user.allowedMenus) ? user.allowedMenus : [],
       },
-      expiresAt: payload.expiresAt,
-      remember,
+      remember: Boolean(payload.remember),
     };
   } catch {
     return null;
@@ -1130,7 +1095,7 @@ export default function Home() {
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [isLoginPasswordVisible, setIsLoginPasswordVisible] = useState(false);
-  /** Tích «Lưu mật khẩu» → giữ phiên (localStorage), không idle logout 8h. */
+  /** Tích «Lưu mật khẩu» → giữ phiên localStorage mãi đến khi Đăng xuất. */
   const [loginRememberPassword, setLoginRememberPassword] = useState(false);
   const [loginUsers, setLoginUsers] = useState<LoginUserOption[]>([]);
   const [loginUsersLoading, setLoginUsersLoading] = useState(false);
@@ -3684,70 +3649,6 @@ export default function Home() {
     };
   }, [sessionReady, currentUser]);
 
-  // Idle 8h không thao tác → logout; «Lưu mật khẩu» thì bỏ qua idle
-  useEffect(() => {
-    if (!currentUser) return;
-
-    const forceLogoutIfExpired = () => {
-      const s = loadSession();
-      // loadSession đã bỏ qua expiry nếu remember; null = hết hạn / mất phiên
-      if (!s) {
-        setLoginError(
-          "Phiên đăng nhập đã hết (8 giờ không thao tác). Vui lòng đăng nhập lại."
-        );
-        handleLogout();
-        return true;
-      }
-      return false;
-    };
-
-    if (forceLogoutIfExpired()) return;
-
-    // Phiên «Lưu mật khẩu»: không idle timeout / không touch
-    if (loadSession()?.remember) return;
-
-    // Lần đầu mount: coi như đang dùng, gia hạn mốc idle
-    touchSession(true);
-
-    const onActivity = () => {
-      touchSession(false);
-    };
-
-    const activityOpts: AddEventListenerOptions = { capture: true, passive: true };
-    window.addEventListener("pointerdown", onActivity, activityOpts);
-    window.addEventListener("keydown", onActivity, activityOpts);
-    window.addEventListener("scroll", onActivity, activityOpts);
-    window.addEventListener("touchstart", onActivity, activityOpts);
-
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") {
-        if (!forceLogoutIfExpired()) touchSession(false);
-      }
-    };
-    const onFocus = () => {
-      if (!forceLogoutIfExpired()) touchSession(false);
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener("focus", onFocus);
-
-    // Poll đủ dày để logout gần đúng mốc 8h idle (không phụ thuộc 1 setTimeout cố định)
-    const poll = window.setInterval(() => {
-      forceLogoutIfExpired();
-    }, 60_000);
-
-    return () => {
-      window.clearInterval(poll);
-      window.removeEventListener("pointerdown", onActivity, activityOpts);
-      window.removeEventListener("keydown", onActivity, activityOpts);
-      window.removeEventListener("scroll", onActivity, activityOpts);
-      window.removeEventListener("touchstart", onActivity, activityOpts);
-      document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("focus", onFocus);
-    };
-    // handleLogout ổn định trong component; chỉ re-bind khi user đổi
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser?.id]);
-
   // Staff luôn bị khóa filter = cửa hàng gán; owner giữ lựa chọn.
   useEffect(() => {
     if (!currentUser) return;
@@ -6045,7 +5946,7 @@ export default function Home() {
               <span>
                 Lưu mật khẩu
                 <span className="mt-0.5 block text-xs font-semibold text-muted">
-                  Giữ đăng nhập — không tự thoát sau 8 giờ / đóng tab
+                  Giữ đăng nhập mãi — chỉ thoát khi bấm Đăng xuất
                 </span>
               </span>
             </label>
