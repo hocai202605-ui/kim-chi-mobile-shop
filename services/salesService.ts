@@ -18,6 +18,8 @@ export type SaleRow = {
   profit: number;
   payment: string;
   status: "Hoàn tất" | "Đã hủy";
+  /** UUID hồ sơ khách (customers.id) — ghép báo cáo KH. */
+  customerId?: string;
   customerName?: string;
   customerPhone?: string;
   customerAddress?: string;

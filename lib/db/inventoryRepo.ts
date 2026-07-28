@@ -85,6 +85,8 @@ export type CreatedSale = {
   profit: number;
   payment: string;
   status: "Hoàn tất" | "Đã hủy";
+  /** UUID customers — để ghép lịch sử / báo cáo KH. */
+  customerId?: string;
   customerName?: string;
   customerPhone?: string;
   customerAddress?: string;
@@ -1396,7 +1398,10 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
       profit: vndToShopMoney(totalProfit),
       payment: paymentToUi(input.payment),
       status: "Hoàn tất" as const,
+      customerId,
       customerName,
+      customerPhone: (input.customerPhone || "").trim(),
+      customerAddress: (input.customerAddress || "").trim(),
       note: input.note ?? "",
       lineCount: lines.length,
       channel: saleChannel,
@@ -1559,7 +1564,7 @@ export async function repoGetSale(saleId: string): Promise<SaleDetail> {
 export async function repoListRecentSales(limit = 2000, channel: SaleChannel = "retail"): Promise<CreatedSale[]> {
   const { idToCode } = await loadStoreMaps();
   const { rows } = await getPool().query(
-    `select s.id, s.sold_at, s.store_id, s.total_amount, s.total_cost, s.total_profit, s.payment_method, s.status, s.channel,
+    `select s.id, s.sold_at, s.store_id, s.customer_id, s.total_amount, s.total_cost, s.total_profit, s.payment_method, s.status, s.channel,
             coalesce(c.name, 'Khách lẻ') as customer_name,
             coalesce(c.phone, '') as customer_phone,
             coalesce(c.address, '') as customer_address,
@@ -1622,6 +1627,7 @@ export async function repoListRecentSales(limit = 2000, channel: SaleChannel = "
     profit: vndToShopMoney(Number(row.total_profit) || 0),
     payment: paymentToUi(String(row.payment_method)),
     status: row.status === "cancelled" ? ("Đã hủy" as const) : ("Hoàn tất" as const),
+    customerId: row.customer_id ? String(row.customer_id) : undefined,
     customerName: String(row.customer_name || "Khách lẻ"),
     customerPhone: String(row.customer_phone || ""),
     customerAddress: String(row.customer_address || ""),

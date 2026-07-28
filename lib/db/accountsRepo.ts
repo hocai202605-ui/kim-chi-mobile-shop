@@ -117,7 +117,14 @@ export async function repoListLoginUsers(): Promise<LoginUserOption[]> {
      from public.app_accounts
      where is_active
      order by
-       case when role = 'owner' then 0 else 1 end,
+       case lower(username)
+         when 'quynhbupbe' then 0
+         when 'kimchi' then 1
+         when 'kieuvy' then 2
+         when 'caobac' then 3
+         when 'admin' then 4
+         else 100
+       end,
        lower(username)`
   );
   return rows.map((row) => ({

@@ -177,7 +177,21 @@ const SESSION_KEY = "kimchi.session";
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 /** Không ghi sessionStorage quá dày khi user click liên tục. */
 const SESSION_TOUCH_THROTTLE_MS = 60_000;
+/** Thứ tự droplist đăng nhập (còn lại xếp sau theo tên). */
+const LOGIN_USER_ORDER = ["quynhbupbe", "kimchi", "kieuvy", "caobac", "admin"] as const;
 let lastSessionTouchAt = 0;
+
+function sortLoginUsers(users: LoginUserOption[]): LoginUserOption[] {
+  const order = LOGIN_USER_ORDER as readonly string[];
+  return [...users].sort((a, b) => {
+    const ia = order.indexOf(a.username.toLowerCase());
+    const ib = order.indexOf(b.username.toLowerCase());
+    const ra = ia === -1 ? 999 : ia;
+    const rb = ib === -1 ? 999 : ib;
+    if (ra !== rb) return ra - rb;
+    return a.username.localeCompare(b.username, "vi");
+  });
+}
 
 type Role = "owner" | "staff";
 type StoreId = "all" | "store-1" | "store-2" | "store-3";
@@ -252,11 +266,14 @@ type User = {
   allowedMenus: string[];
 };
 
-/** Chỉ lưu user + mốc hết hạn — không bao giờ lưu password. */
+/** Chỉ lưu user + mốc hết hạn — không bao giờ lưu chuỗi password. */
 type SessionPayload = {
   user: User;
   loggedInAt: number;
+  /** Khi remember = true: phiên vĩnh viễn (localStorage), không idle logout. */
   expiresAt: number;
+  /** Tích «Lưu mật khẩu» → giữ đăng nhập qua đóng tab / idle. */
+  remember?: boolean;
 };
 
 type Customer = {
@@ -736,22 +753,49 @@ function defaultStoreFilterForUser(user: User): StoreId {
   return "all";
 }
 
-function saveSession(user: User) {
+function readSessionRaw(): string | null {
+  try {
+    const fromSession = sessionStorage.getItem(SESSION_KEY);
+    if (fromSession) return fromSession;
+  } catch {
+    /* ignore */
+  }
+  try {
+    return localStorage.getItem(SESSION_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function saveSession(user: User, remember = false) {
   try {
     const now = Date.now();
     const payload: SessionPayload = {
       user,
       loggedInAt: now,
-      expiresAt: now + SESSION_TTL_MS,
+      // remember: không idle timeout; expiresAt chỉ để tương thích schema cũ
+      expiresAt: remember ? Number.MAX_SAFE_INTEGER : now + SESSION_TTL_MS,
+      remember,
     };
-    // Chỉ user + thời hạn — tuyệt đối không ghi password
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(payload));
-    lastSessionTouchAt = now;
-    try {
-      localStorage.removeItem(SESSION_KEY);
-    } catch {
-      /* ignore */
+    // Chỉ user + thời hạn — tuyệt đối không ghi chuỗi password
+    const json = JSON.stringify(payload);
+    if (remember) {
+      // localStorage: sống qua đóng tab / mở lại trình duyệt
+      localStorage.setItem(SESSION_KEY, json);
+      try {
+        sessionStorage.setItem(SESSION_KEY, json);
+      } catch {
+        /* ignore */
+      }
+    } else {
+      sessionStorage.setItem(SESSION_KEY, json);
+      try {
+        localStorage.removeItem(SESSION_KEY);
+      } catch {
+        /* ignore */
+      }
     }
+    lastSessionTouchAt = now;
   } catch {
     /* ignore */
   }
@@ -759,16 +803,17 @@ function saveSession(user: User) {
 
 /**
  * Gia hạn phiên khi user còn thao tác (sliding idle timeout).
- * Không đụng user payload; không gia hạn nếu đã hết hạn.
+ * Bỏ qua nếu đã «Lưu mật khẩu» (remember).
  */
 function touchSession(force = false) {
   try {
     const now = Date.now();
     if (!force && now - lastSessionTouchAt < SESSION_TOUCH_THROTTLE_MS) return;
-    const raw = sessionStorage.getItem(SESSION_KEY);
+    const raw = readSessionRaw();
     if (!raw) return;
     const payload = JSON.parse(raw) as SessionPayload;
     if (!payload?.user?.id || !payload.user?.username) return;
+    if (payload.remember) return;
     if (typeof payload.expiresAt !== "number") return;
     if (now >= payload.expiresAt) return;
     payload.expiresAt = now + SESSION_TTL_MS;
@@ -793,9 +838,9 @@ function clearSession() {
   lastSessionTouchAt = 0;
 }
 
-function loadSession(): { user: User; expiresAt: number } | null {
+function loadSession(): { user: User; expiresAt: number; remember: boolean } | null {
   try {
-    const raw = sessionStorage.getItem(SESSION_KEY);
+    const raw = readSessionRaw();
     if (!raw) return null;
     const parsed = JSON.parse(raw) as SessionPayload | User;
     // Hỗ trợ session cũ (chỉ User) — coi là hết hạn, bắt login lại
@@ -809,7 +854,9 @@ function loadSession(): { user: User; expiresAt: number } | null {
       clearSession();
       return null;
     }
-    if (Date.now() >= payload.expiresAt) {
+    const remember = Boolean(payload.remember);
+    // remember: không auto-logout; còn lại kiểm tra idle expiry
+    if (!remember && Date.now() >= payload.expiresAt) {
       clearSession();
       return null;
     }
@@ -826,6 +873,7 @@ function loadSession(): { user: User; expiresAt: number } | null {
         allowedMenus: Array.isArray(user.allowedMenus) ? user.allowedMenus : [],
       },
       expiresAt: payload.expiresAt,
+      remember,
     };
   } catch {
     return null;
@@ -1082,6 +1130,8 @@ export default function Home() {
   const [loginBusy, setLoginBusy] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [isLoginPasswordVisible, setIsLoginPasswordVisible] = useState(false);
+  /** Tích «Lưu mật khẩu» → giữ phiên (localStorage), không idle logout 8h. */
+  const [loginRememberPassword, setLoginRememberPassword] = useState(false);
   const [loginUsers, setLoginUsers] = useState<LoginUserOption[]>([]);
   const [loginUsersLoading, setLoginUsersLoading] = useState(false);
   const [loginUsername, setLoginUsername] = useState("");
@@ -1530,7 +1580,7 @@ export default function Home() {
       const mapped = (Array.isArray(rows) ? rows : []).map((r) => ({
         id: r.id,
         createdAt: r.soldAt,
-        customerId: "db" as const,
+        customerId: r.customerId || "",
         customerName: r.customerName || "Khách lẻ",
         customerPhone: r.customerPhone || "",
         customerAddress: r.customerAddress || "",
@@ -1559,7 +1609,7 @@ export default function Home() {
     rows.map((r) => ({
       id: r.id,
       createdAt: r.soldAt,
-      customerId: "db",
+      customerId: r.customerId || "",
       customerName: r.customerName || "Khách lẻ",
       customerPhone: r.customerPhone || "",
       customerAddress: r.customerAddress || "",
@@ -3609,14 +3659,14 @@ export default function Home() {
     setLoginUsersLoading(true);
     void (async () => {
       try {
-        const rows = await apiListLoginUsers();
+        const rows = sortLoginUsers(await apiListLoginUsers());
         if (cancelled) return;
         setLoginUsers(rows);
         setLoginUsername((prev) => {
           if (prev && rows.some((r) => r.username === prev)) return prev;
           const preferred =
             rows.find((r) => r.username.toLowerCase() === "quynhbupbe") ||
-            rows.find((r) => r.username.toLowerCase() === "admin") ||
+            rows.find((r) => r.username.toLowerCase() === "kimchi") ||
             rows[0];
           return preferred?.username ?? "";
         });
@@ -3634,12 +3684,13 @@ export default function Home() {
     };
   }, [sessionReady, currentUser]);
 
-  // Idle 8h không thao tác → logout; còn dùng thì touchSession gia hạn
+  // Idle 8h không thao tác → logout; «Lưu mật khẩu» thì bỏ qua idle
   useEffect(() => {
     if (!currentUser) return;
 
     const forceLogoutIfExpired = () => {
       const s = loadSession();
+      // loadSession đã bỏ qua expiry nếu remember; null = hết hạn / mất phiên
       if (!s) {
         setLoginError(
           "Phiên đăng nhập đã hết (8 giờ không thao tác). Vui lòng đăng nhập lại."
@@ -3651,6 +3702,9 @@ export default function Home() {
     };
 
     if (forceLogoutIfExpired()) return;
+
+    // Phiên «Lưu mật khẩu»: không idle timeout / không touch
+    if (loadSession()?.remember) return;
 
     // Lần đầu mount: coi như đang dùng, gia hạn mốc idle
     touchSession(true);
@@ -3786,7 +3840,7 @@ export default function Home() {
       setPhones([]);
       setAccessories([]);
       setCurrentUser(user);
-      saveSession(user);
+      saveSession(user, loginRememberPassword);
       setStoreFilter(defaultStoreFilterForUser(user));
       const first = navItems.find((item) => canAccessMenu(user, item.id));
       if (first) setActivePage(first.id);
@@ -5102,10 +5156,10 @@ export default function Home() {
       const sale: Sale = {
         id: saved.id,
         createdAt: saved.soldAt,
-        customerId: saleCustomerId || "db",
+        customerId: saved.customerId || saleCustomerId || "",
         customerName: saved.customerName || customerName || "Khách lẻ",
-        customerPhone: saleCustomerPhone.trim(),
-        customerAddress: saleCustomerAddress.trim(),
+        customerPhone: saved.customerPhone || saleCustomerPhone.trim(),
+        customerAddress: saved.customerAddress || saleCustomerAddress.trim(),
         note: saleNote || saved.note || "",
         storeId: saved.storeId,
         itemName: saved.itemName,
@@ -5259,8 +5313,9 @@ export default function Home() {
       );
       setEditingManualDebtId(null);
       setCloneManualDebtDraft(null);
+      // Đóng modal unmount form — không gọi event.currentTarget.reset()
+      // (sau await React set currentTarget = null → "Cannot read properties of null").
       setIsManualDebtModalOpen(false);
-      event.currentTarget.reset();
       await reloadDebts();
       await reloadSoftwareFromDb();
     } catch (err) {
@@ -5978,6 +6033,22 @@ export default function Home() {
                 </button>
               </div>
             </Field>
+            <label className="flex cursor-pointer select-none items-center gap-2.5 rounded-lg border border-line bg-slate-50/80 px-3 py-2.5 text-sm font-semibold text-ink transition hover:bg-brand-soft/40">
+              <input
+                type="checkbox"
+                name="rememberPassword"
+                checked={loginRememberPassword}
+                onChange={(e) => setLoginRememberPassword(e.target.checked)}
+                disabled={loginBusy}
+                className="h-4 w-4 shrink-0 rounded border-line accent-brand"
+              />
+              <span>
+                Lưu mật khẩu
+                <span className="mt-0.5 block text-xs font-semibold text-muted">
+                  Giữ đăng nhập — không tự thoát sau 8 giờ / đóng tab
+                </span>
+              </span>
+            </label>
             {loginError && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{loginError}</p>}
             <button
               type="submit"
@@ -8675,7 +8746,7 @@ export default function Home() {
               {inventoryTab === "phones" ? (
                 <DataTable
                   compact
-                  headers={["Tên máy", "Dung lượng", "IMEI", "Giá bán", "Màu sắc", "Dung lượng pin", "Pin", "Thao tác"]}
+                  headers={["Tên máy", "Dung lượng", "IMEI", "Giá bán", "Màu sắc", "Dung lượng pin", "Pin", "Giá nhập", "Thao tác"]}
                   rows={paginatedPhones.map((item) => [
                     <div key={`name-${item.id}`} className="flex flex-col items-center gap-1.5">
                       <div className="flex items-center justify-center gap-2 text-lg font-black text-brand">{item.name}</div>
@@ -8690,6 +8761,13 @@ export default function Home() {
                     </div>,
                     <span className="text-base font-bold text-slate-700" key={`batcap-${item.id}`}>{item.batteryCapacity || "—"}</span>,
                     <div className="flex items-center justify-center gap-1.5 text-base font-bold text-amber-600" key={`bat-${item.id}`}>{item.batteryCondition}</div>,
+                    <span
+                      className="text-[11px] font-semibold leading-tight text-slate-500"
+                      key={`cost-${item.id}`}
+                      title="Giá nhập"
+                    >
+                      {formatMoney(item.cost)}
+                    </span>,
                     <div key={item.id} className="flex flex-nowrap justify-center gap-1.5">
                       <button
                         type="button"
@@ -9273,6 +9351,11 @@ export default function Home() {
                         <Field label="Hãng"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.brand}</div></Field>
                         <Field label="Tên máy"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.name}</div></Field>
                       </div>
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <Field label="Giá nhập"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-base font-black text-red-500">{formatMoney(viewingPhone.cost)}</div></Field>
+                        <Field label="Giá bán"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-base font-black text-emerald-600">{formatMoney(viewingPhone.expectedPrice)}</div></Field>
+                        <Field label="Lợi nhuận"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-base font-black text-amber-600">{formatMoney(viewingPhone.expectedPrice - viewingPhone.cost)}</div></Field>
+                      </div>
                       <div className="grid gap-3 sm:grid-cols-2">
                         <Field label="IMEI"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-mono text-slate-800">{viewingPhone.imei}</div></Field>
                         <Field label="Trạng thái">
@@ -9308,11 +9391,6 @@ export default function Home() {
                       <div className="grid gap-3 sm:grid-cols-2">
                         <Field label="Mã máy"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-mono text-slate-800">{viewingPhone.id}</div></Field>
                         <Field label="Cửa hàng"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{storeName(viewingPhone.storeId)}</div></Field>
-                      </div>
-                      <div className="grid gap-3 sm:grid-cols-3">
-                        <Field label="Giá nhập"><div className="flex h-12 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-2xl font-black text-red-500">{formatMoney(viewingPhone.cost)}</div></Field>
-                        <Field label="Giá bán"><div className="flex h-12 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-2xl font-black text-emerald-600">{formatMoney(viewingPhone.expectedPrice)}</div></Field>
-                        <Field label="Lợi nhuận"><div className="flex h-12 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-2xl font-black text-amber-600">{formatMoney(viewingPhone.expectedPrice - viewingPhone.cost)}</div></Field>
                       </div>
                     </div>
                   </div>
@@ -10669,6 +10747,10 @@ export default function Home() {
 
         {activePage === "customers" && (() => {
           const digits = (s: string) => String(s || "").replace(/\D/g, "");
+          const isWalkInName = (name?: string | null) => {
+            const n = String(name || "").trim().toLowerCase();
+            return !n || n === "khách lẻ" || n === "khach le";
+          };
           const dateKey = (raw?: string | null) => {
             const s = String(raw || "").trim();
             const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
@@ -10695,24 +10777,47 @@ export default function Home() {
                   ? "Năm nay"
                   : "Tất cả";
 
+          /** Tên xuất hiện đúng 1 lần trong DS KH — mới được ghép theo tên (tránh gán trùng). */
+          const uniqueNameKeys = (() => {
+            const counts = new Map<string, number>();
+            for (const c of customers) {
+              const k = c.name.trim().toLowerCase();
+              if (!k || isWalkInName(k)) continue;
+              counts.set(k, (counts.get(k) || 0) + 1);
+            }
+            const unique = new Set<string>();
+            counts.forEach((n, k) => {
+              if (n === 1) unique.add(k);
+            });
+            return unique;
+          })();
+
+          /**
+           * Ghép phiếu ↔ hồ sơ KH:
+           * 1) UUID khách (sales.customer_id)
+           * 2) SĐT ≥ 8 số
+           * 3) Tên exact — chỉ khi tên đó duy nhất trong danh sách (tránh 2 "Anh Minh" cùng ăn 1 đơn)
+           */
           const matchCustomer = (
             c: Customer,
             ref: { id?: string; name?: string; phone?: string }
           ) => {
-            if (ref.id && ref.id === c.id && !String(ref.id).startsWith("db")) return true;
+            const refId = String(ref.id || "").trim();
+            if (refId && refId !== "db" && refId === c.id) return true;
+
             const cPhone = digits(c.phone);
             const rPhone = digits(ref.phone || "");
             if (cPhone.length >= 8 && rPhone.length >= 8 && cPhone === rPhone) return true;
+
             const cName = c.name.trim().toLowerCase();
             const rName = String(ref.name || "").trim().toLowerCase();
             if (
               cName &&
               rName &&
-              cName !== "khách lẻ" &&
-              cName !== "khach le" &&
-              rName !== "khách lẻ" &&
-              rName !== "khach le" &&
-              cName === rName
+              !isWalkInName(cName) &&
+              !isWalkInName(rName) &&
+              cName === rName &&
+              uniqueNameKeys.has(cName)
             ) {
               return true;
             }
@@ -10730,12 +10835,22 @@ export default function Home() {
                 phone: s.customerPhone,
               })
             );
+            // PM: chỉ có tên — ghép khi tên unique (không gán 1 đơn cho nhiều hồ sơ trùng tên)
             const softwareRows = onlineRepairs.filter((r) =>
               matchCustomer(c, { name: r.customerName })
             );
-            const repairRows = shopRepairs.filter((r) =>
-              matchCustomer(c, { name: r.customerName })
-            );
+            // SC: tên + SĐT (nếu phoneOrPass chứa ra số điện thoại)
+            const repairRows = shopRepairs.filter((r) => {
+              const phoneDigits = digits(r.phoneOrPass);
+              const phone =
+                phoneDigits.length >= 8 && phoneDigits.length <= 12
+                  ? phoneDigits
+                  : "";
+              return matchCustomer(c, {
+                name: r.customerName,
+                phone,
+              });
+            });
             return { saleRows, softwareRows, repairRows };
           };
 
@@ -10935,7 +11050,8 @@ export default function Home() {
                 <div>
                   <h2 className="text-lg font-black text-ink">Báo cáo khách hàng</h2>
                   <p className="text-sm font-semibold text-muted">
-                    Ghép phiếu bán / phần mềm / sửa chữa theo SĐT hoặc tên · kỳ{" "}
+                    Ghép phiếu bán theo mã KH / SĐT; phần mềm &amp; sửa chữa theo SĐT hoặc tên
+                    (tên chỉ ghép khi không trùng) · kỳ{" "}
                     <strong className="text-ink">{periodLabel}</strong>
                   </p>
                 </div>
@@ -10995,7 +11111,7 @@ export default function Home() {
                   </p>
                   <p className="mt-1 text-xs font-semibold text-fuchsia-800/80">
                     {topSpender
-                      ? `Góp tiền: ${topSpender.c.name} · ${formatMoney(topSpender.st.saleAmount)}`
+                      ? `Cao nhất: ${topSpender.c.name} · ${formatMoney(topSpender.st.saleAmount)}`
                       : "Chưa có phiếu bán trong kỳ"}
                   </p>
                 </div>
@@ -11010,7 +11126,7 @@ export default function Home() {
                     {repairDebtCustomers > 0
                       ? `${repairDebtCustomers} khách còn nợ SC`
                       : topVisitor
-                        ? `Góp gạch: ${topVisitor.c.name} (${topVisitor.st.visits})`
+                        ? `Nhiều lượt nhất: ${topVisitor.c.name} (${topVisitor.st.visits})`
                         : "Chưa có đơn dịch vụ trong kỳ"}
                   </p>
                 </div>
@@ -11018,14 +11134,14 @@ export default function Home() {
 
               <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-4">
                 <TopList
-                  title={`Top góp gạch xây nhà · ${periodLabel}`}
+                  title={`Top lượt giao dịch · ${periodLabel}`}
                   tone="border-line"
                   items={topVisits}
                   valueOf={(st) => `${st.visits} lượt`}
                   empty="Chưa có giao dịch trong kỳ."
                 />
                 <TopList
-                  title={`Top góp tiền mua đất · ${periodLabel}`}
+                  title={`Top giá trị mua · ${periodLabel}`}
                   tone="border-fuchsia-100"
                   items={topSaleValue}
                   valueOf={(st) => formatMoney(st.saleAmount)}
@@ -11108,10 +11224,10 @@ export default function Home() {
 
               <Panel title="Danh sách khách hàng">
                 <p className="mb-3 text-sm font-semibold text-muted">
-                  Hồ sơ dùng chung khi bán hàng / gợi ý tên. Ghép lịch sử theo{" "}
-                  <strong className="text-ink">SĐT hoặc tên</strong> (phiếu bán, phần mềm, sửa
-                  chữa). Bấm <strong className="text-ink">Bán</strong> để mở phiếu bán prefill
-                  khách.
+                  Hồ sơ dùng chung khi bán hàng. Lịch sử bán ghép theo{" "}
+                  <strong className="text-ink">mã khách + SĐT</strong>; đơn PM/SC ghép theo SĐT
+                  hoặc tên duy nhất. Bấm <strong className="text-ink">Bán</strong> để mở phiếu
+                  bán prefill khách.
                 </p>
 
                 {customersError ? (
@@ -11154,8 +11270,8 @@ export default function Home() {
                     className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold"
                     title="Sắp xếp theo kỳ đang chọn"
                   >
-                    <option value="visits">Xếp theo góp gạch / lượt ({periodLabel})</option>
-                    <option value="saleValue">Xếp theo góp tiền mua đất</option>
+                    <option value="visits">Xếp theo lượt giao dịch ({periodLabel})</option>
+                    <option value="saleValue">Xếp theo giá trị mua</option>
                     <option value="serviceValue">Xếp theo SC + PM</option>
                     <option value="recent">Xếp theo ghé gần đây</option>
                     <option value="name">Xếp theo tên A–Z</option>
