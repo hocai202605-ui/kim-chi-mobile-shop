@@ -8618,90 +8618,118 @@ export default function Home() {
                     </select>
                   </div>
                 ) : (
-                  <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.2fr)_repeat(4,minmax(0,1fr))]">
-                    <label className="relative">
-                      <Search className="pointer-events-none absolute left-3 top-2.5 text-muted" size={18} />
-                      <input
-                        value={query}
-                        onChange={(event) => {
-                          setQuery(event.target.value);
+                  <div className="mt-4 flex flex-wrap items-center gap-3">
+                    <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.2fr)_repeat(4,minmax(0,1fr))]">
+                      <label className="relative min-w-0">
+                        <Search className="pointer-events-none absolute left-3 top-2.5 text-muted" size={18} />
+                        <input
+                          value={query}
+                          onChange={(event) => {
+                            setQuery(event.target.value);
+                            setInventoryPage(1);
+                          }}
+                          className="h-10 w-full rounded-lg border border-line bg-slate-50 pl-10 pr-3 font-semibold outline-none transition focus:border-brand focus:bg-white"
+                          placeholder="Tìm nhanh IMEI, mã hàng..."
+                        />
+                      </label>
+                      <ScrollableSelect
+                        name="inventoryPhoneNameFilter"
+                        allowFreeText
+                        required={false}
+                        value={inventoryNameFilter}
+                        onChange={(next) => {
+                          setInventoryNameFilter(next);
                           setInventoryPage(1);
                         }}
-                        className="h-10 w-full rounded-lg border border-line bg-slate-50 pl-10 pr-3 font-semibold outline-none transition focus:border-brand focus:bg-white"
-                        placeholder="Tìm nhanh IMEI, mã hàng..."
+                        options={filterPhoneNameOptions.map((n) => ({ value: n, label: n }))}
+                        placeholder="Tên máy (chính xác)..."
                       />
-                    </label>
-                    <ScrollableSelect
-                      name="inventoryPhoneNameFilter"
-                      allowFreeText
-                      required={false}
-                      value={inventoryNameFilter}
-                      onChange={(next) => {
-                        setInventoryNameFilter(next);
-                        setInventoryPage(1);
-                      }}
-                      options={filterPhoneNameOptions.map((n) => ({ value: n, label: n }))}
-                      placeholder="Tên máy (chính xác)..."
-                    />
-                    <select
-                      value={inventoryBrandFilter}
-                      onChange={(event) => {
-                        setInventoryBrandFilter(event.target.value);
-                        setInventoryPage(1);
-                      }}
-                      className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
-                    >
-                      <option value="all">Tất cả hãng</option>
-                      {filterBrandOptions.map((brand) => (
-                        <option key={brand} value={brand}>
-                          {brand}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      value={inventoryStorageFilter}
-                      onChange={(event) => {
-                        setInventoryStorageFilter(event.target.value);
-                        setInventoryPage(1);
-                      }}
-                      className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
-                    >
-                      <option value="all">Tất cả dung lượng</option>
-                      {filterStorageOptions.map((storage) => (
-                        <option key={storage} value={storage}>
-                          {storage}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      value={inventoryPriceRange}
-                      onChange={(event) => {
-                        setInventoryPriceRange(event.target.value);
-                        setInventoryPage(1);
-                      }}
-                      className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
-                    >
-                      <option value="all">Mọi mức giá</option>
-                      <option value="u1m">Dưới 1 triệu</option>
-                      <option value="1m-2m">1 - 2 triệu</option>
-                      <option value="2m-4m">2 - 4 triệu</option>
-                      <option value="4m-6m">4 - 6 triệu</option>
-                      <option value="6m-10m">6 - 10 triệu</option>
-                      <option value="o10m">Trên 10 triệu</option>
-                    </select>
-                    <select
-                      value={inventoryStatusFilter}
-                      onChange={(event) => {
-                        setInventoryStatusFilter(event.target.value);
-                        setInventoryPage(1);
-                      }}
-                      className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
-                    >
-                      <option value="all">Tất cả trạng thái</option>
-                      <option value="Còn hàng">Còn hàng</option>
-                      <option value="Đã bán">Đã bán</option>
-                      <option value="Chưa xử lý">Chưa xử lý</option>
-                    </select>
+                      <select
+                        value={inventoryBrandFilter}
+                        onChange={(event) => {
+                          setInventoryBrandFilter(event.target.value);
+                          setInventoryPage(1);
+                        }}
+                        className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
+                      >
+                        <option value="all">Tất cả hãng</option>
+                        {filterBrandOptions.map((brand) => (
+                          <option key={brand} value={brand}>
+                            {brand}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={inventoryStorageFilter}
+                        onChange={(event) => {
+                          setInventoryStorageFilter(event.target.value);
+                          setInventoryPage(1);
+                        }}
+                        className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
+                      >
+                        <option value="all">Tất cả dung lượng</option>
+                        {filterStorageOptions.map((storage) => (
+                          <option key={storage} value={storage}>
+                            {storage}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={inventoryPriceRange}
+                        onChange={(event) => {
+                          setInventoryPriceRange(event.target.value);
+                          setInventoryPage(1);
+                        }}
+                        className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
+                      >
+                        <option value="all">Mọi mức giá</option>
+                        <option value="u1m">Dưới 1 triệu</option>
+                        <option value="1m-2m">1 - 2 triệu</option>
+                        <option value="2m-4m">2 - 4 triệu</option>
+                        <option value="4m-6m">4 - 6 triệu</option>
+                        <option value="6m-10m">6 - 10 triệu</option>
+                        <option value="o10m">Trên 10 triệu</option>
+                      </select>
+                      <select
+                        value={inventoryStatusFilter}
+                        onChange={(event) => {
+                          setInventoryStatusFilter(event.target.value);
+                          setInventoryPage(1);
+                        }}
+                        className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
+                      >
+                        <option value="all">Tất cả trạng thái</option>
+                        <option value="Còn hàng">Còn hàng</option>
+                        <option value="Đã bán">Đã bán</option>
+                        <option value="Chưa xử lý">Chưa xử lý</option>
+                      </select>
+                    </div>
+                    {(
+                      query.trim() ||
+                      inventoryNameFilter.trim() ||
+                      inventoryBrandFilter !== "all" ||
+                      inventoryStorageFilter !== "all" ||
+                      inventoryPriceRange !== "all" ||
+                      inventoryStatusFilter !== "Còn hàng"
+                    ) ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuery("");
+                          setInventoryNameFilter("");
+                          setInventoryBrandFilter("all");
+                          setInventoryStorageFilter("all");
+                          setInventoryPriceRange("all");
+                          setInventoryStatusFilter("Còn hàng");
+                          setInventoryPage(1);
+                        }}
+                        className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-line bg-white px-3 text-sm font-bold text-muted transition hover:bg-slate-50 hover:text-ink"
+                        title="Xóa hết điều kiện tìm / lọc máy"
+                      >
+                        <X size={16} />
+                        Xóa tìm
+                      </button>
+                    ) : null}
                   </div>
                 )}
               </div>
@@ -9341,20 +9369,39 @@ export default function Home() {
                       <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-brand-soft text-brand">
                         <Smartphone size={24} />
                       </div>
-                      <div>
-                        <strong className="block text-lg">{viewingPhone.name}</strong>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                          <strong className="text-lg">{viewingPhone.name}</strong>
+                          <span className="text-base font-black tabular-nums text-emerald-600">
+                            {formatMoney(viewingPhone.expectedPrice)}
+                          </span>
+                        </div>
                         <span className="text-sm font-semibold text-muted">{viewingPhone.brand}</span>
                       </div>
                     </div>
                     <div className="grid gap-3">
                       <div className="grid gap-3 sm:grid-cols-2">
                         <Field label="Hãng"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.brand}</div></Field>
-                        <Field label="Tên máy"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.name}</div></Field>
+                        <Field label="Tên máy">
+                          <div className="flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-line bg-slate-50 px-3">
+                            <span className="min-w-0 truncate text-slate-800">{viewingPhone.name}</span>
+                            <span className="shrink-0 text-base font-black tabular-nums text-emerald-600" title="Giá bán">
+                              {formatMoney(viewingPhone.expectedPrice)}
+                            </span>
+                          </div>
+                        </Field>
                       </div>
-                      <div className="grid gap-3 sm:grid-cols-3">
-                        <Field label="Giá nhập"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-base font-black text-red-500">{formatMoney(viewingPhone.cost)}</div></Field>
-                        <Field label="Giá bán"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-base font-black text-emerald-600">{formatMoney(viewingPhone.expectedPrice)}</div></Field>
-                        <Field label="Lợi nhuận"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-base font-black text-amber-600">{formatMoney(viewingPhone.expectedPrice - viewingPhone.cost)}</div></Field>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Field label="Ghi chú">
+                          <div className="flex min-h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 py-2 text-slate-800">
+                            {viewingPhone.note || "Không có ghi chú"}
+                          </div>
+                        </Field>
+                        <Field label="Lợi nhuận">
+                          <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-base font-black tabular-nums text-amber-600">
+                            {formatMoney(viewingPhone.expectedPrice - viewingPhone.cost)}
+                          </div>
+                        </Field>
                       </div>
                       <div className="grid gap-3 sm:grid-cols-2">
                         <Field label="IMEI"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-mono text-slate-800">{viewingPhone.imei}</div></Field>
@@ -9380,9 +9427,6 @@ export default function Home() {
                       <div className="grid gap-3 sm:grid-cols-2">
                         <Field label="Tình trạng pin"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.batteryCondition}</div></Field>
                         <Field label="Dung lượng pin"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.batteryCapacity || "Không rõ"}</div></Field>
-                      </div>
-                      <div className="grid gap-3 sm:grid-cols-1">
-                        <Field label="Ghi chú"><div className="flex min-h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 py-2 text-slate-800">{viewingPhone.note || "Không có ghi chú"}</div></Field>
                       </div>
                       <div className="grid gap-3 sm:grid-cols-2">
                         <Field label="Ngày nhập"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.importDate ? formatDateVi(viewingPhone.importDate) : "Chưa có"}</div></Field>
