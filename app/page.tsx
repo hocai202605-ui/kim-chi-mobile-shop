@@ -9380,21 +9380,32 @@ export default function Home() {
                       </div>
                     </div>
                     <div className="grid gap-3">
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <Field label="Hãng"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">{viewingPhone.brand}</div></Field>
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <Field label="Hãng">
+                          <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">
+                            {viewingPhone.brand}
+                          </div>
+                        </Field>
                         <Field label="Tên máy">
-                          <div className="flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-line bg-slate-50 px-3">
-                            <span className="min-w-0 truncate text-slate-800">{viewingPhone.name}</span>
-                            <span className="shrink-0 text-base font-black tabular-nums text-emerald-600" title="Giá bán">
-                              {formatMoney(viewingPhone.expectedPrice)}
-                            </span>
+                          <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">
+                            {viewingPhone.name}
+                          </div>
+                        </Field>
+                        <Field label="Giá bán">
+                          <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-base font-black tabular-nums text-emerald-600">
+                            {formatMoney(viewingPhone.expectedPrice)}
                           </div>
                         </Field>
                       </div>
-                      <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="grid gap-3 sm:grid-cols-3">
                         <Field label="Ghi chú">
                           <div className="flex min-h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 py-2 text-slate-800">
                             {viewingPhone.note || "Không có ghi chú"}
+                          </div>
+                        </Field>
+                        <Field label="Giá nhập">
+                          <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-base font-black tabular-nums text-red-500">
+                            {formatMoney(viewingPhone.cost)}
                           </div>
                         </Field>
                         <Field label="Lợi nhuận">
