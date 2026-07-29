@@ -269,7 +269,7 @@ function salePayMethodLabel(payment: string, saleStatus?: string): { text: strin
   if (payment === "Chuyển khoản") {
     return {
       text: "CK",
-      className: "bg-sky-50 text-sky-800 border border-sky-200",
+      className: "bg-red-100 text-red-800 border border-red-300",
     };
   }
   if (payment === "Thẻ") {
@@ -281,7 +281,8 @@ function salePayMethodLabel(payment: string, saleStatus?: string): { text: strin
   if (payment === "Tiền mặt") {
     return {
       text: "TM",
-      className: "bg-emerald-50 text-emerald-800 border border-emerald-200",
+      // Amber — tiền mặt, khác emerald (Đã TT) và indigo (CK)
+      className: "bg-amber-100 text-amber-950 border border-amber-300",
     };
   }
   return {
@@ -350,27 +351,40 @@ type SaleCartLine =
     };
 
 /**
- * Tặng PK mặc định (tab Bán Máy) — form 4 ô / 2 dòng.
- * Chỉ tên (text) + giá nhập; không giá bán (luôn 0). Trống / 0 = OK.
+ * Tặng PK (tab Bán Máy) — 4 ô / 2 dòng.
+ * Sạc · Ốp · Cường lực: tên cố định. Khác: free text.
+ * Giá nhập mặc định 0 (mờ); > 0 → auto add giỏ (unitPrice 0).
  */
-type SaleGiftSlot = { id: string; name: string; /** raw hiển thị ô giá nhập */ costInput: string };
+type SaleGiftSlot = {
+  id: string;
+  name: string;
+  /** raw hiển thị ô giá nhập — trống = 0 */
+  costInput: string;
+  /** true = không sửa tên (Sạc / Ốp / Cường lực) */
+  nameLocked: boolean;
+};
 
-const SALE_GIFT_DEFAULTS: ReadonlyArray<{ name: string; cost: number }> = [
-  { name: "Sạc", cost: 50 },
-  { name: "Ốp", cost: 20 },
-  { name: "Cường lực", cost: 15 },
-  { name: "Khác", cost: 0 },
+const SALE_GIFT_DEFAULTS: ReadonlyArray<{ name: string; nameLocked: boolean }> = [
+  { name: "Sạc", nameLocked: true },
+  { name: "Ốp", nameLocked: true },
+  { name: "Cường lực", nameLocked: true },
+  { name: "Khác", nameLocked: false },
 ];
+
+function giftCartKey(giftId: string) {
+  return `gift-slot-${giftId}`;
+}
 
 function createDefaultSaleGifts(): SaleGiftSlot[] {
   return SALE_GIFT_DEFAULTS.map((g, i) => ({
     id: `gift-${i}`,
     name: g.name,
-    costInput: g.cost > 0 ? formatInputMoney(g.cost) : "",
+    costInput: "",
+    nameLocked: g.nameLocked,
   }));
 }
 
-/** Map dòng tặng (unitPrice=0) từ phiếu → 4 ô form; thiếu thì fill mặc định. */
+/** Map dòng tặng (unitPrice=0) từ phiếu → 4 ô form; thiếu thì fill mặc định (giá 0). */
 function saleGiftsFromLines(
   lines: Array<{ kind: string; name?: string; unitPrice?: number; cost?: number }>
 ): SaleGiftSlot[] {
@@ -383,17 +397,38 @@ function saleGiftsFromLines(
       return {
         id: `gift-${i}`,
         name: d.name,
-        costInput: d.cost > 0 ? formatInputMoney(d.cost) : "",
+        costInput: "",
+        nameLocked: d.nameLocked,
       };
     }
     const rawName = String(g.name || "").replace(/^tặng\s*:\s*/i, "").trim();
     const cost = Number(g.cost) || 0;
     return {
       id: `gift-${i}`,
-      name: rawName || d.name,
+      name: d.nameLocked ? d.name : rawName || d.name,
       costInput: cost > 0 ? formatInputMoney(cost) : "",
+      nameLocked: d.nameLocked,
     };
   });
+}
+
+/** Dòng giỏ tặng (cost > 0) tương ứng 4 ô form. */
+function giftCartLinesFromSlots(slots: SaleGiftSlot[]): Extract<SaleCartLine, { kind: "accessory" }>[] {
+  return slots
+    .map((g) => {
+      const cost = Math.max(0, parseShopMoney(g.costInput) || 0);
+      const name = g.name.trim();
+      if (cost <= 0 || !name) return null;
+      return {
+        key: giftCartKey(g.id),
+        kind: "accessory" as const,
+        name,
+        quantity: 1,
+        unitPrice: 0,
+        cost,
+      };
+    })
+    .filter((x): x is Extract<SaleCartLine, { kind: "accessory" }> => x != null);
 }
 
 const SALE_ACC_NAME_SEED = [
@@ -2147,18 +2182,9 @@ export default function Home() {
         amountShort += line.unitPrice;
         costShort += line.cost;
       } else {
-        // Bỏ qua dòng tặng (unitPrice 0) nếu còn sót trong giỏ — vốn tặng lấy từ saleGifts.
-        if (line.unitPrice === 0) continue;
+        // Tặng: unitPrice 0 — chỉ cộng vốn (giá nhập), không cộng doanh thu.
         amountShort += line.unitPrice * line.quantity;
         costShort += (line.cost || 0) * line.quantity;
-      }
-    }
-    // Tặng PK form: không cộng doanh thu, chỉ trừ vốn (giá nhập).
-    const hasPhone = saleCart.some((l) => l.kind === "phone");
-    if (hasPhone) {
-      for (const g of saleGifts) {
-        if (!g.name.trim()) continue;
-        costShort += Math.max(0, parseShopMoney(g.costInput) || 0);
       }
     }
     return {
@@ -2168,7 +2194,7 @@ export default function Home() {
       amountVnd: shopMoneyToVnd(amountShort),
       profitVnd: shopMoneyToVnd(amountShort) - shopMoneyToVnd(costShort),
     };
-  }, [saleCart, saleGifts]);
+  }, [saleCart]);
 
   const inventoryPageSize = 10;
   const inventoryRowsCount = inventoryTab === "phones" ? filteredPhones.length : filteredAccessories.length;
@@ -4810,46 +4836,75 @@ export default function Home() {
         if (hasPhone && (mode === "edit" || mode === "view")) {
           setSaleModalTab("phone");
           setSalePhoneDetailsOpen(mode === "edit");
-          setSaleGifts(saleGiftsFromLines(lines));
+          const giftSlots = saleGiftsFromLines(lines);
+          setSaleGifts(giftSlots);
+          // PK bán trong giỏ + tặng (cost > 0) từ form
+          const paidAccAndPhones = lines
+            .filter((line) => !(line.kind === "accessory" && line.unitPrice === 0))
+            .map((line, idx) =>
+              line.kind === "phone"
+                ? {
+                    key: `phone-${line.phoneId || idx}-${sale.id}`,
+                    kind: "phone" as const,
+                    phoneId: line.phoneId || `legacy-phone-${idx}`,
+                    name: line.name,
+                    imei: line.imei || "",
+                    brand: line.brand,
+                    color: line.color,
+                    storage: line.storage,
+                    condition: line.condition,
+                    unitPrice: line.unitPrice,
+                    cost: line.cost,
+                  }
+                : {
+                    key: `acc-${idx}-${sale.id}`,
+                    kind: "accessory" as const,
+                    name:
+                      line.category && line.category !== "Khác"
+                        ? `${line.category}: ${line.name}`
+                        : line.name,
+                    quantity: line.quantity,
+                    unitPrice: line.unitPrice,
+                    cost: line.cost || 0,
+                  }
+            );
+          setSaleCart([...paidAccAndPhones, ...giftCartLinesFromSlots(giftSlots)]);
         } else {
           setSaleModalTab("accessory");
           setSalePhoneDetailsOpen(false);
           setSaleGifts(createDefaultSaleGifts());
+          setSaleCart(
+            lines.map((line, idx) =>
+              line.kind === "phone"
+                ? {
+                    key: `phone-${line.phoneId || idx}-${sale.id}`,
+                    kind: "phone" as const,
+                    phoneId: line.phoneId || `legacy-phone-${idx}`,
+                    name: line.name,
+                    imei: line.imei || "",
+                    brand: line.brand,
+                    color: line.color,
+                    storage: line.storage,
+                    condition: line.condition,
+                    unitPrice: line.unitPrice,
+                    cost: line.cost,
+                  }
+                : {
+                    key: `acc-${idx}-${sale.id}`,
+                    kind: "accessory" as const,
+                    name:
+                      line.unitPrice === 0 && line.category === "Tặng"
+                        ? line.name
+                        : line.category && line.category !== "Khác"
+                          ? `${line.category}: ${line.name}`
+                          : line.name,
+                    quantity: line.quantity,
+                    unitPrice: line.unitPrice,
+                    cost: line.cost || 0,
+                  }
+            )
+          );
         }
-        // Tặng (unitPrice 0) tách ra form saleGifts — không nhét giỏ (trừ khi không có máy).
-        setSaleCart(
-          lines
-            .filter((line) => !(hasPhone && line.kind === "accessory" && line.unitPrice === 0))
-            .map((line, idx) =>
-            line.kind === "phone"
-              ? {
-                  key: `phone-${line.phoneId || idx}-${sale.id}`,
-                  kind: "phone" as const,
-                  phoneId: line.phoneId || `legacy-phone-${idx}`,
-                  name: line.name,
-                  imei: line.imei || "",
-                  brand: line.brand,
-                  color: line.color,
-                  storage: line.storage,
-                  condition: line.condition,
-                  unitPrice: line.unitPrice,
-                  cost: line.cost,
-                }
-              : {
-                  key: `acc-${idx}-${sale.id}`,
-                  kind: "accessory" as const,
-                  name:
-                    line.unitPrice === 0 && line.category === "Tặng"
-                      ? line.name
-                      : line.category && line.category !== "Khác"
-                        ? `${line.category}: ${line.name}`
-                        : line.name,
-                  quantity: line.quantity,
-                  unitPrice: line.unitPrice,
-                  cost: line.cost || 0,
-                }
-          )
-        );
         const firstAcc = lines.find((l) => l.kind === "accessory");
         if (firstAcc && firstAcc.kind === "accessory") {
           setSaleAccDefaultName(firstAcc.name || "");
@@ -4958,26 +5013,68 @@ export default function Home() {
       return;
     }
     const isFirstPhone = !saleCart.some((l) => l.kind === "phone");
-    setSaleCart((prev) => [
-      ...prev,
-      {
-        key: `phone-${phone.id}`,
-        kind: "phone",
-        phoneId: phone.id,
-        name: `${phone.brand} ${phone.name}`.trim(),
-        imei: phone.imei,
-        brand: phone.brand,
-        color: phone.color,
-        storage: phone.storage,
-        condition: phone.condition,
-        unitPrice: phone.expectedPrice > 0 ? phone.expectedPrice : 0,
-        cost: phone.cost,
-      },
-    ]);
-    // Máy đầu tiên → nạp lại 4 ô tặng mặc định (Sạc/Ốp/Cường lực/Khác).
+    setSaleCart((prev) => {
+      const next = [
+        ...prev,
+        {
+          key: `phone-${phone.id}`,
+          kind: "phone" as const,
+          phoneId: phone.id,
+          name: `${phone.brand} ${phone.name}`.trim(),
+          imei: phone.imei,
+          brand: phone.brand,
+          color: phone.color,
+          storage: phone.storage,
+          condition: phone.condition,
+          unitPrice: phone.expectedPrice > 0 ? phone.expectedPrice : 0,
+          cost: phone.cost,
+        },
+      ];
+      // Máy đầu: xóa dòng tặng cũ (nếu có), form tặng về 0.
+      if (isFirstPhone) {
+        return next.filter((l) => !String(l.key).startsWith("gift-slot-"));
+      }
+      return next;
+    });
     if (isFirstPhone) setSaleGifts(createDefaultSaleGifts());
     setSalePhoneListOpen(false);
     setSalePhoneSearch("");
+  }
+
+  /** Cập nhật ô tặng + sync giỏ: cost > 0 → add/update; ≤ 0 → gỡ khỏi giỏ. */
+  function updateSaleGiftSlot(
+    giftId: string,
+    patch: Partial<Pick<SaleGiftSlot, "name" | "costInput">>
+  ) {
+    setSaleGifts((prev) => {
+      const next = prev.map((g) => {
+        if (g.id !== giftId) return g;
+        const name = patch.name !== undefined ? (g.nameLocked ? g.name : patch.name) : g.name;
+        const costInput = patch.costInput !== undefined ? patch.costInput : g.costInput;
+        return { ...g, name, costInput };
+      });
+      const slot = next.find((g) => g.id === giftId);
+      if (slot) {
+        const cost = Math.max(0, parseShopMoney(slot.costInput) || 0);
+        const key = giftCartKey(slot.id);
+        setSaleCart((cart) => {
+          const without = cart.filter((l) => l.key !== key);
+          if (cost <= 0 || !slot.name.trim()) return without;
+          return [
+            ...without,
+            {
+              key,
+              kind: "accessory" as const,
+              name: slot.name.trim(),
+              quantity: 1,
+              unitPrice: 0,
+              cost,
+            },
+          ];
+        });
+      }
+      return next;
+    });
   }
 
   function addAccessoryToSaleCart() {
@@ -5022,6 +5119,13 @@ export default function Home() {
 
   function removeSaleCartLine(key: string) {
     setSaleCart((prev) => prev.filter((l) => l.key !== key));
+    // Gỡ dòng tặng trong giỏ → xóa giá ô form tương ứng (tên giữ nguyên).
+    if (String(key).startsWith("gift-slot-")) {
+      const giftId = String(key).replace(/^gift-slot-/, "");
+      setSaleGifts((prev) =>
+        prev.map((g) => (g.id === giftId ? { ...g, costInput: "" } : g))
+      );
+    }
   }
 
   function updateSaleCartUnitPrice(key: string, unitPrice: number) {
@@ -5114,38 +5218,24 @@ export default function Home() {
         note: saleNote || undefined,
         actorUsername: currentUser?.username,
         channel: saleChannel,
-        lines: [
-          ...saleCart
-            // Tặng đã tách form saleGifts — không gửi lại dòng unitPrice 0 trong giỏ.
-            .filter((line) => !(line.kind === "accessory" && line.unitPrice === 0))
-            .map((line) =>
-              line.kind === "phone"
-                ? {
-                    itemType: "Máy" as const,
-                    phoneId: line.phoneId,
-                    unitPrice: line.unitPrice,
-                  }
-                : {
-                    itemType: "Phụ kiện" as const,
-                    itemName: line.name,
-                    quantity: line.quantity,
-                    unitPrice: line.unitPrice,
-                    unitCost: line.cost || 0,
-                  }
-            ),
-          // Tặng PK kèm máy: chỉ khi có máy; giá bán 0; giá nhập tùy chọn (trống = 0).
-          ...(saleCart.some((l) => l.kind === "phone")
-            ? saleGifts
-                .filter((g) => g.name.trim())
-                .map((g) => ({
-                  itemType: "Phụ kiện" as const,
-                  itemName: `Tặng: ${g.name.trim()}`,
-                  quantity: 1,
-                  unitPrice: 0,
-                  unitCost: Math.max(0, parseShopMoney(g.costInput) || 0),
-                }))
-            : []),
-        ],
+        lines: saleCart.map((line) =>
+          line.kind === "phone"
+            ? {
+                itemType: "Máy" as const,
+                phoneId: line.phoneId,
+                unitPrice: line.unitPrice,
+              }
+            : {
+                itemType: "Phụ kiện" as const,
+                itemName:
+                  line.unitPrice === 0 && !line.name.toLowerCase().startsWith("tặng")
+                    ? `Tặng: ${line.name}`
+                    : line.name,
+                quantity: line.quantity,
+                unitPrice: line.unitPrice,
+                unitCost: line.cost || 0,
+              }
+        ),
       });
 
       const sale: Sale = {
@@ -9869,21 +9959,21 @@ export default function Home() {
               {/* Tổng theo hình thức TT — gọn, 1 hàng ngoài grid */}
               <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-lg border border-line bg-slate-50/80 px-3 py-2 text-xs font-semibold">
                 <span className="font-black text-ink">Theo TT:</span>
-                <span className="text-emerald-700">
+                <span className="text-amber-800">
                   TM{" "}
                   <strong className="tabular-nums">
                     {isSaleSensitiveHidden ? "***" : formatMoney(salePayTotals.cash.amount)}
                   </strong>
                   <span className="ml-1 text-muted">({salePayTotals.cash.count})</span>
                 </span>
-                <span className="text-sky-700">
+                <span className="text-red-700">
                   CK{" "}
                   <strong className="tabular-nums">
                     {isSaleSensitiveHidden ? "***" : formatMoney(salePayTotals.transfer.amount)}
                   </strong>
                   <span className="ml-1 text-muted">({salePayTotals.transfer.count})</span>
                 </span>
-                <span className="text-red-700">
+                <span className="text-rose-800">
                   Nợ{" "}
                   <strong className="tabular-nums">
                     {isSaleSensitiveHidden ? "***" : formatMoney(salePayTotals.debt.amount)}
@@ -10366,7 +10456,7 @@ export default function Home() {
                             </div>
                             ) : null}
 
-                            {/* Tặng PK: 4 ô text + giá nhập, 2 dòng; không giá bán */}
+                            {/* Tặng PK: Sạc/Ốp/CL khóa tên; Khác free text; giá 0 mờ; >0 → giỏ */}
                             <div className="relative overflow-hidden rounded-xl border border-fuchsia-200/80 bg-gradient-to-br from-fuchsia-50 via-pink-50/40 to-white p-2.5 shadow-sm ring-1 ring-fuchsia-100/80">
                               <div className="relative mb-1.5 flex flex-wrap items-center justify-between gap-2">
                                 <div className="flex items-center gap-1.5">
@@ -10376,7 +10466,7 @@ export default function Home() {
                                   <div>
                                     <p className="text-sm font-black text-fuchsia-950">Tặng PK kèm máy</p>
                                     <p className="text-[11px] font-semibold text-muted">
-                                      Tên + giá nhập (không bắt buộc, trống = 0) — trừ lãi máy
+                                      Giá nhập &gt; 0 → tự vào giỏ (trừ lãi). Sạc/Ốp/CL cố định · Khác free text
                                     </p>
                                   </div>
                                 </div>
@@ -10397,43 +10487,51 @@ export default function Home() {
                                 </button>
                               </div>
                               <div className="relative grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                                {saleGifts.map((g) => (
-                                  <div
-                                    key={g.id}
-                                    className="grid min-w-0 grid-cols-[minmax(0,1fr)_4.75rem] items-center gap-1.5 rounded-lg border border-fuchsia-100 bg-white/90 px-1.5 py-1"
-                                  >
-                                    <input
-                                      type="text"
-                                      value={g.name}
-                                      onChange={(e) =>
-                                        setSaleGifts((prev) =>
-                                          prev.map((x) =>
-                                            x.id === g.id ? { ...x, name: e.target.value } : x
-                                          )
-                                        )
-                                      }
-                                      className="h-8 min-w-0 rounded-md border border-transparent bg-transparent px-1.5 text-sm font-bold text-fuchsia-950 outline-none hover:border-fuchsia-200 focus:border-fuchsia-400 focus:bg-white"
-                                      placeholder="Tên tặng"
-                                      title="Tên PK tặng (sửa được)"
-                                    />
-                                    <input
-                                      inputMode="numeric"
-                                      value={g.costInput}
-                                      onChange={(e) =>
-                                        setSaleGifts((prev) =>
-                                          prev.map((x) =>
-                                            x.id === g.id
-                                              ? { ...x, costInput: formatInputMoney(e.target.value) }
-                                              : x
-                                          )
-                                        )
-                                      }
-                                      className="h-8 w-full rounded-md border border-fuchsia-200/80 bg-white px-1.5 text-right text-sm font-bold text-fuchsia-950 outline-none focus:border-fuchsia-500 focus:ring-1 focus:ring-fuchsia-100"
-                                      placeholder="0"
-                                      title="Giá nhập tặng (đơn vị shop) — không bắt buộc"
-                                    />
-                                  </div>
-                                ))}
+                                {saleGifts.map((g) => {
+                                  const costEmpty = !String(g.costInput || "").trim();
+                                  return (
+                                    <div
+                                      key={g.id}
+                                      className="grid min-w-0 grid-cols-[minmax(0,1fr)_4.75rem] items-center gap-1.5 rounded-lg border border-fuchsia-100 bg-white/90 px-1.5 py-1"
+                                    >
+                                      {g.nameLocked ? (
+                                        <span
+                                          className="h-8 truncate px-1.5 text-sm font-black leading-8 text-fuchsia-950"
+                                          title="Tên cố định"
+                                        >
+                                          {g.name}
+                                        </span>
+                                      ) : (
+                                        <input
+                                          type="text"
+                                          value={g.name}
+                                          onChange={(e) =>
+                                            updateSaleGiftSlot(g.id, { name: e.target.value })
+                                          }
+                                          className="h-8 min-w-0 rounded-md border border-transparent bg-transparent px-1.5 text-sm font-bold text-fuchsia-950 outline-none hover:border-fuchsia-200 focus:border-fuchsia-400 focus:bg-white"
+                                          placeholder="Khác…"
+                                          title="Tên tặng free text"
+                                        />
+                                      )}
+                                      <input
+                                        inputMode="numeric"
+                                        value={g.costInput}
+                                        onChange={(e) =>
+                                          updateSaleGiftSlot(g.id, {
+                                            costInput: formatInputMoney(e.target.value),
+                                          })
+                                        }
+                                        className={`h-8 w-full rounded-md border border-fuchsia-200/80 bg-white px-1.5 text-right text-sm font-bold outline-none focus:border-fuchsia-500 focus:ring-1 focus:ring-fuchsia-100 ${
+                                          costEmpty
+                                            ? "text-muted/50 placeholder:text-muted/40"
+                                            : "text-fuchsia-950"
+                                        }`}
+                                        placeholder="0"
+                                        title="Giá nhập tặng — để trống = 0; > 0 tự thêm giỏ"
+                                      />
+                                    </div>
+                                  );
+                                })}
                               </div>
                               {saleBuyMoreOpen ? (
                                 <div className="relative mt-2 grid gap-2 rounded-lg border border-amber-200/80 bg-white/90 p-2.5">
@@ -10708,7 +10806,9 @@ export default function Home() {
                         <div className="rounded-xl border border-fuchsia-200/80 bg-fuchsia-50/50 p-2.5">
                           <p className="mb-1.5 text-sm font-black text-fuchsia-950">Tặng PK kèm máy</p>
                           <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                            {saleGifts.map((g) => (
+                            {saleGifts
+                              .filter((g) => parseShopMoney(g.costInput) > 0)
+                              .map((g) => (
                               <div
                                 key={g.id}
                                 className="flex items-center justify-between gap-2 rounded-lg border border-fuchsia-100 bg-white px-2.5 py-1.5"
@@ -10735,38 +10835,39 @@ export default function Home() {
                           </span>
                           Giỏ hàng
                           <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-800 ring-1 ring-red-200/80">
-                            {
-                              saleCart.filter(
-                                (l) => !(l.kind === "accessory" && l.unitPrice === 0)
-                              ).length
-                            }
+                            {saleCart.length}
                           </span>
                         </p>
                         {!isSaleReadOnly && saleCart.length > 0 ? (
                           <button
                             type="button"
-                            onClick={() => setSaleCart([])}
+                            onClick={() => {
+                              setSaleCart([]);
+                              setSaleGifts(createDefaultSaleGifts());
+                            }}
                             className="text-xs font-bold text-danger hover:underline"
                           >
                             Xóa giỏ
                           </button>
                         ) : null}
                       </div>
-                      {saleCart.filter(
-                        (l) => !(l.kind === "accessory" && l.unitPrice === 0)
-                      ).length === 0 ? (
+                      {saleCart.length === 0 ? (
                         <p className="py-2 text-center text-sm font-semibold text-muted">Giỏ trống</p>
                       ) : (
                         <ul className="space-y-1.5">
-                          {saleCart
-                            .filter((l) => !(l.kind === "accessory" && l.unitPrice === 0))
-                            .map((line) => {
+                          {saleCart.map((line) => {
                             const lineCost =
                               line.kind === "phone" ? line.cost : line.cost || 0;
+                            const isGift =
+                              line.kind === "accessory" && line.unitPrice === 0;
                             return (
                             <li
                               key={line.key}
-                              className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-white px-2.5 py-1.5"
+                              className={`flex flex-wrap items-center gap-2 rounded-lg border px-2.5 py-1.5 ${
+                                isGift
+                                  ? "border-fuchsia-200 bg-fuchsia-50/60"
+                                  : "border-line bg-white"
+                              }`}
                             >
                               <div className="min-w-0 flex-1 basis-[10rem]">
                                 {line.kind === "phone" ? (
@@ -10784,10 +10885,16 @@ export default function Home() {
                                   </p>
                                 ) : (
                                   <div className="flex min-w-0 flex-wrap items-center gap-1">
-                                    <span className="shrink-0 rounded bg-amber-50 px-1 py-0.5 text-[10px] font-black uppercase text-amber-800">
-                                      PK
+                                    <span
+                                      className={`shrink-0 rounded px-1 py-0.5 text-[10px] font-black uppercase ${
+                                        isGift
+                                          ? "bg-fuchsia-100 text-fuchsia-800 ring-1 ring-fuchsia-200"
+                                          : "bg-amber-50 text-amber-800"
+                                      }`}
+                                    >
+                                      {isGift ? "Tặng" : "PK"}
                                     </span>
-                                    {isSaleReadOnly ? (
+                                    {isSaleReadOnly || isGift ? (
                                       <span className="min-w-0 truncate text-sm font-bold text-ink">
                                         {line.name}
                                       </span>
@@ -10808,12 +10915,16 @@ export default function Home() {
                                   </div>
                                 )}
                               </div>
-                              {/* Giá nhập */}
+                              {/* Giá nhập — tặng chỉ hiện cột này */}
                               <div className="flex shrink-0 flex-col items-end gap-0.5">
                                 <span className="text-[10px] font-bold text-muted">Giá nhập</span>
-                                {isSaleReadOnly || line.kind === "phone" ? (
+                                {isSaleReadOnly || line.kind === "phone" || isGift ? (
                                   <span
-                                    className="inline-flex h-8 min-w-[4.5rem] items-center justify-end rounded-md border border-line bg-slate-50 px-2 text-sm font-bold text-slate-700"
+                                    className={`inline-flex h-8 min-w-[4.5rem] items-center justify-end rounded-md border px-2 text-sm font-bold ${
+                                      isGift
+                                        ? "border-fuchsia-200 bg-white text-fuchsia-900"
+                                        : "border-line bg-slate-50 text-slate-700"
+                                    }`}
                                     title="Giá nhập (đơn vị shop)"
                                   >
                                     {isSaleSensitiveHidden ? "***" : formatMoney(lineCost)}
@@ -10831,7 +10942,8 @@ export default function Home() {
                                   />
                                 )}
                               </div>
-                              {/* Giá bán */}
+                              {/* Giá bán — ẩn với tặng */}
+                              {!isGift ? (
                               <div className="flex shrink-0 flex-col items-end gap-0.5">
                                 <span className="text-[10px] font-bold text-muted">Giá bán</span>
                                 {isSaleReadOnly ? (
@@ -10852,6 +10964,7 @@ export default function Home() {
                                   />
                                 )}
                               </div>
+                              ) : null}
                               {line.kind === "accessory" && line.quantity > 1 ? (
                                 <span className="w-16 shrink-0 self-end pb-1 text-right text-xs font-black text-ink">
                                   {isSaleSensitiveHidden
