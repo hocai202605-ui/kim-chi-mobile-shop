@@ -268,8 +268,9 @@ function salePayMethodLabel(payment: string, saleStatus?: string): { text: strin
   }
   if (payment === "Chuyển khoản") {
     return {
-      text: "CK",
-      className: "bg-red-100 text-red-800 border border-red-300",
+      text: "Chuyển khoản",
+      // Nền đỏ, chữ vàng
+      className: "bg-red-600 text-yellow-300 border border-red-700 shadow-sm",
     };
   }
   if (payment === "Thẻ") {
@@ -280,8 +281,7 @@ function salePayMethodLabel(payment: string, saleStatus?: string): { text: strin
   }
   if (payment === "Tiền mặt") {
     return {
-      text: "TM",
-      // Amber — tiền mặt, khác emerald (Đã TT) và indigo (CK)
+      text: "Tiền mặt",
       className: "bg-amber-100 text-amber-950 border border-amber-300",
     };
   }
