@@ -307,11 +307,30 @@ type SaleCartLine =
       cost: number;
     };
 
-/** Tặng PK mặc định khi tab Bán Máy (đã có trên droplist tên PK). */
-const SALE_GIFT_DEFAULT_NAME = "Sạc - Ốp - Cường lực";
+/**
+ * Tặng PK mặc định khi chọn máy (tab Bán Máy).
+ * unitPrice = 0 (tặng); cost = vốn trừ lãi (short shop). Có thể sửa trên giỏ.
+ */
+const SALE_GIFT_DEFAULTS: ReadonlyArray<{ name: string; cost: number }> = [
+  { name: "Sạc", cost: 50 },
+  { name: "Ốp", cost: 20 },
+  { name: "Cường lực", cost: 15 },
+  { name: "Other", cost: 0 },
+];
+
+function createDefaultGiftCartLines(seed = Date.now()): SaleCartLine[] {
+  return SALE_GIFT_DEFAULTS.map((g, i) => ({
+    key: `gift-default-${seed}-${i}`,
+    kind: "accessory" as const,
+    name: g.name,
+    quantity: 1,
+    unitPrice: 0,
+    cost: g.cost,
+  }));
+}
 
 const SALE_ACC_NAME_SEED = [
-  SALE_GIFT_DEFAULT_NAME,
+  ...SALE_GIFT_DEFAULTS.map((g) => g.name),
   "Ốp trong suốt",
   "Ốp chống sốc",
   "Cáp sạc Type-C",
@@ -1286,9 +1305,8 @@ export default function Home() {
   const [saleAccDefaultName, setSaleAccDefaultName] = useState("");
   /** Options local fallback khi lookup store trống. */
   const [saleAccNameLocal, setSaleAccNameLocal] = useState<string[]>(SALE_ACC_NAME_SEED);
-  /** Tặng PK (tab Bán Máy): remount tên + ô giá. */
-  const [saleGiftFormKey, setSaleGiftFormKey] = useState(0);
-  const [saleGiftCost, setSaleGiftCost] = useState("");
+  /** Tab Bán Máy: sổ form mua thêm PK (bán, không tặng). */
+  const [saleBuyMoreOpen, setSaleBuyMoreOpen] = useState(false);
   const [saleSaving, setSaleSaving] = useState(false);
   /** Popup tạo/sửa phiếu bán — màn sales mặc định chỉ grid. */
   const [isSaleModalOpen, setIsSaleModalOpen] = useState(false);
@@ -4605,8 +4623,7 @@ export default function Home() {
     setSaleAccQty(1);
     setSaleAccFormKey((k) => k + 1);
     setSaleAccDefaultName("");
-    setSaleGiftFormKey((k) => k + 1);
-    setSaleGiftCost("");
+    setSaleBuyMoreOpen(false);
     setSalePayMethod("Tiền mặt");
     setSalePayStatus("Đã thanh toán");
     setSaleSoldAt(vnNowDateTimeLocal());
@@ -4679,8 +4696,7 @@ export default function Home() {
         setSaleWarranty(warranty);
         setSaleWarrantyKey((k) => k + 1);
       }
-      setSaleGiftCost("");
-      setSaleGiftFormKey((k) => k + 1);
+      setSaleBuyMoreOpen(false);
       setSaleStoreId(sale.storeId);
       const parsedPay = parseSalePaymentFields(sale.payment);
       setSalePayStatus(parsedPay.status);
@@ -4853,9 +4869,8 @@ export default function Home() {
       window.alert("Máy không thuộc cửa hàng đang chọn trên phiếu.");
       return;
     }
-    setSaleCart((prev) => [
-      ...prev,
-      {
+    setSaleCart((prev) => {
+      const phoneLine: SaleCartLine = {
         key: `phone-${phone.id}`,
         kind: "phone",
         phoneId: phone.id,
@@ -4867,8 +4882,15 @@ export default function Home() {
         condition: phone.condition,
         unitPrice: phone.expectedPrice > 0 ? phone.expectedPrice : 0,
         cost: phone.cost,
-      },
-    ]);
+      };
+      // Chưa có dòng tặng (giá bán 0) → load Sạc / Ốp / Cường lực / Other mặc định.
+      const hasGift = prev.some((l) => l.kind === "accessory" && l.unitPrice === 0);
+      if (hasGift) return [...prev, phoneLine];
+      return [...prev, phoneLine, ...createDefaultGiftCartLines()];
+    });
+    // Đóng list máy sau khi chọn — giỏ đã có máy + tặng.
+    setSalePhoneListOpen(false);
+    setSalePhoneSearch("");
   }
 
   function addAccessoryToSaleCart() {
@@ -4911,41 +4933,6 @@ export default function Home() {
     setSaleAccFormKey((k) => k + 1);
   }
 
-  /** Tặng PK kèm máy: giá bán 0, giá (vốn) trừ vào lãi phiếu. */
-  function addGiftAccessoryToSaleCart() {
-    const formEl = document.getElementById("sale-create-form") as HTMLFormElement | null;
-    const fd = formEl ? new FormData(formEl) : null;
-    const name = String(fd?.get("saleGiftName") ?? "").trim();
-    if (!name) {
-      window.alert("Chọn hoặc nhập tên PK tặng.");
-      return;
-    }
-    const cost = parseShopMoney(saleGiftCost); // 0 nếu trống
-    if (cost < 0) {
-      window.alert("Giá PK tặng không hợp lệ.");
-      return;
-    }
-    setSaleCart((prev) => [
-      ...prev,
-      {
-        key: `gift-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        kind: "accessory",
-        name,
-        quantity: 1,
-        unitPrice: 0,
-        cost,
-      },
-    ]);
-    setSaleGiftCost("");
-    setSaleGiftFormKey((k) => k + 1);
-    if (cost > 0) {
-      showUiToast(
-        "success",
-        `Đã thêm tặng: ${name} (trừ lãi ${formatMoney(cost)}).`
-      );
-    }
-  }
-
   function removeSaleCartLine(key: string) {
     setSaleCart((prev) => prev.filter((l) => l.key !== key));
   }
@@ -4963,6 +4950,12 @@ export default function Home() {
           ? { ...l, cost: Math.max(0, Math.round(cost) || 0) }
           : l
       )
+    );
+  }
+
+  function updateSaleCartName(key: string, name: string) {
+    setSaleCart((prev) =>
+      prev.map((l) => (l.key === key && l.kind === "accessory" ? { ...l, name } : l))
     );
   }
 
@@ -10253,65 +10246,133 @@ export default function Home() {
                             </div>
                             ) : null}
 
-                            {/* Tặng PK — giá bán 0, giá nhập trừ lãi máy */}
+                            {/* Tặng PK mặc định khi chọn máy + Mua thêm PK bán */}
                             <div className="relative overflow-hidden rounded-xl border border-fuchsia-200/80 bg-gradient-to-br from-fuchsia-50 via-pink-50/40 to-white p-2.5 shadow-sm ring-1 ring-fuchsia-100/80">
-                              <div className="relative mb-1.5 flex items-center gap-1.5">
-                                <span className="grid h-7 w-7 place-items-center rounded-md bg-fuchsia-100 text-fuchsia-700 ring-1 ring-fuchsia-200/80">
-                                  <PackagePlus size={14} />
-                                </span>
-                                <div>
-                                  <p className="text-sm font-black text-fuchsia-950">Tặng PK</p>
-                                  <p className="text-[11px] font-semibold text-muted">
-                                    Giá tặng trừ vào lãi bán máy
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="relative grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_7.5rem_auto] sm:items-end">
-                                <div className="grid min-w-0 gap-1.5">
-                                  <span className="text-sm font-bold text-fuchsia-950">Tên PK</span>
-                                  <div className="min-w-0 [&_label>span]:hidden">
-                                    <ManageableSelect
-                                      key={`sale-gift-name-${saleGiftFormKey}-${saleStoreId}`}
-                                      label="Tên PK tặng"
-                                      name="saleGiftName"
-                                      options={
-                                        saleAccNameOptions.includes(SALE_GIFT_DEFAULT_NAME)
-                                          ? saleAccNameOptions
-                                          : [SALE_GIFT_DEFAULT_NAME, ...saleAccNameOptions]
-                                      }
-                                      setOptions={setSaleAccNameOptions}
-                                      defaultValue={SALE_GIFT_DEFAULT_NAME}
-                                      required={false}
-                                      categoryCode={ACCESSORY_LOOKUP_CATEGORIES.name}
-                                      storeId={saleStoreId}
-                                      onRenameCascade={reloadInventoryFromDb}
-                                      allowManage
-                                      allowFreeText
-                                      actorUsername={currentUser?.username ?? ""}
-                                      onManageNotify={(type, message) => showUiToast(type, message)}
-                                    />
+                              <div className="relative mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="grid h-7 w-7 place-items-center rounded-md bg-fuchsia-100 text-fuchsia-700 ring-1 ring-fuchsia-200/80">
+                                    <PackagePlus size={14} />
+                                  </span>
+                                  <div>
+                                    <p className="text-sm font-black text-fuchsia-950">Tặng PK kèm máy</p>
+                                    <p className="text-[11px] font-semibold text-muted">
+                                      Chọn máy → auto Sạc 50 · Ốp 20 · Cường lực 15 · Other 0 (sửa trên giỏ)
+                                    </p>
                                   </div>
-                                </div>
-                                <div className="grid gap-1.5">
-                                  <span className="text-sm font-bold text-fuchsia-950">Giá</span>
-                                  <input
-                                    inputMode="numeric"
-                                    value={saleGiftCost}
-                                    onChange={(e) => setSaleGiftCost(formatInputMoney(e.target.value))}
-                                    className="h-10 w-full rounded-lg border border-fuchsia-200/80 bg-white px-2.5 text-sm font-bold text-fuchsia-950 outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-100"
-                                    title="Giá vốn PK tặng (đơn vị shop) — trừ vào lãi"
-                                    placeholder="0"
-                                  />
                                 </div>
                                 <button
                                   type="button"
-                                  onClick={addGiftAccessoryToSaleCart}
-                                  className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-fuchsia-600 px-3.5 text-sm font-bold text-white shadow-sm hover:bg-fuchsia-700"
+                                  onClick={() => {
+                                    setSaleBuyMoreOpen((v) => !v);
+                                    if (!saleBuyMoreOpen) setSaleAccFormKey((k) => k + 1);
+                                  }}
+                                  className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-lg px-3 text-sm font-bold shadow-sm transition ${
+                                    saleBuyMoreOpen
+                                      ? "bg-amber-600 text-white hover:bg-amber-700"
+                                      : "bg-amber-500 text-white hover:bg-amber-600"
+                                  }`}
                                 >
-                                  <Plus size={16} />
-                                  Thêm tặng
+                                  <Plus size={15} />
+                                  {saleBuyMoreOpen ? "Đóng mua thêm" : "Mua thêm"}
                                 </button>
                               </div>
+                              {saleBuyMoreOpen ? (
+                                <div className="relative mt-2 grid gap-2 rounded-lg border border-amber-200/80 bg-white/90 p-2.5">
+                                  <p className="text-xs font-bold text-amber-900">
+                                    Mua thêm phụ kiện (tính tiền bán — không tặng)
+                                  </p>
+                                  <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_5.5rem_auto] sm:items-end">
+                                    <div className="grid min-w-0 gap-1">
+                                      <span className="text-xs font-bold text-amber-950">Tên PK</span>
+                                      <div className="min-w-0 [&_label>span]:hidden">
+                                        <ManageableSelect
+                                          key={`sale-buy-more-name-${saleAccFormKey}-${saleStoreId}`}
+                                          label="Tên phụ kiện"
+                                          name="saleAccName"
+                                          options={saleAccNameOptions}
+                                          setOptions={setSaleAccNameOptions}
+                                          defaultValue={saleAccDefaultName}
+                                          required={false}
+                                          categoryCode={ACCESSORY_LOOKUP_CATEGORIES.name}
+                                          storeId={saleStoreId}
+                                          onRenameCascade={reloadInventoryFromDb}
+                                          allowManage
+                                          allowFreeText
+                                          actorUsername={currentUser?.username ?? ""}
+                                          onManageNotify={(type, message) => showUiToast(type, message)}
+                                        />
+                                      </div>
+                                    </div>
+                                    <div className="grid gap-1">
+                                      <span className="text-xs font-bold text-amber-950">SL</span>
+                                      <input
+                                        type="number"
+                                        min={1}
+                                        value={saleAccQty}
+                                        onChange={(e) =>
+                                          setSaleAccQty(Math.max(1, Number(e.target.value) || 1))
+                                        }
+                                        className="h-10 w-full rounded-lg border border-amber-200/70 bg-white px-2 text-center text-sm font-semibold outline-none focus:border-amber-500"
+                                        title="Số lượng"
+                                      />
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={addAccessoryToSaleCart}
+                                      className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-amber-500 px-3 text-sm font-bold text-white shadow-sm hover:bg-amber-600"
+                                    >
+                                      <Plus size={16} />
+                                      Thêm giỏ
+                                    </button>
+                                  </div>
+                                  <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+                                    <div className="grid min-w-0 gap-1">
+                                      <span className="text-xs font-bold text-amber-950">
+                                        Giá bán <span className="text-red-500">*</span>
+                                      </span>
+                                      <div className="min-w-0 [&_label>span]:hidden">
+                                        <ManageableSelect
+                                          key={`sale-buy-more-price-${saleAccFormKey}-${saleStoreId}`}
+                                          label="Giá bán"
+                                          name="saleAccPrice"
+                                          options={saleAccPriceOptions}
+                                          setOptions={setSaleAccPriceOptions}
+                                          defaultValue=""
+                                          required={false}
+                                          categoryCode={ACCESSORY_LOOKUP_CATEGORIES.price}
+                                          storeId={saleStoreId}
+                                          onRenameCascade={reloadInventoryFromDb}
+                                          allowManage
+                                          allowFreeText
+                                          actorUsername={currentUser?.username ?? ""}
+                                          onManageNotify={(type, message) => showUiToast(type, message)}
+                                        />
+                                      </div>
+                                    </div>
+                                    <div className="grid min-w-0 gap-1">
+                                      <span className="text-xs font-bold text-amber-950">Giá nhập</span>
+                                      <div className="min-w-0 [&_label>span]:hidden">
+                                        <ManageableSelect
+                                          key={`sale-buy-more-cost-${saleAccFormKey}-${saleStoreId}`}
+                                          label="Giá nhập"
+                                          name="saleAccCost"
+                                          options={saleAccCostOptions}
+                                          setOptions={setSaleAccCostOptions}
+                                          defaultValue=""
+                                          required={false}
+                                          categoryCode={ACCESSORY_LOOKUP_CATEGORIES.cost}
+                                          storeId={saleStoreId}
+                                          onRenameCascade={reloadInventoryFromDb}
+                                          allowManage
+                                          allowFreeText
+                                          actorUsername={currentUser?.username ?? ""}
+                                          onManageNotify={(type, message) => showUiToast(type, message)}
+                                        />
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : null}
                             </div>
 
                             <div className="space-y-2 rounded-xl border border-indigo-200/80 bg-gradient-to-br from-indigo-50 via-slate-50 to-white p-2.5 shadow-sm ring-1 ring-indigo-100/80">
@@ -10535,18 +10596,35 @@ export default function Home() {
                                     </span>
                                   </p>
                                 ) : (
-                                  <p className="truncate text-sm font-bold text-ink">
-                                    <span className="mr-1 rounded bg-amber-50 px-1 py-0.5 text-[10px] font-black uppercase text-amber-800">
-                                      PK
+                                  <div className="flex min-w-0 flex-wrap items-center gap-1">
+                                    <span
+                                      className={`shrink-0 rounded px-1 py-0.5 text-[10px] font-black uppercase ${
+                                        line.unitPrice === 0
+                                          ? "bg-fuchsia-50 text-fuchsia-700 ring-1 ring-fuchsia-200"
+                                          : "bg-amber-50 text-amber-800"
+                                      }`}
+                                    >
+                                      {line.unitPrice === 0 ? "Tặng" : "PK"}
                                     </span>
-                                    {line.name}
-                                    <span className="ml-1 font-semibold text-muted">×{line.quantity}</span>
-                                    {line.unitPrice === 0 ? (
-                                      <span className="ml-1 rounded bg-fuchsia-50 px-1 py-0.5 text-[10px] font-black uppercase text-fuchsia-700 ring-1 ring-fuchsia-200">
-                                        Tặng
+                                    {isSaleReadOnly ? (
+                                      <span className="min-w-0 truncate text-sm font-bold text-ink">
+                                        {line.name}
+                                      </span>
+                                    ) : (
+                                      <input
+                                        value={line.name}
+                                        onChange={(e) => updateSaleCartName(line.key, e.target.value)}
+                                        className="h-7 min-w-0 flex-1 basis-[6rem] rounded border border-transparent bg-transparent px-1 text-sm font-bold text-ink outline-none hover:border-line focus:border-brand focus:bg-white"
+                                        title="Sửa tên PK / tặng"
+                                        placeholder="Tên PK"
+                                      />
+                                    )}
+                                    {line.quantity > 1 ? (
+                                      <span className="shrink-0 text-xs font-semibold text-muted">
+                                        ×{line.quantity}
                                       </span>
                                     ) : null}
-                                  </p>
+                                  </div>
                                 )}
                               </div>
                               {/* Giá nhập */}
