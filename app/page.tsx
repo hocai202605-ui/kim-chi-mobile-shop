@@ -222,7 +222,7 @@ function parseSalePaymentFields(pay: string): { status: SalePayStatus; method: S
   return { status: "Đã thanh toán", method: "Tiền mặt" };
 }
 
-/** Badge TT grid/form — icon giống phần mềm. */
+/** Badge trạng thái TT grid/form — icon giống phần mềm. */
 function salePayStatusLabel(payment: string, saleStatus?: string): { text: string; className: string } {
   if (saleStatus === "Đã hủy") {
     return {
@@ -245,6 +245,48 @@ function salePayStatusLabel(payment: string, saleStatus?: string): { text: strin
   return {
     text: "✅ Đã thanh toán",
     className: "bg-emerald-50 text-emerald-600 border border-line",
+  };
+}
+
+/** Badge hình thức thu (TM / CK) — chỉ khi đã thu (không nợ / 1 phần). */
+function salePayMethodLabel(payment: string, saleStatus?: string): { text: string; className: string } {
+  if (saleStatus === "Đã hủy") {
+    return {
+      text: "—",
+      className: "bg-slate-50 text-slate-500 border border-line",
+    };
+  }
+  if (
+    payment === "NỢ DAI" ||
+    payment === "Nợ" ||
+    payment === "Thanh toán 1 phần"
+  ) {
+    return {
+      text: "—",
+      className: "bg-slate-50 text-slate-500 border border-line",
+    };
+  }
+  if (payment === "Chuyển khoản") {
+    return {
+      text: "CK",
+      className: "bg-sky-50 text-sky-800 border border-sky-200",
+    };
+  }
+  if (payment === "Thẻ") {
+    return {
+      text: "Thẻ",
+      className: "bg-violet-50 text-violet-800 border border-violet-200",
+    };
+  }
+  if (payment === "Tiền mặt") {
+    return {
+      text: "TM",
+      className: "bg-emerald-50 text-emerald-800 border border-emerald-200",
+    };
+  }
+  return {
+    text: payment?.trim() || "—",
+    className: "bg-slate-50 text-slate-600 border border-line",
   };
 }
 type ProductStatus = "Còn hàng" | "Đã bán" | "Đã hủy" | "Chưa xử lý";
@@ -308,25 +350,50 @@ type SaleCartLine =
     };
 
 /**
- * Tặng PK mặc định khi chọn máy (tab Bán Máy).
- * unitPrice = 0 (tặng); cost = vốn trừ lãi (short shop). Có thể sửa trên giỏ.
+ * Tặng PK mặc định (tab Bán Máy) — form 4 ô / 2 dòng.
+ * Chỉ tên (text) + giá nhập; không giá bán (luôn 0). Trống / 0 = OK.
  */
+type SaleGiftSlot = { id: string; name: string; /** raw hiển thị ô giá nhập */ costInput: string };
+
 const SALE_GIFT_DEFAULTS: ReadonlyArray<{ name: string; cost: number }> = [
   { name: "Sạc", cost: 50 },
   { name: "Ốp", cost: 20 },
   { name: "Cường lực", cost: 15 },
-  { name: "Other", cost: 0 },
+  { name: "Khác", cost: 0 },
 ];
 
-function createDefaultGiftCartLines(seed = Date.now()): SaleCartLine[] {
+function createDefaultSaleGifts(): SaleGiftSlot[] {
   return SALE_GIFT_DEFAULTS.map((g, i) => ({
-    key: `gift-default-${seed}-${i}`,
-    kind: "accessory" as const,
+    id: `gift-${i}`,
     name: g.name,
-    quantity: 1,
-    unitPrice: 0,
-    cost: g.cost,
+    costInput: g.cost > 0 ? formatInputMoney(g.cost) : "",
   }));
+}
+
+/** Map dòng tặng (unitPrice=0) từ phiếu → 4 ô form; thiếu thì fill mặc định. */
+function saleGiftsFromLines(
+  lines: Array<{ kind: string; name?: string; unitPrice?: number; cost?: number }>
+): SaleGiftSlot[] {
+  const gifts = lines.filter(
+    (l) => l.kind === "accessory" && (Number(l.unitPrice) || 0) === 0
+  );
+  return SALE_GIFT_DEFAULTS.map((d, i) => {
+    const g = gifts[i];
+    if (!g) {
+      return {
+        id: `gift-${i}`,
+        name: d.name,
+        costInput: d.cost > 0 ? formatInputMoney(d.cost) : "",
+      };
+    }
+    const rawName = String(g.name || "").replace(/^tặng\s*:\s*/i, "").trim();
+    const cost = Number(g.cost) || 0;
+    return {
+      id: `gift-${i}`,
+      name: rawName || d.name,
+      costInput: cost > 0 ? formatInputMoney(cost) : "",
+    };
+  });
 }
 
 const SALE_ACC_NAME_SEED = [
@@ -1307,6 +1374,8 @@ export default function Home() {
   const [saleAccNameLocal, setSaleAccNameLocal] = useState<string[]>(SALE_ACC_NAME_SEED);
   /** Tab Bán Máy: sổ form mua thêm PK (bán, không tặng). */
   const [saleBuyMoreOpen, setSaleBuyMoreOpen] = useState(false);
+  /** 4 ô tặng PK (Sạc/Ốp/Cường lực/Khác) — chỉ tên + giá nhập, không giá bán. */
+  const [saleGifts, setSaleGifts] = useState<SaleGiftSlot[]>(() => createDefaultSaleGifts());
   const [saleSaving, setSaleSaving] = useState(false);
   /** Popup tạo/sửa phiếu bán — màn sales mặc định chỉ grid. */
   const [isSaleModalOpen, setIsSaleModalOpen] = useState(false);
@@ -1319,9 +1388,9 @@ export default function Home() {
   const [saleDate, setSaleDate] = useState(() => vnNowDate());
   /** Mặc định chỉ phiếu hoàn tất — xóa (hủy mềm) biến mất khỏi grid. */
   const [saleStatusFilter, setSaleStatusFilter] = useState<"all" | "Hoàn tất" | "Đã hủy">("Hoàn tất");
-  /** Lọc TT: đã thu | 1 phần | nợ */
+  /** Lọc TT: đã thu | TM | CK | 1 phần | nợ */
   const [salePaymentFilter, setSalePaymentFilter] = useState<
-    "all" | "paid" | "partial" | "debt"
+    "all" | "paid" | "cash" | "transfer" | "partial" | "debt"
   >("all");
   const [saleTypeFilter, setSaleTypeFilter] = useState<"all" | "Máy" | "Phụ kiện">("all");
   const [saleSearch, setSaleSearch] = useState("");
@@ -1897,7 +1966,7 @@ export default function Home() {
     });
 
   const filteredLedger = ledger.filter((item) => storeFilter === "all" || item.storeId === storeFilter);
-  /** Grid bán hàng: CH header + tháng/ngày + trạng thái + TT + loại + search. */
+  /** Grid bán hàng: CH header + tháng/ngày + trạng thái + TT + hình thức + loại + search. */
   const filteredSales = useMemo(() => {
     const q = saleSearch.trim().toLowerCase();
     return sales.filter((item) => {
@@ -1911,6 +1980,8 @@ export default function Home() {
         return false;
       }
       if (salePaymentFilter === "partial" && item.payment !== "Thanh toán 1 phần") return false;
+      if (salePaymentFilter === "cash" && item.payment !== "Tiền mặt") return false;
+      if (salePaymentFilter === "transfer" && item.payment !== "Chuyển khoản") return false;
       if (
         salePaymentFilter === "paid" &&
         (item.payment === "NỢ DAI" ||
@@ -2076,8 +2147,18 @@ export default function Home() {
         amountShort += line.unitPrice;
         costShort += line.cost;
       } else {
+        // Bỏ qua dòng tặng (unitPrice 0) nếu còn sót trong giỏ — vốn tặng lấy từ saleGifts.
+        if (line.unitPrice === 0) continue;
         amountShort += line.unitPrice * line.quantity;
         costShort += (line.cost || 0) * line.quantity;
+      }
+    }
+    // Tặng PK form: không cộng doanh thu, chỉ trừ vốn (giá nhập).
+    const hasPhone = saleCart.some((l) => l.kind === "phone");
+    if (hasPhone) {
+      for (const g of saleGifts) {
+        if (!g.name.trim()) continue;
+        costShort += Math.max(0, parseShopMoney(g.costInput) || 0);
       }
     }
     return {
@@ -2087,7 +2168,7 @@ export default function Home() {
       amountVnd: shopMoneyToVnd(amountShort),
       profitVnd: shopMoneyToVnd(amountShort) - shopMoneyToVnd(costShort),
     };
-  }, [saleCart]);
+  }, [saleCart, saleGifts]);
 
   const inventoryPageSize = 10;
   const inventoryRowsCount = inventoryTab === "phones" ? filteredPhones.length : filteredAccessories.length;
@@ -4624,6 +4705,7 @@ export default function Home() {
     setSaleAccFormKey((k) => k + 1);
     setSaleAccDefaultName("");
     setSaleBuyMoreOpen(false);
+    setSaleGifts(createDefaultSaleGifts());
     setSalePayMethod("Tiền mặt");
     setSalePayStatus("Đã thanh toán");
     setSaleSoldAt(vnNowDateTimeLocal());
@@ -4728,12 +4810,17 @@ export default function Home() {
         if (hasPhone && (mode === "edit" || mode === "view")) {
           setSaleModalTab("phone");
           setSalePhoneDetailsOpen(mode === "edit");
+          setSaleGifts(saleGiftsFromLines(lines));
         } else {
           setSaleModalTab("accessory");
           setSalePhoneDetailsOpen(false);
+          setSaleGifts(createDefaultSaleGifts());
         }
+        // Tặng (unitPrice 0) tách ra form saleGifts — không nhét giỏ (trừ khi không có máy).
         setSaleCart(
-          lines.map((line, idx) =>
+          lines
+            .filter((line) => !(hasPhone && line.kind === "accessory" && line.unitPrice === 0))
+            .map((line, idx) =>
             line.kind === "phone"
               ? {
                   key: `phone-${line.phoneId || idx}-${sale.id}`,
@@ -4792,6 +4879,7 @@ export default function Home() {
           },
         ]);
         setSaleAccDefaultName(sale.itemName);
+        setSaleGifts(createDefaultSaleGifts());
       }
 
       setSaleAccFormKey((k) => k + 1);
@@ -4869,8 +4957,10 @@ export default function Home() {
       window.alert("Máy không thuộc cửa hàng đang chọn trên phiếu.");
       return;
     }
-    setSaleCart((prev) => {
-      const phoneLine: SaleCartLine = {
+    const isFirstPhone = !saleCart.some((l) => l.kind === "phone");
+    setSaleCart((prev) => [
+      ...prev,
+      {
         key: `phone-${phone.id}`,
         kind: "phone",
         phoneId: phone.id,
@@ -4882,13 +4972,10 @@ export default function Home() {
         condition: phone.condition,
         unitPrice: phone.expectedPrice > 0 ? phone.expectedPrice : 0,
         cost: phone.cost,
-      };
-      // Chưa có dòng tặng (giá bán 0) → load Sạc / Ốp / Cường lực / Other mặc định.
-      const hasGift = prev.some((l) => l.kind === "accessory" && l.unitPrice === 0);
-      if (hasGift) return [...prev, phoneLine];
-      return [...prev, phoneLine, ...createDefaultGiftCartLines()];
-    });
-    // Đóng list máy sau khi chọn — giỏ đã có máy + tặng.
+      },
+    ]);
+    // Máy đầu tiên → nạp lại 4 ô tặng mặc định (Sạc/Ốp/Cường lực/Khác).
+    if (isFirstPhone) setSaleGifts(createDefaultSaleGifts());
     setSalePhoneListOpen(false);
     setSalePhoneSearch("");
   }
@@ -5027,24 +5114,38 @@ export default function Home() {
         note: saleNote || undefined,
         actorUsername: currentUser?.username,
         channel: saleChannel,
-        lines: saleCart.map((line) =>
-          line.kind === "phone"
-            ? {
-                itemType: "Máy" as const,
-                phoneId: line.phoneId,
-                unitPrice: line.unitPrice,
-              }
-            : {
-                itemType: "Phụ kiện" as const,
-                itemName:
-                  line.unitPrice === 0 && !line.name.toLowerCase().startsWith("tặng")
-                    ? `Tặng: ${line.name}`
-                    : line.name,
-                quantity: line.quantity,
-                unitPrice: line.unitPrice,
-                unitCost: line.cost || 0,
-              }
-        ),
+        lines: [
+          ...saleCart
+            // Tặng đã tách form saleGifts — không gửi lại dòng unitPrice 0 trong giỏ.
+            .filter((line) => !(line.kind === "accessory" && line.unitPrice === 0))
+            .map((line) =>
+              line.kind === "phone"
+                ? {
+                    itemType: "Máy" as const,
+                    phoneId: line.phoneId,
+                    unitPrice: line.unitPrice,
+                  }
+                : {
+                    itemType: "Phụ kiện" as const,
+                    itemName: line.name,
+                    quantity: line.quantity,
+                    unitPrice: line.unitPrice,
+                    unitCost: line.cost || 0,
+                  }
+            ),
+          // Tặng PK kèm máy: chỉ khi có máy; giá bán 0; giá nhập tùy chọn (trống = 0).
+          ...(saleCart.some((l) => l.kind === "phone")
+            ? saleGifts
+                .filter((g) => g.name.trim())
+                .map((g) => ({
+                  itemType: "Phụ kiện" as const,
+                  itemName: `Tặng: ${g.name.trim()}`,
+                  quantity: 1,
+                  unitPrice: 0,
+                  unitCost: Math.max(0, parseShopMoney(g.costInput) || 0),
+                }))
+            : []),
+        ],
       });
 
       const sale: Sale = {
@@ -9599,6 +9700,8 @@ export default function Home() {
                   >
                     <option value="all">Tất cả TT</option>
                     <option value="paid">✅ Đã thanh toán</option>
+                    <option value="cash">💵 Tiền mặt</option>
+                    <option value="transfer">🏦 Chuyển khoản</option>
                     <option value="partial">⚠️ Thanh toán 1 phần</option>
                     <option value="debt">❌ NỢ DAI</option>
                   </select>
@@ -9660,6 +9763,7 @@ export default function Home() {
                     "Giá nhập",
                     "Lãi",
                     "Thanh toán",
+                    "Hình thức",
                     "Thao tác",
                   ]}
                   rows={filteredSales.map((item) => {
@@ -9668,6 +9772,7 @@ export default function Home() {
                       customers.find((c) => c.id === item.customerId)?.name ||
                       "Khách lẻ";
                     const payUi = salePayStatusLabel(item.payment, item.status);
+                    const methodUi = salePayMethodLabel(item.payment, item.status);
                     const costShort =
                       item.cost != null
                         ? item.cost
@@ -9698,6 +9803,21 @@ export default function Home() {
                         className={`inline-flex h-8 items-center rounded px-2 text-xs font-bold shadow-sm ${payUi.className}`}
                       >
                         {payUi.text}
+                      </span>,
+                      <span
+                        key={`pm-${item.id}`}
+                        className={`inline-flex h-8 items-center rounded px-2 text-xs font-bold shadow-sm ${methodUi.className}`}
+                        title={
+                          item.payment === "Tiền mặt"
+                            ? "Tiền mặt"
+                            : item.payment === "Chuyển khoản"
+                              ? "Chuyển khoản"
+                              : item.payment === "Thẻ"
+                                ? "Thẻ"
+                                : "Chưa áp dụng (nợ / 1 phần / hủy)"
+                        }
+                      >
+                        {methodUi.text}
                       </span>,
                       <div
                         key={`act-${item.id}`}
@@ -10246,7 +10366,7 @@ export default function Home() {
                             </div>
                             ) : null}
 
-                            {/* Tặng PK mặc định khi chọn máy + Mua thêm PK bán */}
+                            {/* Tặng PK: 4 ô text + giá nhập, 2 dòng; không giá bán */}
                             <div className="relative overflow-hidden rounded-xl border border-fuchsia-200/80 bg-gradient-to-br from-fuchsia-50 via-pink-50/40 to-white p-2.5 shadow-sm ring-1 ring-fuchsia-100/80">
                               <div className="relative mb-1.5 flex flex-wrap items-center justify-between gap-2">
                                 <div className="flex items-center gap-1.5">
@@ -10256,7 +10376,7 @@ export default function Home() {
                                   <div>
                                     <p className="text-sm font-black text-fuchsia-950">Tặng PK kèm máy</p>
                                     <p className="text-[11px] font-semibold text-muted">
-                                      Chọn máy → auto Sạc 50 · Ốp 20 · Cường lực 15 · Other 0 (sửa trên giỏ)
+                                      Tên + giá nhập (không bắt buộc, trống = 0) — trừ lãi máy
                                     </p>
                                   </div>
                                 </div>
@@ -10275,6 +10395,45 @@ export default function Home() {
                                   <Plus size={15} />
                                   {saleBuyMoreOpen ? "Đóng mua thêm" : "Mua thêm"}
                                 </button>
+                              </div>
+                              <div className="relative grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                                {saleGifts.map((g) => (
+                                  <div
+                                    key={g.id}
+                                    className="grid min-w-0 grid-cols-[minmax(0,1fr)_4.75rem] items-center gap-1.5 rounded-lg border border-fuchsia-100 bg-white/90 px-1.5 py-1"
+                                  >
+                                    <input
+                                      type="text"
+                                      value={g.name}
+                                      onChange={(e) =>
+                                        setSaleGifts((prev) =>
+                                          prev.map((x) =>
+                                            x.id === g.id ? { ...x, name: e.target.value } : x
+                                          )
+                                        )
+                                      }
+                                      className="h-8 min-w-0 rounded-md border border-transparent bg-transparent px-1.5 text-sm font-bold text-fuchsia-950 outline-none hover:border-fuchsia-200 focus:border-fuchsia-400 focus:bg-white"
+                                      placeholder="Tên tặng"
+                                      title="Tên PK tặng (sửa được)"
+                                    />
+                                    <input
+                                      inputMode="numeric"
+                                      value={g.costInput}
+                                      onChange={(e) =>
+                                        setSaleGifts((prev) =>
+                                          prev.map((x) =>
+                                            x.id === g.id
+                                              ? { ...x, costInput: formatInputMoney(e.target.value) }
+                                              : x
+                                          )
+                                        )
+                                      }
+                                      className="h-8 w-full rounded-md border border-fuchsia-200/80 bg-white px-1.5 text-right text-sm font-bold text-fuchsia-950 outline-none focus:border-fuchsia-500 focus:ring-1 focus:ring-fuchsia-100"
+                                      placeholder="0"
+                                      title="Giá nhập tặng (đơn vị shop) — không bắt buộc"
+                                    />
+                                  </div>
+                                ))}
                               </div>
                               {saleBuyMoreOpen ? (
                                 <div className="relative mt-2 grid gap-2 rounded-lg border border-amber-200/80 bg-white/90 p-2.5">
@@ -10491,60 +10650,80 @@ export default function Home() {
                       </>
                     ) : null}
 
-                    {/* View-only: hiện khách nếu phiếu có máy */}
+                    {/* View-only: hiện khách + tặng PK nếu phiếu có máy */}
                     {isSaleReadOnly && saleCart.some((l) => l.kind === "phone") ? (
-                      <div className="rounded-lg border border-line/80 bg-slate-50/80 px-2.5 py-2">
-                        <p className="mb-1.5 inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-slate-600">
-                          <Users size={13} className="text-muted" />
-                          Khách hàng
-                        </p>
-                        <div className="grid gap-2 sm:grid-cols-2">
-                          <label className="grid gap-0.5">
-                            <span className="text-xs font-bold text-slate-700">Tên khách</span>
-                            <input
-                              value={saleCustomerName}
-                              readOnly
-                              disabled
-                              className="h-9 w-full cursor-default rounded-md border border-line bg-slate-50 px-2.5 text-sm font-semibold text-slate-700"
-                            />
-                          </label>
-                          <label className="grid gap-0.5">
-                            <span className="text-xs font-bold text-slate-700">Số điện thoại</span>
-                            <input
-                              value={saleCustomerPhone}
-                              readOnly
-                              disabled
-                              className="h-9 w-full cursor-default rounded-md border border-line bg-slate-50 px-2.5 text-sm font-semibold text-slate-700"
-                            />
-                          </label>
-                        </div>
-                        {saleCustomerAddress || saleWarranty ? (
-                          <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                            {saleCustomerAddress ? (
-                              <label className="grid gap-0.5">
-                                <span className="text-xs font-bold text-slate-700">Địa chỉ</span>
-                                <input
-                                  value={saleCustomerAddress}
-                                  readOnly
-                                  disabled
-                                  className="h-9 w-full cursor-default rounded-md border border-line bg-slate-50 px-2.5 text-sm font-semibold text-slate-700"
-                                />
-                              </label>
-                            ) : null}
-                            {saleWarranty ? (
-                              <label className="grid gap-0.5">
-                                <span className="text-xs font-bold text-slate-700">Bảo hành</span>
-                                <input
-                                  value={saleWarranty}
-                                  readOnly
-                                  disabled
-                                  className="h-9 w-full cursor-default rounded-md border border-line bg-slate-50 px-2.5 text-sm font-semibold text-slate-700"
-                                />
-                              </label>
-                            ) : null}
+                      <>
+                        <div className="rounded-lg border border-line/80 bg-slate-50/80 px-2.5 py-2">
+                          <p className="mb-1.5 inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-slate-600">
+                            <Users size={13} className="text-muted" />
+                            Khách hàng
+                          </p>
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            <label className="grid gap-0.5">
+                              <span className="text-xs font-bold text-slate-700">Tên khách</span>
+                              <input
+                                value={saleCustomerName}
+                                readOnly
+                                disabled
+                                className="h-9 w-full cursor-default rounded-md border border-line bg-slate-50 px-2.5 text-sm font-semibold text-slate-700"
+                              />
+                            </label>
+                            <label className="grid gap-0.5">
+                              <span className="text-xs font-bold text-slate-700">Số điện thoại</span>
+                              <input
+                                value={saleCustomerPhone}
+                                readOnly
+                                disabled
+                                className="h-9 w-full cursor-default rounded-md border border-line bg-slate-50 px-2.5 text-sm font-semibold text-slate-700"
+                              />
+                            </label>
                           </div>
-                        ) : null}
-                      </div>
+                          {saleCustomerAddress || saleWarranty ? (
+                            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                              {saleCustomerAddress ? (
+                                <label className="grid gap-0.5">
+                                  <span className="text-xs font-bold text-slate-700">Địa chỉ</span>
+                                  <input
+                                    value={saleCustomerAddress}
+                                    readOnly
+                                    disabled
+                                    className="h-9 w-full cursor-default rounded-md border border-line bg-slate-50 px-2.5 text-sm font-semibold text-slate-700"
+                                  />
+                                </label>
+                              ) : null}
+                              {saleWarranty ? (
+                                <label className="grid gap-0.5">
+                                  <span className="text-xs font-bold text-slate-700">Bảo hành</span>
+                                  <input
+                                    value={saleWarranty}
+                                    readOnly
+                                    disabled
+                                    className="h-9 w-full cursor-default rounded-md border border-line bg-slate-50 px-2.5 text-sm font-semibold text-slate-700"
+                                  />
+                                </label>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
+                        <div className="rounded-xl border border-fuchsia-200/80 bg-fuchsia-50/50 p-2.5">
+                          <p className="mb-1.5 text-sm font-black text-fuchsia-950">Tặng PK kèm máy</p>
+                          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                            {saleGifts.map((g) => (
+                              <div
+                                key={g.id}
+                                className="flex items-center justify-between gap-2 rounded-lg border border-fuchsia-100 bg-white px-2.5 py-1.5"
+                              >
+                                <span className="truncate text-sm font-bold text-ink">{g.name || "—"}</span>
+                                <span className="shrink-0 text-sm font-bold text-fuchsia-800">
+                                  {isSaleSensitiveHidden
+                                    ? "***"
+                                    : formatMoney(parseShopMoney(g.costInput) || 0)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </>
                     ) : null}
 
                     {/* Giỏ — chỉ thông tin cần */}
@@ -10556,7 +10735,11 @@ export default function Home() {
                           </span>
                           Giỏ hàng
                           <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-800 ring-1 ring-red-200/80">
-                            {saleCart.length}
+                            {
+                              saleCart.filter(
+                                (l) => !(l.kind === "accessory" && l.unitPrice === 0)
+                              ).length
+                            }
                           </span>
                         </p>
                         {!isSaleReadOnly && saleCart.length > 0 ? (
@@ -10569,11 +10752,15 @@ export default function Home() {
                           </button>
                         ) : null}
                       </div>
-                      {saleCart.length === 0 ? (
+                      {saleCart.filter(
+                        (l) => !(l.kind === "accessory" && l.unitPrice === 0)
+                      ).length === 0 ? (
                         <p className="py-2 text-center text-sm font-semibold text-muted">Giỏ trống</p>
                       ) : (
                         <ul className="space-y-1.5">
-                          {saleCart.map((line) => {
+                          {saleCart
+                            .filter((l) => !(l.kind === "accessory" && l.unitPrice === 0))
+                            .map((line) => {
                             const lineCost =
                               line.kind === "phone" ? line.cost : line.cost || 0;
                             return (
@@ -10597,14 +10784,8 @@ export default function Home() {
                                   </p>
                                 ) : (
                                   <div className="flex min-w-0 flex-wrap items-center gap-1">
-                                    <span
-                                      className={`shrink-0 rounded px-1 py-0.5 text-[10px] font-black uppercase ${
-                                        line.unitPrice === 0
-                                          ? "bg-fuchsia-50 text-fuchsia-700 ring-1 ring-fuchsia-200"
-                                          : "bg-amber-50 text-amber-800"
-                                      }`}
-                                    >
-                                      {line.unitPrice === 0 ? "Tặng" : "PK"}
+                                    <span className="shrink-0 rounded bg-amber-50 px-1 py-0.5 text-[10px] font-black uppercase text-amber-800">
+                                      PK
                                     </span>
                                     {isSaleReadOnly ? (
                                       <span className="min-w-0 truncate text-sm font-bold text-ink">
@@ -10615,7 +10796,7 @@ export default function Home() {
                                         value={line.name}
                                         onChange={(e) => updateSaleCartName(line.key, e.target.value)}
                                         className="h-7 min-w-0 flex-1 basis-[6rem] rounded border border-transparent bg-transparent px-1 text-sm font-bold text-ink outline-none hover:border-line focus:border-brand focus:bg-white"
-                                        title="Sửa tên PK / tặng"
+                                        title="Sửa tên PK"
                                         placeholder="Tên PK"
                                       />
                                     )}
@@ -10653,14 +10834,7 @@ export default function Home() {
                               {/* Giá bán */}
                               <div className="flex shrink-0 flex-col items-end gap-0.5">
                                 <span className="text-[10px] font-bold text-muted">Giá bán</span>
-                                {line.kind === "accessory" && line.unitPrice === 0 ? (
-                                  <span
-                                    className="inline-flex h-8 min-w-[4.5rem] items-center justify-end rounded-md border border-fuchsia-200 bg-fuchsia-50 px-2 text-sm font-bold text-fuchsia-800"
-                                    title="Giá bán 0 (tặng)"
-                                  >
-                                    {isSaleSensitiveHidden ? "***" : "0"}
-                                  </span>
-                                ) : isSaleReadOnly ? (
+                                {isSaleReadOnly ? (
                                   <span className="inline-flex h-8 min-w-[4.5rem] items-center justify-end rounded-md border border-line bg-slate-50 px-2 text-sm font-bold text-emerald-700">
                                     {isSaleSensitiveHidden ? "***" : formatMoney(line.unitPrice)}
                                   </span>
