@@ -5146,10 +5146,6 @@ export default function Home() {
 
   function enableSalePhonePriceEdit(line: Extract<SaleCartLine, { kind: "phone" }>) {
     if (saleSaving || salePhonePriceSavingKey) return;
-    const ok = window.confirm(
-      `Sửa giá bán máy "${line.name}"?\n\nGiá mới sẽ được lưu lại vào giá bán trong Kho hàng sau khi bạn bấm nút xác nhận.`
-    );
-    if (!ok) return;
     setSaleEditablePhonePriceKeys((prev) => (prev.includes(line.key) ? prev : [...prev, line.key]));
     showUiToast("success", "Đã mở khóa giá bán. Nhập giá mới rồi bấm dấu tick để lưu vào kho.");
   }
