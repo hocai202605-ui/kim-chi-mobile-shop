@@ -1393,6 +1393,8 @@ export default function Home() {
   const [saleWarranty, setSaleWarranty] = useState("");
   const [saleWarrantyKey, setSaleWarrantyKey] = useState(0);
   const [saleCart, setSaleCart] = useState<SaleCartLine[]>([]);
+  const [saleEditablePhonePriceKeys, setSaleEditablePhonePriceKeys] = useState<string[]>([]);
+  const [salePhonePriceSavingKey, setSalePhonePriceSavingKey] = useState<string | null>(null);
   const [salePhoneSearch, setSalePhoneSearch] = useState("");
   /** List máy còn hàng: mặc định đóng, bấm mới sổ. */
   const [salePhoneListOpen, setSalePhoneListOpen] = useState(false);
@@ -4723,6 +4725,8 @@ export default function Home() {
     setSaleWarranty("");
     setSaleWarrantyKey((k) => k + 1);
     setSaleCart([]);
+    setSaleEditablePhonePriceKeys([]);
+    setSalePhonePriceSavingKey(null);
     setSalePhoneSearch("");
     setSalePhoneListOpen(false);
     setSaleModalTab("accessory");
@@ -5119,6 +5123,8 @@ export default function Home() {
 
   function removeSaleCartLine(key: string) {
     setSaleCart((prev) => prev.filter((l) => l.key !== key));
+    setSaleEditablePhonePriceKeys((prev) => prev.filter((x) => x !== key));
+    if (salePhonePriceSavingKey === key) setSalePhonePriceSavingKey(null);
     // Gỡ dòng tặng trong giỏ → xóa giá ô form tương ứng (tên giữ nguyên).
     if (String(key).startsWith("gift-slot-")) {
       const giftId = String(key).replace(/^gift-slot-/, "");
@@ -5132,6 +5138,60 @@ export default function Home() {
     setSaleCart((prev) =>
       prev.map((l) => (l.key === key ? { ...l, unitPrice: Math.max(0, Math.round(unitPrice) || 0) } : l))
     );
+  }
+
+  function isSalePhonePriceEditable(key: string) {
+    return saleEditablePhonePriceKeys.includes(key);
+  }
+
+  function enableSalePhonePriceEdit(line: Extract<SaleCartLine, { kind: "phone" }>) {
+    if (saleSaving || salePhonePriceSavingKey) return;
+    const ok = window.confirm(
+      `Sửa giá bán máy "${line.name}"?\n\nGiá mới sẽ được lưu lại vào giá bán trong Kho hàng sau khi bạn bấm nút xác nhận.`
+    );
+    if (!ok) return;
+    setSaleEditablePhonePriceKeys((prev) => (prev.includes(line.key) ? prev : [...prev, line.key]));
+    showUiToast("success", "Đã mở khóa giá bán. Nhập giá mới rồi bấm dấu tick để lưu vào kho.");
+  }
+
+  async function saveSalePhonePriceToInventory(line: Extract<SaleCartLine, { kind: "phone" }>) {
+    if (saleSaving || salePhonePriceSavingKey) return;
+    const phone = phones.find((p) => p.id === line.phoneId);
+    if (!phone) {
+      showUiToast("error", "Không tìm thấy máy trong kho để cập nhật giá bán.");
+      return;
+    }
+    const nextPrice = Math.max(0, Math.round(Number(line.unitPrice) || 0));
+    if (nextPrice <= 0) {
+      showUiToast("error", "Giá bán máy phải lớn hơn 0.");
+      return;
+    }
+    const ok = window.confirm(
+      `Cập nhật giá bán trong kho?\n\n${line.name}\nGiá cũ: ${formatMoney(phone.expectedPrice)}\nGiá mới: ${formatMoney(nextPrice)}`
+    );
+    if (!ok) return;
+
+    setSalePhonePriceSavingKey(line.key);
+    try {
+      const saved = await apiUpsertPhone({
+        ...phone,
+        expectedPrice: nextPrice,
+        actorUsername: currentUser?.username,
+      });
+      setPhones((prev) => prev.map((p) => (p.id === saved.id ? saved : p)));
+      setSaleCart((prev) =>
+        prev.map((l) =>
+          l.key === line.key && l.kind === "phone" ? { ...l, unitPrice: saved.expectedPrice } : l
+        )
+      );
+      setSaleEditablePhonePriceKeys((prev) => prev.filter((key) => key !== line.key));
+      pushLog("Sửa giá bán máy trong kho", `${saved.brand} ${saved.name} · ${formatMoney(saved.expectedPrice)}`, saved.storeId);
+      showUiToast("success", `Đã cập nhật giá bán kho: ${formatMoney(saved.expectedPrice)}.`);
+    } catch (err) {
+      showUiToast("error", `Cập nhật giá bán kho thất bại: ${toUiError(err)}`);
+    } finally {
+      setSalePhonePriceSavingKey(null);
+    }
   }
 
   function updateSaleCartCost(key: string, cost: number) {
@@ -5173,6 +5233,10 @@ export default function Home() {
     }
     if (saleCart.length === 0) {
       window.alert("Thêm ít nhất một dòng hàng (máy hoặc phụ kiện).");
+      return;
+    }
+    if (saleEditablePhonePriceKeys.some((key) => saleCart.some((line) => line.key === key))) {
+      window.alert("Có giá bán máy đang mở sửa. Bấm dấu tick để cập nhật giá vào kho trước khi lưu phiếu.");
       return;
     }
     for (const line of saleCart) {
@@ -10133,13 +10197,19 @@ export default function Home() {
                               onChange={(e) => {
                                 const next = e.target.value as Exclude<StoreId, "all">;
                                 setSaleStoreId(next);
-                                setSaleCart((prev) =>
-                                  prev.filter((l) => {
+                                setSaleCart((prev) => {
+                                  const kept = prev.filter((l) => {
                                     if (l.kind !== "phone") return true;
                                     const ph = phones.find((p) => p.id === l.phoneId);
                                     return ph?.storeId === next;
-                                  })
-                                );
+                                  });
+                                  const keptKeys = new Set(kept.map((l) => l.key));
+                                  setSaleEditablePhonePriceKeys((keys) => keys.filter((key) => keptKeys.has(key)));
+                                  if (salePhonePriceSavingKey && !keptKeys.has(salePhonePriceSavingKey)) {
+                                    setSalePhonePriceSavingKey(null);
+                                  }
+                                  return kept;
+                                });
                               }}
                               className="h-9 rounded-md border border-line bg-white px-2.5 text-sm font-semibold"
                             >
@@ -10843,6 +10913,8 @@ export default function Home() {
                             type="button"
                             onClick={() => {
                               setSaleCart([]);
+                              setSaleEditablePhonePriceKeys([]);
+                              setSalePhonePriceSavingKey(null);
                               setSaleGifts(createDefaultSaleGifts());
                             }}
                             className="text-xs font-bold text-danger hover:underline"
@@ -10860,6 +10932,9 @@ export default function Home() {
                               line.kind === "phone" ? line.cost : line.cost || 0;
                             const isGift =
                               line.kind === "accessory" && line.unitPrice === 0;
+                            const isPhonePriceEditable =
+                              line.kind === "phone" && isSalePhonePriceEditable(line.key);
+                            const isPhonePriceSaving = salePhonePriceSavingKey === line.key;
                             return (
                             <li
                               key={line.key}
@@ -10950,6 +11025,56 @@ export default function Home() {
                                   <span className="inline-flex h-8 min-w-[4.5rem] items-center justify-end rounded-md border border-line bg-slate-50 px-2 text-sm font-bold text-emerald-700">
                                     {isSaleSensitiveHidden ? "***" : formatMoney(line.unitPrice)}
                                   </span>
+                                ) : line.kind === "phone" ? (
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      inputMode="numeric"
+                                      value={
+                                        line.unitPrice ? formatInputMoney(line.unitPrice) : ""
+                                      }
+                                      onChange={(e) =>
+                                        updateSaleCartUnitPrice(line.key, parseShopMoney(e.target.value))
+                                      }
+                                      disabled={!isPhonePriceEditable || isPhonePriceSaving}
+                                      className={`h-8 w-20 rounded-md border px-2 text-right text-sm font-bold outline-none ${
+                                        isPhonePriceEditable
+                                          ? "border-brand bg-white text-emerald-700 focus:ring-2 focus:ring-brand-soft"
+                                          : "border-line bg-slate-50 text-slate-700"
+                                      } disabled:cursor-not-allowed`}
+                                      title={
+                                        isPhonePriceEditable
+                                          ? "Giá bán mới - bấm dấu tick để lưu vào kho"
+                                          : "Giá bán lấy từ kho - bấm bút chì để sửa"
+                                      }
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        isPhonePriceEditable
+                                          ? void saveSalePhonePriceToInventory(line)
+                                          : enableSalePhonePriceEdit(line)
+                                      }
+                                      disabled={saleSaving || Boolean(salePhonePriceSavingKey)}
+                                      className={`inline-flex h-8 w-8 items-center justify-center rounded-md border text-sm font-bold transition disabled:opacity-60 ${
+                                        isPhonePriceEditable
+                                          ? "border-brand bg-brand text-white hover:bg-brand-dark"
+                                          : "border-line bg-white text-muted hover:bg-slate-50"
+                                      }`}
+                                      title={
+                                        isPhonePriceEditable
+                                          ? "Cập nhật giá bán vào kho"
+                                          : "Sửa giá bán máy"
+                                      }
+                                    >
+                                      {isPhonePriceSaving ? (
+                                        <Loader2 size={14} className="animate-spin" />
+                                      ) : isPhonePriceEditable ? (
+                                        <CheckCircle2 size={14} />
+                                      ) : (
+                                        <Edit3 size={14} />
+                                      )}
+                                    </button>
+                                  </div>
                                 ) : (
                                   <input
                                     inputMode="numeric"
@@ -11042,7 +11167,7 @@ export default function Home() {
                               </button>
                               <button
                                 type="submit"
-                                disabled={saleSaving || saleCart.length === 0}
+                                disabled={saleSaving || Boolean(salePhonePriceSavingKey) || saleCart.length === 0}
                                 className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand px-3.5 text-sm font-bold text-white hover:bg-brand-dark disabled:opacity-60"
                               >
                                 {saleSaving ? (
