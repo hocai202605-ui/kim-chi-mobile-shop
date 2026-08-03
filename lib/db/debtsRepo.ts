@@ -336,8 +336,8 @@ function mapRepairDebt(row: RepairDebtRow): DebtItem {
     row.store_code === "store-1" || row.store_code === "store-2" || row.store_code === "store-3"
       ? row.store_code
       : "store-1";
-  // Số nợ = lãi (báo giá − phí DV), như UI cũ.
-  const amount = Math.max(0, moneyN(row.quote) - moneyN(row.deposit));
+  // Số nợ = báo giá đơn.
+  const amount = Math.max(0, moneyN(row.quote));
   const isOpen = row.payment_status === "debt";
   return {
     id: `repair:${row.id}`,
@@ -477,7 +477,7 @@ export async function repoMarkDebtsPaid(
     }
 
     if (saleIds.length) {
-      // Thu nợ bán hàng: debt → cash. (UI hiển thị số nợ theo lãi/profit.)
+      // Thu nợ bán hàng: debt → cash. Số nợ hiển thị theo tổng tiền phiếu.
       const { rows } = await client.query<SaleDebtRow>(
         `update public.sales as s
          set payment_method = 'cash',
