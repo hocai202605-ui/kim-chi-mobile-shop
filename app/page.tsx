@@ -15728,6 +15728,7 @@ function ScrollableSelect({
   const updatePanelPosition = useCallback(() => {
     const el = allowFreeText ? inputRef.current : triggerRef.current;
     if (!el) return;
+    const r = el.getBoundingClientRect();
     const visualViewport = window.visualViewport;
     const viewportWidth = visualViewport?.width ?? window.innerWidth;
     const viewportHeight = visualViewport?.height ?? window.innerHeight;
@@ -15737,19 +15738,28 @@ function ScrollableSelect({
 
     if (isMobile) {
       const sideGap = 12;
+      const gap = 6;
+      const minPanelHeight = 140;
+      const maxPanelHeight = Math.min(416, Math.round(viewportHeight * 0.55));
+      const spaceBelow = viewportHeight - r.bottom - sideGap;
+      const spaceAbove = r.top - sideGap;
+      const openUp =
+        spaceBelow < Math.min(220, visibleOptions.length * 44) && spaceAbove > spaceBelow;
+      const available = Math.max(minPanelHeight, openUp ? spaceAbove - gap : spaceBelow - gap);
       setPanelStyle({
         position: "fixed",
         left: sideGap,
         right: sideGap,
-        bottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)",
         width: "auto",
         zIndex: 220,
-        maxHeight: `min(${Math.max(260, Math.round(viewportHeight * 0.58))}px, 26rem)`,
+        maxHeight: `${Math.min(maxPanelHeight, available)}px`,
+        ...(openUp
+          ? { bottom: viewportHeight - r.top + gap, top: "auto" }
+          : { top: Math.max(sideGap, r.bottom + gap), bottom: "auto" }),
       });
       return;
     }
 
-    const r = el.getBoundingClientRect();
     // Nút chevron cạnh input: lấy width cả khối root
     const rootW = rootRef.current?.getBoundingClientRect().width ?? r.width;
     const spaceBelow = viewportTop + viewportHeight - r.bottom - 8;
@@ -15803,8 +15813,50 @@ function ScrollableSelect({
     };
   }, [open]);
 
+  const mobilePanelInline =
+    open && mounted && mobilePanel ? (
+      <div
+        ref={panelRef}
+        style={{ maxHeight: panelStyle.maxHeight ?? "16rem" }}
+        className="mt-1 overflow-hidden rounded-lg border border-line bg-white shadow-panel sm:hidden"
+      >
+        <ul role="listbox" className="max-h-[inherit] overflow-y-auto py-1 overscroll-contain">
+          {visibleOptions.length === 0 ? (
+            <li className="px-3 py-2 text-sm font-semibold text-muted">
+              {allowFreeText && value.trim()
+                ? "KhÃ´ng khá»›p â€” cÃ³ thá»ƒ dÃ¹ng text vá»«a nháº­p"
+                : "ChÆ°a cÃ³ option"}
+            </li>
+          ) : (
+            visibleOptions.map((o) => {
+              const active = o.value === value;
+              return (
+                <li key={`${name}-mobile-opt-${o.value}`}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    onClick={() => {
+                      onChange(o.value);
+                      setOpen(false);
+                    }}
+                    className={`flex h-11 w-full items-center gap-2 px-3 text-left text-sm font-semibold transition hover:bg-brand-soft ${
+                      active ? "bg-brand-soft text-brand" : "text-ink"
+                    }`}
+                  >
+                    {colorPreview ? <ColorDot color={o.label} size="sm" /> : null}
+                    <span className="truncate">{o.label}</span>
+                  </button>
+                </li>
+              );
+            })
+          )}
+        </ul>
+      </div>
+    ) : null;
+
   const panel =
-    open && mounted
+    open && mounted && !mobilePanel
       ? createPortal(
           <>
             {mobilePanel ? (
@@ -15939,6 +15991,7 @@ function ScrollableSelect({
         </>
       )}
 
+      {mobilePanelInline}
       {panel}
     </div>
   );
