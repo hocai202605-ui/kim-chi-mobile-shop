@@ -15668,8 +15668,9 @@ function ColoredDateTime({
 }
 
 /** Max visible option rows before dropdown scrolls (row = h-10). */
-const DROPDOWN_MAX_VISIBLE = 10;
-const DROPDOWN_PANEL_MAX_H = `${DROPDOWN_MAX_VISIBLE * 2.5}rem`; // 10 × h-10
+const DROPDOWN_MAX_VISIBLE = 8;
+const DROPDOWN_PANEL_MAX_H = `${DROPDOWN_MAX_VISIBLE * 2.5}rem`;
+const DROPDOWN_MOBILE_BREAKPOINT = 640;
 
 type ScrollableSelectOption = { value: string; label: string };
 
@@ -15703,9 +15704,10 @@ function ScrollableSelect({
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const panelRef = useRef<HTMLUListElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [panelStyle, setPanelStyle] = useState<CSSProperties>({});
+  const [mobilePanel, setMobilePanel] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -15730,10 +15732,31 @@ function ScrollableSelect({
   const updatePanelPosition = useCallback(() => {
     const el = allowFreeText ? inputRef.current : triggerRef.current;
     if (!el) return;
+    const visualViewport = window.visualViewport;
+    const viewportWidth = visualViewport?.width ?? window.innerWidth;
+    const viewportHeight = visualViewport?.height ?? window.innerHeight;
+    const viewportTop = visualViewport?.offsetTop ?? 0;
+    const isMobile = viewportWidth < DROPDOWN_MOBILE_BREAKPOINT;
+    setMobilePanel(isMobile);
+
+    if (isMobile) {
+      const sideGap = 12;
+      setPanelStyle({
+        position: "fixed",
+        left: sideGap,
+        right: sideGap,
+        bottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)",
+        width: "auto",
+        zIndex: 220,
+        maxHeight: `min(${Math.max(260, Math.round(viewportHeight * 0.58))}px, 26rem)`,
+      });
+      return;
+    }
+
     const r = el.getBoundingClientRect();
     // Nút chevron cạnh input: lấy width cả khối root
     const rootW = rootRef.current?.getBoundingClientRect().width ?? r.width;
-    const spaceBelow = window.innerHeight - r.bottom - 8;
+    const spaceBelow = viewportTop + viewportHeight - r.bottom - 8;
     const maxH = DROPDOWN_MAX_VISIBLE * 40; // px ≈ h-10
     const openUp =
       spaceBelow < Math.min(maxH, visibleOptions.length * 40) && r.top > spaceBelow;
@@ -15744,7 +15767,7 @@ function ScrollableSelect({
       zIndex: 200,
       maxHeight: DROPDOWN_PANEL_MAX_H,
       ...(openUp
-        ? { bottom: window.innerHeight - r.top + 4, top: "auto" }
+        ? { bottom: viewportTop + viewportHeight - r.top + 4, top: "auto" }
         : { top: r.bottom + 4, bottom: "auto" }),
     });
   }, [allowFreeText, visibleOptions.length]);
@@ -15754,10 +15777,14 @@ function ScrollableSelect({
     updatePanelPosition();
     const onScrollOrResize = () => updatePanelPosition();
     window.addEventListener("resize", onScrollOrResize);
+    window.visualViewport?.addEventListener("resize", onScrollOrResize);
+    window.visualViewport?.addEventListener("scroll", onScrollOrResize);
     // capture scroll from modal overflow containers
     window.addEventListener("scroll", onScrollOrResize, true);
     return () => {
       window.removeEventListener("resize", onScrollOrResize);
+      window.visualViewport?.removeEventListener("resize", onScrollOrResize);
+      window.visualViewport?.removeEventListener("scroll", onScrollOrResize);
       window.removeEventListener("scroll", onScrollOrResize, true);
     };
   }, [open, updatePanelPosition]);
@@ -15783,11 +15810,23 @@ function ScrollableSelect({
   const panel =
     open && mounted
       ? createPortal(
+          <>
+            {mobilePanel ? (
+              <div
+                className="fixed inset-0 z-[210] bg-slate-950/25 sm:hidden"
+                onMouseDown={() => setOpen(false)}
+              />
+            ) : null}
+            <div
+              ref={panelRef}
+              style={panelStyle}
+              className={`overflow-hidden border border-line bg-white shadow-panel ${
+                mobilePanel ? "rounded-xl" : "rounded-lg"
+              }`}
+            >
           <ul
-            ref={panelRef}
             role="listbox"
-            style={panelStyle}
-            className="overflow-y-auto rounded-lg border border-line bg-white py-1 shadow-panel"
+            className="max-h-[inherit] overflow-y-auto py-1 overscroll-contain"
           >
             {visibleOptions.length === 0 ? (
               <li className="px-3 py-2 text-sm font-semibold text-muted">
@@ -15808,7 +15847,7 @@ function ScrollableSelect({
                         onChange(o.value);
                         setOpen(false);
                       }}
-                      className={`flex h-10 w-full items-center gap-2 px-3 text-left text-sm font-semibold transition hover:bg-brand-soft ${
+                      className={`flex h-11 w-full items-center gap-2 px-3 text-left text-sm font-semibold transition hover:bg-brand-soft sm:h-10 ${
                         active ? "bg-brand-soft text-brand" : "text-ink"
                       }`}
                     >
@@ -15819,7 +15858,9 @@ function ScrollableSelect({
                 );
               })
             )}
-          </ul>,
+          </ul>
+            </div>
+          </>,
           document.body
         )
       : null;
