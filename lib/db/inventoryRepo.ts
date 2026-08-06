@@ -595,6 +595,17 @@ const LOOKUP_PART_INBOUND_COLUMN: Record<string, string> = {
   part_color: "color",
 };
 
+/** Catalog linh kiện độc lập (scoped by store_id). */
+const LOOKUP_PART_CATALOG_TEXT_COLUMN: Record<string, string> = {
+  catalog_part_brand: "brand",
+  catalog_part_type: "part_type",
+  catalog_part_device_type: "device_type",
+};
+const LOOKUP_PART_CATALOG_MONEY_COLUMN: Record<string, string> = {
+  catalog_part_cost_price: "cost_price",
+  catalog_part_retail_price: "retail_price",
+};
+
 /** Own debts text columns (scoped by store_id). */
 const LOOKUP_OWN_DEBT_COLUMN: Record<string, string> = {
   own_debt_creditor: "creditor_name",
@@ -874,6 +885,30 @@ export async function repoRenameLookupLabel(
            where ${partCol} = $2 and store_id = $3`,
           [to, from, storeUuid, actor]
         );
+      }
+
+      const catalogTextCol = LOOKUP_PART_CATALOG_TEXT_COLUMN[categoryCode];
+      if (catalogTextCol) {
+        await client.query(
+          `update public.part_catalog_items set ${catalogTextCol} = $1,
+             updated_by = coalesce($4, updated_by), updated_at = now()
+           where ${catalogTextCol} = $2 and store_id = $3`,
+          [to, from, storeUuid, actor]
+        );
+      }
+
+      const catalogMoneyCol = LOOKUP_PART_CATALOG_MONEY_COLUMN[categoryCode];
+      if (catalogMoneyCol) {
+        const fromN = parseLookupMoneyLabel(from);
+        const toN = parseLookupMoneyLabel(to);
+        if (fromN != null && toN != null && fromN !== toN) {
+          await client.query(
+            `update public.part_catalog_items set ${catalogMoneyCol} = $1,
+               updated_by = coalesce($4, updated_by), updated_at = now()
+             where ${catalogMoneyCol} = $2 and store_id = $3`,
+            [toN, fromN, storeUuid, actor]
+          );
+        }
       }
 
       const ownDebtCol = LOOKUP_OWN_DEBT_COLUMN[categoryCode];

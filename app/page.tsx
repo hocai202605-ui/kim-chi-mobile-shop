@@ -99,7 +99,7 @@ import {
   listPartInbounds as apiListPartInbounds,
   upsertPartInbound as apiUpsertPartInbound,
 } from "@/services/partsService";
-import { PartsCatalogSheet } from "@/components/features/parts/PartsCatalogSheet";
+import { PartsInventoryScreen } from "@/components/features/parts/PartsInventoryScreen";
 import {
   cancelManualDebt as apiCancelManualDebt,
   listDebts as apiListDebts,
@@ -638,7 +638,7 @@ const softwareServiceSeed: SoftwareService[] = [
   { id: "sw3", createdAt: "2026-07-07 23:47", customerName: "Dũng Mobi", deviceName: "Unlock mạng", quantity: 1, revenue: 5000000, cost: 3500000, profit: 1500000, isPaid: true },
 ];
 
-/** Phiếu nhập hàng (menu NHẬP HÀNG / id `parts`) — Postgres part_inbounds. */
+/** Phiếu nhập hàng (menu NHẬP HÀNG & LINH KIỆN / id `parts` & `inbound`) — Postgres part_inbounds. */
 type PartInbound = {
   id: string;
   createdAt: string;
@@ -651,7 +651,64 @@ type PartInbound = {
   /** Màu sắc — tùy chọn. */
   color: string;
   quantity: number;
+  costPrice?: number | null;
+  retailPrice?: number | null;
 };
+
+const initialPartInboundsSeed: PartInbound[] = [
+  {
+    id: "part-seed-1",
+    createdAt: "2026-08-01 10:30",
+    storeId: "store-1",
+    distributor: "Linh Kiện Tín Thành",
+    partType: "Màn hình",
+    brand: "Apple",
+    partName: "iPhone 13 Pro Max",
+    color: "Đen",
+    quantity: 5,
+    costPrice: 2800000,
+    retailPrice: 3500000,
+  },
+  {
+    id: "part-seed-2",
+    createdAt: "2026-08-02 14:15",
+    storeId: "store-1",
+    distributor: "Phụ Kiện Hoàng Anh",
+    partType: "Pin",
+    brand: "Pisen",
+    partName: "iPhone 11",
+    color: "Trắng",
+    quantity: 10,
+    costPrice: 250000,
+    retailPrice: 450000,
+  },
+  {
+    id: "part-seed-3",
+    createdAt: "2026-08-03 09:00",
+    storeId: "store-2",
+    distributor: "Linh Kiện An Khang",
+    partType: "Màn hình",
+    brand: "Samsung",
+    partName: "Galaxy S22 Ultra",
+    color: "Xanh",
+    quantity: 3,
+    costPrice: 3200000,
+    retailPrice: 4000000,
+  },
+  {
+    id: "part-seed-4",
+    createdAt: "2026-08-04 16:45",
+    storeId: "store-3",
+    distributor: "Đại Lý Tiến Phát",
+    partType: "Kính ép",
+    brand: "Apple",
+    partName: "iPhone 12 Pro",
+    color: "Trong suốt",
+    quantity: 15,
+    costPrice: 120000,
+    retailPrice: 300000,
+  },
+];
 
 function uniquePartLabels(values: string[]): string[] {
   const seen = new Set<string>();
@@ -1306,8 +1363,8 @@ export default function Home() {
   const [shopRepairBackendError, setShopRepairBackendError] = useState("");
   const [shopRepairPaying, setShopRepairPaying] = useState(false);
 
-  /** Nhập hàng — phiếu nhập (DB part_inbounds, page id `parts`). */
-  const [partInbounds, setPartInbounds] = useState<PartInbound[]>([]);
+  /** Nhập hàng — phiếu nhập (DB part_inbounds, page id `parts` & `inbound`). */
+  const [partInbounds, setPartInbounds] = useState<PartInbound[]>(initialPartInboundsSeed);
   const [partLoading, setPartLoading] = useState(false);
   const [partSaving, setPartSaving] = useState(false);
   const [partBackendError, setPartBackendError] = useState("");
@@ -1330,12 +1387,21 @@ export default function Home() {
   const [partDistributor, setPartDistributor] = useState("");
   const [partType, setPartType] = useState("");
   const [partBrand, setPartBrand] = useState("");
+  const [partDeviceModel, setPartDeviceModel] = useState("");
   const [partColor, setPartColor] = useState("");
-  /** Dòng linh kiện (tên + SL) — tạo mới nhiều dòng; sửa = 1 dòng. */
-  type PartLineDraft = { key: string; name: string; quantity: string };
+  /** Dòng linh kiện (tên + giá nhập + giá thay + SL) — tạo mới nhiều dòng; sửa = 1 dòng. */
+  type PartLineDraft = {
+    key: string;
+    name: string;
+    costPrice: string;
+    retailPrice: string;
+    quantity: string;
+  };
   const emptyPartLine = (): PartLineDraft => ({
     key: "pl-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7),
     name: "",
+    costPrice: "",
+    retailPrice: "",
     quantity: "1",
   });
   const [partLines, setPartLines] = useState<PartLineDraft[]>(() => [emptyPartLine()]);
@@ -1651,7 +1717,12 @@ export default function Home() {
         return;
       }
       const rows = await apiListPartInbounds(scope, currentUser.username);
-      const list = Array.isArray(rows) ? rows : [];
+      const list =
+        Array.isArray(rows) && rows.length > 0
+          ? rows
+          : initialPartInboundsSeed.filter(
+              (p) => !scope || p.storeId === scope
+            );
       setPartInbounds(list);
       setPartPage(1);
       setSelectedPartIds((prev) => prev.filter((id) => list.some((p) => p.id === id)));
@@ -1839,7 +1910,7 @@ export default function Home() {
     reloadCustomersFromDb,
   ]);
 
-  // Vào menu Nhập hàng → tải lại (tránh grid trống nếu boot fail / timeout).
+  // Vào menu Nhập hàng → tải lại. Linh kiện có data source độc lập.
   useEffect(() => {
     if (!currentUser || activePage !== "parts") return;
     void reloadPartsFromDb();
@@ -2305,6 +2376,8 @@ export default function Home() {
   const partTypeOptions = partFormLookups[PART_LOOKUP_CATEGORIES.partType] ?? [];
   const partBrandOptions = partFormLookups[PART_LOOKUP_CATEGORIES.brand] ?? [];
   const partColorOptions = partFormLookups[PART_LOOKUP_CATEGORIES.color] ?? [];
+  const partDeviceModelOptions =
+    partFormLookups[PART_LOOKUP_CATEGORIES.deviceModel] ?? [];
 
   /** Droplist form MÌNH NỢ — per CH form. */
   const ownDebtFormLookups = lookupsByStore[ownDebtFormStoreId] ?? {};
@@ -2357,6 +2430,15 @@ export default function Home() {
   const setPartColorOptions = useCallback(
     (next: string[]) => {
       setFormLookupOptions(PART_LOOKUP_CATEGORIES.color, partsLookupStoreId)(next);
+    },
+    [partsLookupStoreId, setFormLookupOptions]
+  );
+  const setPartDeviceModelOptions = useCallback(
+    (next: string[]) => {
+      setFormLookupOptions(
+        PART_LOOKUP_CATEGORIES.deviceModel,
+        partsLookupStoreId
+      )(next);
     },
     [partsLookupStoreId, setFormLookupOptions]
   );
@@ -3386,6 +3468,7 @@ export default function Home() {
     setPartDistributor("");
     setPartType("");
     setPartBrand("");
+    setPartDeviceModel("");
     setPartColor("");
     setPartLines([emptyPartLine()]);
     setPartFormKey((k) => k + 1);
@@ -3411,11 +3494,14 @@ export default function Home() {
     setPartDistributor(row.distributor);
     setPartType(row.partType);
     setPartBrand(row.brand || "");
+    setPartDeviceModel(row.partName || "");
     setPartColor(row.color || "");
     setPartLines([
       {
         key: emptyPartLine().key,
         name: row.partName,
+        costPrice: row.costPrice != null ? formatInputMoney(row.costPrice) : "",
+        retailPrice: row.retailPrice != null ? formatInputMoney(row.retailPrice) : "",
         quantity: String(row.quantity > 0 ? row.quantity : 1),
       },
     ]);
@@ -3429,18 +3515,21 @@ export default function Home() {
     const row = partInbounds.find((p) => p.id === id);
     if (!row) return;
     const ok = window.confirm(
-      "Nhân bản phiếu «" + row.partName + "»?\n\nForm sẽ điền sẵn thông tin. Lưu = tạo phiếu nhập mới (có thể thêm nhiều dòng tên + SL)."
+      "Nhân bản phiếu «" + row.partName + "»?\n\nForm sẽ điền sẵn thông tin. Lưu = tạo phiếu mới."
     );
     if (!ok) return;
     setEditingPartId(null);
     setPartDistributor(row.distributor);
     setPartType(row.partType);
     setPartBrand(row.brand || "");
+    setPartDeviceModel(row.partName || "");
     setPartColor(row.color || "");
     setPartLines([
       {
         key: emptyPartLine().key,
         name: row.partName,
+        costPrice: row.costPrice != null ? formatInputMoney(row.costPrice) : "",
+        retailPrice: row.retailPrice != null ? formatInputMoney(row.retailPrice) : "",
         quantity: String(row.quantity > 0 ? row.quantity : 1),
       },
     ]);
@@ -3463,7 +3552,7 @@ export default function Home() {
 
   function updatePartLine(
     key: string,
-    patch: Partial<Pick<PartLineDraft, "name" | "quantity">>
+    patch: Partial<Pick<PartLineDraft, "name" | "costPrice" | "retailPrice" | "quantity">>
   ) {
     setPartLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   }
@@ -3485,6 +3574,7 @@ export default function Home() {
     const distributor = String(form.get("distributor") || partDistributor || "").trim();
     const partTypeVal = String(form.get("partType") || partType || "").trim();
     const brandVal = String(form.get("brand") || partBrand || "").trim();
+    const deviceModelVal = String(form.get("deviceModel") || partDeviceModel || "").trim();
     const colorVal = String(form.get("color") || partColor || "").trim();
 
     if (!distributor) {
@@ -3497,14 +3587,18 @@ export default function Home() {
     }
 
     const linesToSave = partLines
-      .map((l) => ({
-        name: l.name.trim(),
-        quantity: Math.max(0, Number(String(l.quantity).replace(/[^\d]/g, "")) || 0),
-      }))
+      .map((l) => {
+        const rawName = l.name.trim();
+        const name = rawName || deviceModelVal || partTypeVal;
+        const quantity = Math.max(0, Number(String(l.quantity).replace(/[^\d]/g, "")) || 0);
+        const costPrice = parseInputMoney(l.costPrice);
+        const retailPrice = parseInputMoney(l.retailPrice);
+        return { name, quantity, costPrice, retailPrice };
+      })
       .filter((l) => l.name.length > 0);
 
     if (!linesToSave.length) {
-      window.alert("Nhập ít nhất một tên linh kiện.");
+      window.alert("Nhập hoặc chọn Thuộc Tên Máy / Tên linh kiện.");
       return;
     }
     const badQty = linesToSave.find((l) => l.quantity <= 0);
@@ -3531,6 +3625,8 @@ export default function Home() {
           brand: brandVal,
           color: colorVal,
           quantity: only.quantity,
+          costPrice: only.costPrice,
+          retailPrice: only.retailPrice,
           actorUsername: currentUser.username,
         });
         const next: PartInbound = {
@@ -3543,20 +3639,22 @@ export default function Home() {
           brand: saved.brand || "",
           color: saved.color || "",
           quantity: saved.quantity,
+          costPrice: saved.costPrice ?? null,
+          retailPrice: saved.retailPrice ?? null,
         };
         setPartInbounds((prev) => prev.map((p) => (p.id === next.id ? next : p)));
         pushLog(
-          "Sửa phiếu nhập hàng",
+          "Sửa phiếu linh kiện",
           `${saved.partType} — ${saved.brand ? `${saved.brand} · ` : ""}${saved.partName}${saved.color ? ` · ${saved.color}` : ""} ×${saved.quantity} (${saved.distributor})`,
           saved.storeId
         );
-        showUiToast("success", "Đã cập nhật phiếu «" + saved.partName + "».");
+        showUiToast("success", "Đã cập nhật linh kiện «" + saved.partName + "».");
         closePartInboundForm();
         void reloadPartsFromDb();
       } catch (err) {
         const msg = toUiError(err);
         setPartBackendError(msg);
-        showUiToast("error", "Lưu phiếu nhập thất bại: " + msg);
+        showUiToast("error", "Lưu linh kiện thất bại: " + msg);
       } finally {
         setPartSaving(false);
       }
@@ -3578,6 +3676,8 @@ export default function Home() {
             brand: brandVal,
             color: colorVal,
             quantity: line.quantity,
+            costPrice: line.costPrice,
+            retailPrice: line.retailPrice,
             actorUsername: currentUser.username,
           });
           savedRows.push({
@@ -3590,6 +3690,8 @@ export default function Home() {
             brand: saved.brand || "",
             color: saved.color || "",
             quantity: saved.quantity,
+            costPrice: saved.costPrice ?? null,
+            retailPrice: saved.retailPrice ?? null,
           });
         } catch (err) {
           failed.push(line.name);
@@ -8616,12 +8718,13 @@ export default function Home() {
         })()}
 
         {activePage === "inbound" && currentUser && (
-          <PartsCatalogSheet
+          <PartsInventoryScreen
             storeFilter={storeFilter}
             writeStoreId={
               storeFilter !== "all" ? storeFilter : currentUser.storeId || "store-1"
             }
             role={currentUser.role}
+            actorUsername={currentUser.username}
             isStatsHidden={isStatsHidden}
             onNotify={(type, message) => showUiToast(type, message)}
           />

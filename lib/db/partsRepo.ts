@@ -14,6 +14,8 @@ export type PartInboundDto = {
   /** Màu sắc — tùy chọn. */
   color: string;
   quantity: number;
+  costPrice?: number | null;
+  retailPrice?: number | null;
 };
 
 export type PartInboundUpsertInput = {
@@ -25,6 +27,8 @@ export type PartInboundUpsertInput = {
   brand?: string;
   color?: string;
   quantity: number;
+  costPrice?: number | null;
+  retailPrice?: number | null;
   actorUsername?: string;
 };
 
@@ -68,6 +72,8 @@ type DbRow = {
   brand?: string | null;
   color?: string | null;
   quantity: number;
+  cost_price?: number | string | null;
+  retail_price?: number | string | null;
   created_at: Date | string;
 };
 
@@ -89,6 +95,8 @@ function mapRow(
     brand: String(row.brand ?? ""),
     color: String(row.color ?? ""),
     quantity: Math.max(0, Number(row.quantity) || 0),
+    costPrice: row.cost_price != null ? Number(row.cost_price) : null,
+    retailPrice: row.retail_price != null ? Number(row.retail_price) : null,
   };
 }
 
@@ -145,6 +153,8 @@ export async function repoUpsertPartInbound(
   const brand = String(input.brand || "").trim();
   const color = String(input.color || "").trim();
   const quantity = Math.max(0, Math.round(Number(input.quantity) || 0));
+  const costPrice = input.costPrice != null ? Math.max(0, Number(input.costPrice)) : null;
+  const retailPrice = input.retailPrice != null ? Math.max(0, Number(input.retailPrice)) : null;
   const actor = normalizeActor(input.actorUsername);
 
   if (!distributor) throw new Error("Nhập nhà phân phối.");
@@ -162,11 +172,13 @@ export async function repoUpsertPartInbound(
          brand = $5,
          color = $6,
          quantity = $7,
+         cost_price = $8,
+         retail_price = $9,
          address = '',
          phone = '',
-         updated_by = coalesce($8, updated_by),
+         updated_by = coalesce($10, updated_by),
          updated_at = now()
-       where id = $9::uuid
+       where id = $11::uuid
        returning *`,
       [
         storeUuid,
@@ -176,6 +188,8 @@ export async function repoUpsertPartInbound(
         brand,
         color,
         quantity,
+        costPrice,
+        retailPrice,
         actor,
         input.id,
       ]
@@ -187,10 +201,10 @@ export async function repoUpsertPartInbound(
   const { rows } = await getPool().query<DbRow>(
     `insert into public.part_inbounds (
        store_id, distributor, address, phone, part_type, part_name, brand, color, quantity,
-       created_by, updated_by
-     ) values ($1,$2,'','',$3,$4,$5,$6,$7,$8,$8)
+       cost_price, retail_price, created_by, updated_by
+     ) values ($1,$2,'','',$3,$4,$5,$6,$7,$8,$9,$10,$10)
      returning *`,
-    [storeUuid, distributor, partType, partName, brand, color, quantity, actor]
+    [storeUuid, distributor, partType, partName, brand, color, quantity, costPrice, retailPrice, actor]
   );
   return mapRow(rows[0], idToCode);
 }

@@ -21,6 +21,13 @@ export type PartCatalogItemDto = {
   status: "active" | "hidden";
   createdAt: string;
   updatedAt: string;
+  brand: string;
+  partType: string;
+  deviceType: string;
+  color: string;
+  costPrice: number | null;
+  retailPrice: number | null;
+  quantity: number;
 };
 
 export type PartCatalogCreateInput = {
@@ -31,6 +38,13 @@ export type PartCatalogCreateInput = {
   note?: string;
   grades?: Record<string, PartGradeCell>;
   actorUsername?: string;
+  brand?: string;
+  partType?: string;
+  deviceType?: string;
+  color?: string;
+  costPrice?: number | null;
+  retailPrice?: number | null;
+  quantity?: number;
 };
 
 export type PartCatalogPatchInput = {
@@ -42,6 +56,13 @@ export type PartCatalogPatchInput = {
   grades?: Record<string, PartGradeCell | null>;
   status?: "active" | "hidden";
   actorUsername?: string;
+  brand?: string;
+  partType?: string;
+  deviceType?: string;
+  color?: string;
+  costPrice?: number | null;
+  retailPrice?: number | null;
+  quantity?: number;
 };
 
 const CATEGORIES = new Set<PartCatalogCategory>(["man_android", "man_iphone", "pin"]);
@@ -49,6 +70,20 @@ const CATEGORIES = new Set<PartCatalogCategory>(["man_android", "man_iphone", "p
 function normalizeActor(value?: string | null): string | null {
   const t = String(value ?? "").trim();
   return t || null;
+}
+
+async function writeCatalogAudit(
+  storeId: string,
+  actor: string | null,
+  action: string,
+  target: string,
+  meta: Record<string, unknown> = {}
+) {
+  await getPool().query(
+    `insert into public.audit_logs (actor_name, store_id, action, target, meta)
+     values ($1, $2::uuid, $3, $4, $5::jsonb)`,
+    [actor ?? "", storeId, action, target, JSON.stringify(meta)]
+  );
 }
 
 function asNum(v: unknown): number | null {
@@ -136,6 +171,13 @@ type DbRow = {
   status: string;
   created_at: Date | string;
   updated_at: Date | string;
+  brand?: string | null;
+  part_type?: string | null;
+  device_type?: string | null;
+  color?: string | null;
+  cost_price?: number | string | null;
+  retail_price?: number | string | null;
+  quantity?: number | string | null;
 };
 
 function mapRow(
@@ -160,6 +202,13 @@ function mapRow(
       row.updated_at instanceof Date
         ? row.updated_at.toISOString()
         : String(row.updated_at || ""),
+    brand: String(row.brand ?? row.brand_group ?? ""),
+    partType: String(row.part_type ?? ""),
+    deviceType: String(row.device_type ?? row.name ?? ""),
+    color: String(row.color ?? ""),
+    costPrice: row.cost_price == null ? null : Number(row.cost_price),
+    retailPrice: row.retail_price == null ? null : Number(row.retail_price),
+    quantity: Math.max(0, Math.round(Number(row.quantity) || 0)),
   };
 }
 
@@ -225,16 +274,35 @@ export async function repoCreatePartCatalog(
   const grades = normalizeGrades(input.grades ?? emptyGradesFor(category));
   const note = String(input.note || "").trim();
   const actor = normalizeActor(input.actorUsername);
+  const brand = String(input.brand ?? input.brandGroup ?? "").trim();
+  const partType = String(input.partType ?? "").trim();
+  const deviceType = String(input.deviceType ?? input.name ?? "").trim();
+  const color = String(input.color ?? "").trim();
+  const costPrice = input.costPrice == null ? null : Math.max(0, Number(input.costPrice));
+  const retailPrice = input.retailPrice == null ? null : Math.max(0, Number(input.retailPrice));
+  const quantity = Math.max(0, Math.round(Number(input.quantity) || 0));
+  if (!brand) throw new Error("Nhập hãng linh kiện.");
+  if (!partType) throw new Error("Nhập loại linh kiện.");
+  if (!deviceType) throw new Error("Nhập loại máy.");
 
   try {
     const { rows } = await getPool().query<DbRow>(
       `insert into public.part_catalog_items (
-         store_id, category, brand_group, name, note, grades, created_by, updated_by
-       ) values ($1,$2,$3,$4,$5,$6::jsonb,$7,$7)
+         store_id, category, brand_group, name, note, grades, created_by, updated_by,
+         brand, part_type, device_type, color, cost_price, retail_price, quantity
+       ) values ($1,$2,$3,$4,$5,$6::jsonb,$7,$7,$8,$9,$10,$11,$12,$13,$14)
        returning *`,
-      [storeUuid, category, brandGroup, name, note, JSON.stringify(grades), actor]
+      [storeUuid, category, brandGroup, name, note, JSON.stringify(grades), actor,
+        brand, partType, deviceType, color, costPrice, retailPrice, quantity]
     );
-    return mapRow(rows[0], idToCode);
+    const saved = mapRow(rows[0], idToCode);
+    await writeCatalogAudit(storeUuid, actor, "Thêm linh kiện", saved.deviceType, {
+      id: saved.id,
+      brand: saved.brand,
+      partType: saved.partType,
+      quantity: saved.quantity,
+    });
+    return saved;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (/unique|duplicate/i.test(msg)) {
@@ -282,6 +350,20 @@ export async function repoPatchPartCatalog(
       : current.status;
 
   const actor = normalizeActor(input.actorUsername);
+  const brand = input.brand !== undefined ? String(input.brand || "").trim() : current.brand;
+  const partType = input.partType !== undefined ? String(input.partType || "").trim() : current.partType;
+  const deviceType = input.deviceType !== undefined ? String(input.deviceType || "").trim() : current.deviceType;
+  const color = input.color !== undefined ? String(input.color || "").trim() : current.color;
+  const costPrice = input.costPrice !== undefined
+    ? (input.costPrice == null ? null : Math.max(0, Number(input.costPrice)))
+    : current.costPrice;
+  const retailPrice = input.retailPrice !== undefined
+    ? (input.retailPrice == null ? null : Math.max(0, Number(input.retailPrice)))
+    : current.retailPrice;
+  const quantity = input.quantity !== undefined
+    ? Math.max(0, Math.round(Number(input.quantity) || 0))
+    : current.quantity;
+  if (!brand || !partType || !deviceType) throw new Error("Hãng, loại linh kiện và loại máy là bắt buộc.");
 
   try {
     const { rows } = await getPool().query<DbRow>(
@@ -292,13 +374,29 @@ export async function repoPatchPartCatalog(
          grades = $5::jsonb,
          status = $6,
          updated_by = coalesce($7, updated_by),
+         brand = $8,
+         part_type = $9,
+         device_type = $10,
+         color = $11,
+         cost_price = $12,
+         retail_price = $13,
+         quantity = $14,
          updated_at = now()
        where id = $1::uuid
        returning *`,
-      [id, name, brandGroup, note, JSON.stringify(grades), status, actor]
+      [id, name, brandGroup, note, JSON.stringify(grades), status, actor,
+        brand, partType, deviceType, color, costPrice, retailPrice, quantity]
     );
     if (!rows[0]) throw new Error("Không cập nhật được dòng linh kiện.");
-    return mapRow(rows[0], idToCode);
+    const saved = mapRow(rows[0], idToCode);
+    await writeCatalogAudit(existing.store_id, actor, status !== current.status
+      ? (status === "hidden" ? "Ẩn linh kiện" : "Khôi phục linh kiện")
+      : "Sửa linh kiện", saved.deviceType, {
+        id: saved.id,
+        before: current,
+        after: saved,
+      });
+    return saved;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (/unique|duplicate/i.test(msg)) {

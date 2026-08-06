@@ -72,10 +72,20 @@ export const PART_LOOKUP_CATEGORIES = {
   partType: "part_type",
   brand: "part_brand",
   color: "part_color",
+  deviceModel: "part_device_model",
 } as const;
 
 export type PartLookupCategoryCode =
   (typeof PART_LOOKUP_CATEGORIES)[keyof typeof PART_LOOKUP_CATEGORIES];
+
+/** Droplist riêng của màn LINH KIỆN / part_catalog_items. */
+export const PART_CATALOG_LOOKUP_CATEGORIES = {
+  brand: "catalog_part_brand",
+  partType: "catalog_part_type",
+  retailPrice: "catalog_part_retail_price",
+  costPrice: "catalog_part_cost_price",
+  deviceType: "catalog_part_device_type",
+} as const;
 
 /** Droplist form Mình nợ (per-store lookup_items). Không seed mặc định — user thêm/sửa/xóa. */
 export const OWN_DEBT_LOOKUP_CATEGORIES = {
