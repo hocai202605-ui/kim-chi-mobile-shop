@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { repoGetAccountByUsername } from "@/lib/db/accountsRepo";
 import {
+  repoDeletePartCatalog,
   repoHidePartCatalog,
   repoPatchPartCatalog,
 } from "@/lib/db/partsCatalogRepo";
@@ -51,10 +52,10 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
         );
       }
     }
-    const saved = await repoHidePartCatalog(id, actor || undefined);
-    return NextResponse.json({ data: saved });
+    const deleted = await repoDeletePartCatalog(id, actor || undefined);
+    return NextResponse.json({ data: deleted });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Lỗi ẩn linh kiện";
+    const message = err instanceof Error ? err.message : "Lỗi xóa linh kiện";
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

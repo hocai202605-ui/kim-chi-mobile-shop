@@ -5,11 +5,10 @@ import {
   ChevronRight,
   CopyPlus,
   Edit3,
-  EyeOff,
   Loader2,
   Minus,
   Plus,
-  RotateCcw,
+  Trash2,
   Search,
   Settings2,
   X,
@@ -19,7 +18,7 @@ import type { Role, StoreId } from "@/types";
 import { storeName } from "@/lib/constants";
 import {
   createPartCatalog,
-  hidePartCatalog,
+  deletePartCatalog,
   listPartCatalog,
   patchPartCatalog,
   type PartCatalogItemDto,
@@ -281,16 +280,14 @@ export function PartsInventoryScreen(props: Props) {
     } finally { setSaving(false); }
   }
 
-  async function toggleHidden(row: PartCatalogItemDto) {
-    if (role !== "owner") return onNotify("error", "Chỉ owner được ẩn hoặc khôi phục linh kiện.");
-    const restore = row.status === "hidden";
-    if (!restore && !window.confirm(`Ẩn linh kiện «${row.deviceType}»?`)) return;
+  async function deleteRow(row: PartCatalogItemDto) {
+    if (role !== "owner") return onNotify("error", "Chỉ owner được xóa linh kiện.");
+    if (!window.confirm(`Xóa linh kiện «${row.deviceType}»?\nThao tác này không thể hoàn tác.`)) return;
     try {
-      if (restore) await patchPartCatalog({ id: row.id, status: "active", actorUsername });
-      else await hidePartCatalog(row.id, actorUsername);
-      onNotify("success", restore ? "Đã khôi phục linh kiện." : "Đã ẩn linh kiện.");
+      await deletePartCatalog(row.id, actorUsername);
+      onNotify("success", `Đã xóa linh kiện «${row.deviceType}».`);
       await reload();
-    } catch (e) { onNotify("error", e instanceof Error ? e.message : "Thao tác thất bại."); }
+    } catch (e) { onNotify("error", e instanceof Error ? e.message : "Xóa linh kiện thất bại."); }
   }
 
   const filterOptions = {
@@ -310,8 +307,8 @@ export function PartsInventoryScreen(props: Props) {
       {error ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-danger">{error} <button onClick={() => void reload()} className="ml-2 font-black underline">Thử lại</button></div> : null}
 
       <section className="overflow-hidden rounded-xl border border-line bg-white shadow-panel">
-        <div className="grid gap-2 border-b border-line p-4 md:grid-cols-3 xl:grid-cols-6">
-          <label className="relative md:col-span-2"><Search size={16} className="absolute left-3 top-3 text-muted"/><input value={query} onChange={(e)=>{setQuery(e.target.value);setPage(1);}} placeholder="Tìm hãng, loại, máy, màu…" className="h-10 w-full rounded-lg border border-line bg-slate-50 pl-9 pr-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand/30"/></label>
+        <div className="grid gap-2 border-b border-line p-4 md:grid-cols-3 xl:grid-cols-[minmax(18rem,2fr)_repeat(5,minmax(0,1fr))]">
+          <label className="relative md:col-span-2 xl:col-span-1"><Search size={16} className="absolute left-3 top-3 text-muted"/><input value={query} onChange={(e)=>{setQuery(e.target.value);setPage(1);}} placeholder="Tìm hãng, loại, máy, màu…" className="h-10 w-full rounded-lg border border-line bg-slate-50 pl-9 pr-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand/30"/></label>
           <Filter value={brandFilter} onChange={setBrandFilter} label="Tất cả hãng" options={filterOptions.brands}/>
           <Filter value={deviceFilter} onChange={setDeviceFilter} label="Tất cả loại máy" options={filterOptions.devices}/>
           <Filter value={typeFilter} onChange={setTypeFilter} label="Tất cả loại LK" options={filterOptions.types}/>
@@ -319,8 +316,8 @@ export function PartsInventoryScreen(props: Props) {
           <button onClick={resetFilters} className="inline-flex h-10 items-center justify-center gap-1 rounded-lg border border-line bg-white text-sm font-bold text-slate-700"><Settings2 size={15}/>Xóa lọc</button>
         </div>
         <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-sm"><thead className="bg-slate-50 text-xs font-black uppercase text-muted"><tr><th className="px-3 py-3">Ngày</th><th className="px-3 py-3">CH</th><th className="px-3 py-3">Hãng</th><th className="px-3 py-3">Thuộc loại máy</th><th className="px-3 py-3">Loại linh kiện</th><th className="px-3 py-3 text-right">Giá thay khách</th><th className="px-3 py-3 text-right">SL</th><th className="px-3 py-3">Trạng thái</th><th className="px-3 py-3">Màu sắc</th><th className="px-3 py-3 text-right">Giá nhập</th><th className="px-3 py-3 text-center">Thao tác</th></tr></thead>
-          <tbody>{loading ? <tr><td colSpan={11} className="py-12 text-center text-muted"><Loader2 className="mx-auto animate-spin"/></td></tr> : paged.length === 0 ? <tr><td colSpan={11} className="py-12 text-center font-semibold text-muted">Chưa có linh kiện phù hợp.</td></tr> : paged.map((row)=><tr key={row.id} className="border-t border-line hover:bg-slate-50"><td className="whitespace-nowrap px-3 py-2.5">{dateVi(row.createdAt)}</td><td className="whitespace-nowrap px-3 py-2.5 font-bold">{storeName(row.storeId)}</td><td className="px-3 py-2.5 font-bold text-ink">{row.brand}</td><td className="px-3 py-2.5 font-semibold">{row.deviceType}</td><td className="px-3 py-2.5"><span className="rounded-full bg-brand-soft px-2 py-1 text-xs font-bold text-brand-dark">{row.partType}</span></td><td className="whitespace-nowrap px-3 py-2.5 text-right text-base font-black text-danger">{money(row.retailPrice)}</td><td className="px-3 py-2.5 text-right font-black">{row.quantity.toLocaleString("vi-VN")}</td><td className="px-3 py-2.5"><span className={`rounded-full px-2 py-1 text-xs font-bold ${row.status === "hidden" ? "bg-slate-100 text-slate-600" : row.quantity > 0 ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{statusLabel(row)}</span></td><td className="px-3 py-2.5">{row.color || "—"}</td><td className="whitespace-nowrap px-3 py-2.5 text-right text-xs font-semibold text-muted">{isStatsHidden ? "***" : money(row.costPrice)}</td><td className="px-3 py-2.5"><div className="flex justify-center gap-1"><button onClick={()=>openEdit(row)} title="Sửa" className="grid h-9 w-9 place-items-center rounded-lg bg-brand-soft text-brand"><Edit3 size={16}/></button><button onClick={()=>openNew(row)} title="Nhân bản" className="grid h-9 w-9 place-items-center rounded-lg bg-sky-50 text-sky-700"><CopyPlus size={16}/></button>{role === "owner" ? <button onClick={()=>void toggleHidden(row)} title={row.status === "hidden" ? "Khôi phục" : "Ẩn"} className="grid h-9 w-9 place-items-center rounded-lg bg-red-50 text-danger">{row.status === "hidden" ? <RotateCcw size={16}/> : <EyeOff size={16}/>}</button> : null}</div></td></tr>)}</tbody></table>
+          <table className="min-w-full text-center text-sm"><thead className="bg-slate-50 text-xs font-black uppercase text-muted"><tr><th className="px-3 py-3">Ngày</th><th className="px-3 py-3">Cửa Hàng</th><th className="px-3 py-3">Hãng</th><th className="px-3 py-3">Thuộc loại máy</th><th className="px-3 py-3">Loại linh kiện</th><th className="px-3 py-3">Giá thay khách</th><th className="px-3 py-3">SL</th><th className="px-3 py-3">Trạng thái</th><th className="px-3 py-3">Thao tác</th><th className="px-3 py-3">Giá nhập</th><th className="px-3 py-3">Màu sắc</th></tr></thead>
+          <tbody>{loading ? <tr><td colSpan={11} className="py-12 text-center text-muted"><Loader2 className="mx-auto animate-spin"/></td></tr> : paged.length === 0 ? <tr><td colSpan={11} className="py-12 text-center font-semibold text-muted">Chưa có linh kiện phù hợp.</td></tr> : paged.map((row)=><tr key={row.id} className="border-t border-line hover:bg-slate-50"><td className="whitespace-nowrap px-3 py-2.5">{dateVi(row.createdAt)}</td><td className="whitespace-nowrap px-3 py-2.5 font-bold">{storeName(row.storeId)}</td><td className="px-3 py-2.5 font-bold text-ink">{row.brand}</td><td className="px-3 py-2.5 font-semibold">{row.deviceType}</td><td className="px-3 py-2.5"><span className="rounded-full bg-brand-soft px-2 py-1 text-xs font-bold text-brand-dark">{row.partType}</span></td><td className="whitespace-nowrap px-3 py-2.5 text-2xl font-black text-danger">{money(row.retailPrice)}</td><td className="px-3 py-2.5 font-black">{row.quantity.toLocaleString("vi-VN")}</td><td className="px-3 py-2.5"><span className={`rounded-full px-2 py-1 text-xs font-bold ${row.status === "hidden" ? "bg-slate-100 text-slate-600" : row.quantity > 0 ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{statusLabel(row)}</span></td><td className="px-3 py-2.5"><div className="flex justify-center gap-1"><button onClick={()=>openEdit(row)} title="Sửa" className="grid h-9 w-9 place-items-center rounded-lg bg-brand-soft text-brand"><Edit3 size={16}/></button><button onClick={()=>openNew(row)} title="Nhân bản" className="grid h-9 w-9 place-items-center rounded-lg bg-sky-50 text-sky-700"><CopyPlus size={16}/></button>{role === "owner" ? <button onClick={()=>void deleteRow(row)} title="Xóa" className="grid h-9 w-9 place-items-center rounded-lg bg-red-50 text-danger hover:bg-red-100"><Trash2 size={16}/></button> : null}</div></td><td className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-muted">{isStatsHidden ? "***" : money(row.costPrice)}</td><td className="px-3 py-2.5">{row.color || "—"}</td></tr>)}</tbody></table>
         </div>
         <div className="flex items-center justify-between border-t border-line p-4 text-sm font-semibold text-muted"><span>Trang {safePage}/{totalPages} · {filtered.length.toLocaleString("vi-VN")} bản ghi</span><div className="flex gap-2"><button disabled={safePage<=1} onClick={()=>setPage(p=>Math.max(1,p-1))} className="grid h-9 w-9 place-items-center rounded-lg border border-line disabled:opacity-40"><ChevronLeft size={16}/></button><button disabled={safePage>=totalPages} onClick={()=>setPage(p=>Math.min(totalPages,p+1))} className="grid h-9 w-9 place-items-center rounded-lg border border-line disabled:opacity-40"><ChevronRight size={16}/></button></div></div>
       </section>
@@ -331,8 +328,10 @@ export function PartsInventoryScreen(props: Props) {
         <CatalogSelect label="Giá thay khách" value={draft.retailPrice} options={lookups[PART_CATALOG_LOOKUP_CATEGORIES.retailPrice]||[]} categoryCode={PART_CATALOG_LOOKUP_CATEGORIES.retailPrice} storeId={writeStoreId} actorUsername={actorUsername} moneyField onChange={(retailPrice)=>setDraft(d=>({...d,retailPrice}))} onOptionsChange={setLookup(PART_CATALOG_LOOKUP_CATEGORIES.retailPrice)} onNotify={onNotify}/>
         <CatalogSelect label="Giá nhập" value={draft.costPrice} options={lookups[PART_CATALOG_LOOKUP_CATEGORIES.costPrice]||[]} categoryCode={PART_CATALOG_LOOKUP_CATEGORIES.costPrice} storeId={writeStoreId} actorUsername={actorUsername} moneyField onChange={(costPrice)=>setDraft(d=>({...d,costPrice}))} onOptionsChange={setLookup(PART_CATALOG_LOOKUP_CATEGORIES.costPrice)} onNotify={onNotify}/>
         <CatalogSelect label="Thuộc loại máy" value={draft.deviceType} options={lookups[PART_CATALOG_LOOKUP_CATEGORIES.deviceType]||[]} categoryCode={PART_CATALOG_LOOKUP_CATEGORIES.deviceType} storeId={writeStoreId} actorUsername={actorUsername} required onChange={(deviceType)=>setDraft(d=>({...d,deviceType}))} onOptionsChange={setLookup(PART_CATALOG_LOOKUP_CATEGORIES.deviceType)} onNotify={onNotify}/>
-        <label className="grid gap-1"><span className="text-sm font-black text-ink">Màu sắc</span><input value={draft.color} onChange={(e)=>setDraft(d=>({...d,color:e.target.value}))} className="h-11 rounded-lg border border-line px-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand/30" placeholder="Nhập tự do"/></label>
-        <label className="grid gap-1 md:col-span-2"><span className="text-sm font-black text-ink">Số lượng</span><div className="flex h-11 max-w-xs overflow-hidden rounded-lg border border-line"><button type="button" onClick={()=>setDraft(d=>({...d,quantity:Math.max(0,d.quantity-1)}))} className="grid w-11 place-items-center bg-slate-50"><Minus size={16}/></button><input value={draft.quantity} onChange={(e)=>setDraft(d=>({...d,quantity:Math.max(0,Number(e.target.value.replace(/\D/g,""))||0)}))} inputMode="numeric" className="min-w-0 flex-1 text-center font-black outline-none"/><button type="button" onClick={()=>setDraft(d=>({...d,quantity:d.quantity+1}))} className="grid w-11 place-items-center bg-brand-soft text-brand"><Plus size={16}/></button></div></label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="grid min-w-0 gap-1"><span className="text-sm font-black text-ink">Số lượng</span><div className="flex h-11 min-w-0 overflow-hidden rounded-lg border border-line"><button type="button" onClick={()=>setDraft(d=>({...d,quantity:Math.max(0,d.quantity-1)}))} className="grid w-9 shrink-0 place-items-center bg-slate-50"><Minus size={16}/></button><input value={draft.quantity} onChange={(e)=>setDraft(d=>({...d,quantity:Math.max(0,Number(e.target.value.replace(/\D/g,""))||0)}))} inputMode="numeric" className="min-w-0 flex-1 text-center font-black outline-none"/><button type="button" onClick={()=>setDraft(d=>({...d,quantity:d.quantity+1}))} className="grid w-9 shrink-0 place-items-center bg-brand-soft text-brand"><Plus size={16}/></button></div></label>
+          <label className="grid min-w-0 gap-1"><span className="text-sm font-black text-ink">Màu sắc</span><input value={draft.color} onChange={(e)=>setDraft(d=>({...d,color:e.target.value}))} className="h-11 min-w-0 rounded-lg border border-line px-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand/30" placeholder="Nhập tự do"/></label>
+        </div>
       </div><div className="flex justify-end gap-2 border-t border-line p-5"><button type="button" disabled={saving} onClick={()=>setModalOpen(false)} className="h-11 rounded-lg border border-line px-4 font-bold">Hủy</button><button type="submit" disabled={saving} className="inline-flex h-11 items-center gap-2 rounded-lg bg-brand px-5 font-bold text-white disabled:opacity-50">{saving?<Loader2 size={17} className="animate-spin"/>:<Plus size={17}/>} {editing?"Cập nhật":"Lưu linh kiện"}</button></div></form></div> : null}
     </section>
   );

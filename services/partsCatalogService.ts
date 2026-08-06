@@ -73,4 +73,16 @@ export async function hidePartCatalog(
   return parseJson<PartCatalogItemDto>(res);
 }
 
+export async function deletePartCatalog(
+  id: string,
+  actorUsername?: string
+): Promise<PartCatalogItemDto> {
+  const res = await fetch(`/api/parts/catalog/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ actorUsername }),
+  });
+  return parseJson<PartCatalogItemDto>(res);
+}
+
 export type PartCatalogStoreId = Exclude<StoreId, "all">;

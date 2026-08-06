@@ -417,6 +417,27 @@ export async function repoHidePartCatalog(
   });
 }
 
+/** Xóa hẳn một bản ghi catalog Linh kiện độc lập theo yêu cầu nghiệp vụ. */
+export async function repoDeletePartCatalog(
+  id: string,
+  actorUsername?: string
+): Promise<PartCatalogItemDto> {
+  const catalogId = String(id || "").trim();
+  if (!catalogId) throw new Error("Thiếu id.");
+  const actor = normalizeActor(actorUsername);
+  const { idToCode } = await loadStoreMaps();
+  const { rows } = await getPool().query<DbRow>(
+    `delete from public.part_catalog_items where id = $1::uuid returning *`,
+    [catalogId]
+  );
+  if (!rows[0]) throw new Error("Không tìm thấy linh kiện để xóa.");
+  const deleted = mapRow(rows[0], idToCode);
+  await writeCatalogAudit(rows[0].store_id, actor, "Xóa linh kiện", deleted.deviceType, {
+    deleted,
+  });
+  return deleted;
+}
+
 function emptyGradesFor(category: PartCatalogCategory): Record<string, PartGradeCell> {
   if (category === "man_android") {
     return { default: { cost: null, price: null, qty: 0 } };
