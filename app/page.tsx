@@ -16573,12 +16573,3 @@ function DataTable({
     </div>
   );
 }
-                ))}
-              </tr >
-            );
-          })}
-        </tbody >
-      </table >
-    </div >
-  );
-}
