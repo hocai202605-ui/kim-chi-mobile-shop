@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import type { Role, StoreId } from "@/types";
+import { storeName } from "@/lib/constants";
 import {
   createPartCatalog,
   hidePartCatalog,
@@ -61,7 +62,7 @@ const EMPTY_DRAFT: Draft = {
 };
 
 function money(value: number | null | undefined) {
-  return value == null ? "—" : value.toLocaleString("vi-VN") + " ₫";
+  return value == null ? "—" : value.toLocaleString("vi-VN");
 }
 
 function parseMoney(value: string): number | null {
@@ -188,10 +189,7 @@ export function PartsInventoryScreen(props: Props) {
   const [brandFilter, setBrandFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [deviceFilter, setDeviceFilter] = useState("all");
-  const [colorFilter, setColorFilter] = useState("all");
-  const [costFilter, setCostFilter] = useState("all");
-  const [retailFilter, setRetailFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("active");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [lookups, setLookups] = useState<Record<string, string[]>>({});
 
@@ -226,9 +224,6 @@ export function PartsInventoryScreen(props: Props) {
       if (brandFilter !== "all" && row.brand !== brandFilter) return false;
       if (typeFilter !== "all" && row.partType !== typeFilter) return false;
       if (deviceFilter !== "all" && row.deviceType !== deviceFilter) return false;
-      if (colorFilter !== "all" && row.color !== colorFilter) return false;
-      if (costFilter !== "all" && String(row.costPrice ?? "") !== costFilter) return false;
-      if (retailFilter !== "all" && String(row.retailPrice ?? "") !== retailFilter) return false;
       if (statusFilter === "active" && row.status !== "active") return false;
       if (statusFilter === "in_stock" && (row.status !== "active" || row.quantity <= 0)) return false;
       if (statusFilter === "out_of_stock" && (row.status !== "active" || row.quantity > 0)) return false;
@@ -236,7 +231,7 @@ export function PartsInventoryScreen(props: Props) {
       if (q && ![row.brand, row.partType, row.deviceType, row.color].join(" ").toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [rows, query, brandFilter, typeFilter, deviceFilter, colorFilter, costFilter, retailFilter, statusFilter]);
+  }, [rows, query, brandFilter, typeFilter, deviceFilter, statusFilter]);
 
   const pageSize = 10;
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
@@ -300,11 +295,9 @@ export function PartsInventoryScreen(props: Props) {
 
   const filterOptions = {
     brands: unique(rows.map((r) => r.brand)), types: unique(rows.map((r) => r.partType)),
-    devices: unique(rows.map((r) => r.deviceType)), colors: unique(rows.map((r) => r.color)),
-    costs: unique(rows.map((r) => r.costPrice == null ? "" : String(r.costPrice))).sort((a,b)=>Number(a)-Number(b)),
-    retails: unique(rows.map((r) => r.retailPrice == null ? "" : String(r.retailPrice))).sort((a,b)=>Number(a)-Number(b)),
+    devices: unique(rows.map((r) => r.deviceType)),
   };
-  const resetFilters = () => { setQuery(""); setBrandFilter("all"); setTypeFilter("all"); setDeviceFilter("all"); setColorFilter("all"); setCostFilter("all"); setRetailFilter("all"); setStatusFilter("active"); setPage(1); };
+  const resetFilters = () => { setQuery(""); setBrandFilter("all"); setTypeFilter("all"); setDeviceFilter("all"); setStatusFilter("all"); setPage(1); };
   const setLookup = (code: string) => (values: string[]) => setLookups((old) => ({ ...old, [code]: values }));
 
   return (
@@ -317,20 +310,17 @@ export function PartsInventoryScreen(props: Props) {
       {error ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-danger">{error} <button onClick={() => void reload()} className="ml-2 font-black underline">Thử lại</button></div> : null}
 
       <section className="overflow-hidden rounded-xl border border-line bg-white shadow-panel">
-        <div className="grid gap-2 border-b border-line p-4 md:grid-cols-4 xl:grid-cols-8">
+        <div className="grid gap-2 border-b border-line p-4 md:grid-cols-3 xl:grid-cols-6">
           <label className="relative md:col-span-2"><Search size={16} className="absolute left-3 top-3 text-muted"/><input value={query} onChange={(e)=>{setQuery(e.target.value);setPage(1);}} placeholder="Tìm hãng, loại, máy, màu…" className="h-10 w-full rounded-lg border border-line bg-slate-50 pl-9 pr-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand/30"/></label>
           <Filter value={brandFilter} onChange={setBrandFilter} label="Tất cả hãng" options={filterOptions.brands}/>
-          <Filter value={typeFilter} onChange={setTypeFilter} label="Tất cả loại LK" options={filterOptions.types}/>
           <Filter value={deviceFilter} onChange={setDeviceFilter} label="Tất cả loại máy" options={filterOptions.devices}/>
-          <Filter value={colorFilter} onChange={setColorFilter} label="Tất cả màu" options={filterOptions.colors}/>
-          <Filter value={costFilter} onChange={setCostFilter} label="Mọi giá nhập" options={filterOptions.costs} moneyOptions/>
-          <Filter value={retailFilter} onChange={setRetailFilter} label="Mọi giá thay" options={filterOptions.retails} moneyOptions/>
-          <select value={statusFilter} onChange={(e)=>{setStatusFilter(e.target.value);setPage(1);}} className="h-10 rounded-lg border border-line bg-white px-2 text-sm font-bold"><option value="active">Đang hoạt động</option><option value="in_stock">Còn hàng</option><option value="out_of_stock">Hết hàng</option><option value="hidden">Đã ẩn</option><option value="all">Tất cả trạng thái</option></select>
+          <Filter value={typeFilter} onChange={setTypeFilter} label="Tất cả loại LK" options={filterOptions.types}/>
+          <select value={statusFilter} onChange={(e)=>{setStatusFilter(e.target.value);setPage(1);}} className="h-10 rounded-lg border border-line bg-white px-2 text-sm font-bold"><option value="all">Tất cả trạng thái</option><option value="in_stock">Còn hàng</option><option value="out_of_stock">Hết hàng</option></select>
           <button onClick={resetFilters} className="inline-flex h-10 items-center justify-center gap-1 rounded-lg border border-line bg-white text-sm font-bold text-slate-700"><Settings2 size={15}/>Xóa lọc</button>
         </div>
         <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-sm"><thead className="bg-slate-50 text-xs font-black uppercase text-muted"><tr><th className="px-3 py-3">Ngày</th><th className="px-3 py-3">CH</th><th className="px-3 py-3">Hãng</th><th className="px-3 py-3">Loại linh kiện</th><th className="px-3 py-3">Thuộc loại máy</th><th className="px-3 py-3">Màu sắc</th><th className="px-3 py-3 text-right">Giá nhập</th><th className="px-3 py-3 text-right">Giá thay khách</th><th className="px-3 py-3 text-right">SL</th><th className="px-3 py-3">Trạng thái</th><th className="px-3 py-3 text-center">Thao tác</th></tr></thead>
-          <tbody>{loading ? <tr><td colSpan={11} className="py-12 text-center text-muted"><Loader2 className="mx-auto animate-spin"/></td></tr> : paged.length === 0 ? <tr><td colSpan={11} className="py-12 text-center font-semibold text-muted">Chưa có linh kiện phù hợp.</td></tr> : paged.map((row)=><tr key={row.id} className="border-t border-line hover:bg-slate-50"><td className="whitespace-nowrap px-3 py-2.5">{dateVi(row.createdAt)}</td><td className="whitespace-nowrap px-3 py-2.5 font-bold">{row.storeId}</td><td className="px-3 py-2.5 font-bold text-ink">{row.brand}</td><td className="px-3 py-2.5"><span className="rounded-full bg-brand-soft px-2 py-1 text-xs font-bold text-brand-dark">{row.partType}</span></td><td className="px-3 py-2.5 font-semibold">{row.deviceType}</td><td className="px-3 py-2.5">{row.color || "—"}</td><td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold">{isStatsHidden ? "***" : money(row.costPrice)}</td><td className="whitespace-nowrap px-3 py-2.5 text-right font-bold text-brand-dark">{money(row.retailPrice)}</td><td className="px-3 py-2.5 text-right font-black">{row.quantity.toLocaleString("vi-VN")}</td><td className="px-3 py-2.5"><span className={`rounded-full px-2 py-1 text-xs font-bold ${row.status === "hidden" ? "bg-slate-100 text-slate-600" : row.quantity > 0 ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{statusLabel(row)}</span></td><td className="px-3 py-2.5"><div className="flex justify-center gap-1"><button onClick={()=>openEdit(row)} title="Sửa" className="grid h-9 w-9 place-items-center rounded-lg bg-brand-soft text-brand"><Edit3 size={16}/></button><button onClick={()=>openNew(row)} title="Nhân bản" className="grid h-9 w-9 place-items-center rounded-lg bg-sky-50 text-sky-700"><CopyPlus size={16}/></button>{role === "owner" ? <button onClick={()=>void toggleHidden(row)} title={row.status === "hidden" ? "Khôi phục" : "Ẩn"} className="grid h-9 w-9 place-items-center rounded-lg bg-red-50 text-danger">{row.status === "hidden" ? <RotateCcw size={16}/> : <EyeOff size={16}/>}</button> : null}</div></td></tr>)}</tbody></table>
+          <table className="min-w-full text-left text-sm"><thead className="bg-slate-50 text-xs font-black uppercase text-muted"><tr><th className="px-3 py-3">Ngày</th><th className="px-3 py-3">CH</th><th className="px-3 py-3">Hãng</th><th className="px-3 py-3">Thuộc loại máy</th><th className="px-3 py-3">Loại linh kiện</th><th className="px-3 py-3 text-right">Giá thay khách</th><th className="px-3 py-3 text-right">SL</th><th className="px-3 py-3">Trạng thái</th><th className="px-3 py-3">Màu sắc</th><th className="px-3 py-3 text-right">Giá nhập</th><th className="px-3 py-3 text-center">Thao tác</th></tr></thead>
+          <tbody>{loading ? <tr><td colSpan={11} className="py-12 text-center text-muted"><Loader2 className="mx-auto animate-spin"/></td></tr> : paged.length === 0 ? <tr><td colSpan={11} className="py-12 text-center font-semibold text-muted">Chưa có linh kiện phù hợp.</td></tr> : paged.map((row)=><tr key={row.id} className="border-t border-line hover:bg-slate-50"><td className="whitespace-nowrap px-3 py-2.5">{dateVi(row.createdAt)}</td><td className="whitespace-nowrap px-3 py-2.5 font-bold">{storeName(row.storeId)}</td><td className="px-3 py-2.5 font-bold text-ink">{row.brand}</td><td className="px-3 py-2.5 font-semibold">{row.deviceType}</td><td className="px-3 py-2.5"><span className="rounded-full bg-brand-soft px-2 py-1 text-xs font-bold text-brand-dark">{row.partType}</span></td><td className="whitespace-nowrap px-3 py-2.5 text-right text-base font-black text-danger">{money(row.retailPrice)}</td><td className="px-3 py-2.5 text-right font-black">{row.quantity.toLocaleString("vi-VN")}</td><td className="px-3 py-2.5"><span className={`rounded-full px-2 py-1 text-xs font-bold ${row.status === "hidden" ? "bg-slate-100 text-slate-600" : row.quantity > 0 ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{statusLabel(row)}</span></td><td className="px-3 py-2.5">{row.color || "—"}</td><td className="whitespace-nowrap px-3 py-2.5 text-right text-xs font-semibold text-muted">{isStatsHidden ? "***" : money(row.costPrice)}</td><td className="px-3 py-2.5"><div className="flex justify-center gap-1"><button onClick={()=>openEdit(row)} title="Sửa" className="grid h-9 w-9 place-items-center rounded-lg bg-brand-soft text-brand"><Edit3 size={16}/></button><button onClick={()=>openNew(row)} title="Nhân bản" className="grid h-9 w-9 place-items-center rounded-lg bg-sky-50 text-sky-700"><CopyPlus size={16}/></button>{role === "owner" ? <button onClick={()=>void toggleHidden(row)} title={row.status === "hidden" ? "Khôi phục" : "Ẩn"} className="grid h-9 w-9 place-items-center rounded-lg bg-red-50 text-danger">{row.status === "hidden" ? <RotateCcw size={16}/> : <EyeOff size={16}/>}</button> : null}</div></td></tr>)}</tbody></table>
         </div>
         <div className="flex items-center justify-between border-t border-line p-4 text-sm font-semibold text-muted"><span>Trang {safePage}/{totalPages} · {filtered.length.toLocaleString("vi-VN")} bản ghi</span><div className="flex gap-2"><button disabled={safePage<=1} onClick={()=>setPage(p=>Math.max(1,p-1))} className="grid h-9 w-9 place-items-center rounded-lg border border-line disabled:opacity-40"><ChevronLeft size={16}/></button><button disabled={safePage>=totalPages} onClick={()=>setPage(p=>Math.min(totalPages,p+1))} className="grid h-9 w-9 place-items-center rounded-lg border border-line disabled:opacity-40"><ChevronRight size={16}/></button></div></div>
       </section>
@@ -348,6 +338,6 @@ export function PartsInventoryScreen(props: Props) {
   );
 }
 
-function Filter({ value, onChange, label, options, moneyOptions }: { value:string; onChange:(v:string)=>void; label:string; options:string[]; moneyOptions?:boolean }) {
-  return <select value={value} onChange={(e)=>onChange(e.target.value)} className="h-10 min-w-0 rounded-lg border border-line bg-white px-2 text-sm font-bold"><option value="all">{label}</option>{options.map(x=><option key={x} value={x}>{moneyOptions ? money(Number(x)) : x}</option>)}</select>;
+function Filter({ value, onChange, label, options }: { value:string; onChange:(v:string)=>void; label:string; options:string[] }) {
+  return <select value={value} onChange={(e)=>onChange(e.target.value)} className="h-10 min-w-0 rounded-lg border border-line bg-white px-2 text-sm font-bold"><option value="all">{label}</option>{options.map(x=><option key={x} value={x}>{x}</option>)}</select>;
 }
