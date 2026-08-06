@@ -858,7 +858,7 @@ const navItems = [
   { id: "inventory", label: "KHO HÀNG", icon: Boxes },
   { id: "software", label: "SỬA CHỮA", icon: Wrench },
   { id: "parts", label: "NHẬP HÀNG", icon: PackagePlus },
-  { id: "inbound", label: "LINH KIỆN", icon: Cpu },
+  { id: "inbound", label: "BÁO GIÁ", icon: Cpu },
   { id: "customers", label: "KHÁCH HÀNG", icon: Users },
   { id: "ledger", label: "CÔNG NỢ", icon: CreditCard },
   { id: "debt-notes", label: "MÌNH NỢ", icon: NotebookPen },
