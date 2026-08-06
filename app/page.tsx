@@ -99,6 +99,7 @@ import {
   listPartInbounds as apiListPartInbounds,
   upsertPartInbound as apiUpsertPartInbound,
 } from "@/services/partsService";
+import { PartsInventoryScreen } from "@/components/features/parts/PartsInventoryScreen";
 import {
   cancelManualDebt as apiCancelManualDebt,
   listDebts as apiListDebts,
@@ -325,29 +326,29 @@ type Customer = {
 /** Dòng giỏ phiếu bán (client). */
 type SaleCartLine =
   | {
-    key: string;
-    kind: "phone";
-    phoneId: string;
-    name: string;
-    imei: string;
-    brand?: string;
-    color?: string;
-    storage?: string;
-    condition?: string;
-    /** Đơn giá short shop */
-    unitPrice: number;
-    cost: number;
-  }
+      key: string;
+      kind: "phone";
+      phoneId: string;
+      name: string;
+      imei: string;
+      brand?: string;
+      color?: string;
+      storage?: string;
+      condition?: string;
+      /** Đơn giá short shop */
+      unitPrice: number;
+      cost: number;
+    }
   | {
-    key: string;
-    kind: "accessory";
-    name: string;
-    quantity: number;
-    /** Giá bán short shop (1 cái) */
-    unitPrice: number;
-    /** Giá nhập short (1 cái), mặc định 0 */
-    cost: number;
-  };
+      key: string;
+      kind: "accessory";
+      name: string;
+      quantity: number;
+      /** Giá bán short shop (1 cái) */
+      unitPrice: number;
+      /** Giá nhập short (1 cái), mặc định 0 */
+      cost: number;
+    };
 
 /**
  * Tặng PK (tab Bán Máy) — 4 ô / 2 dòng.
@@ -481,26 +482,26 @@ type Accessory = {
 /** Snapshot dòng hàng trên phiếu (UI mock — chốt UX). */
 type SaleLineSnapshot =
   | {
-    kind: "phone";
-    phoneId?: string;
-    name: string;
-    imei?: string;
-    brand?: string;
-    color?: string;
-    storage?: string;
-    condition?: string;
-    /** Đơn giá short shop */
-    unitPrice: number;
-    cost: number;
-  }
+      kind: "phone";
+      phoneId?: string;
+      name: string;
+      imei?: string;
+      brand?: string;
+      color?: string;
+      storage?: string;
+      condition?: string;
+      /** Đơn giá short shop */
+      unitPrice: number;
+      cost: number;
+    }
   | {
-    kind: "accessory";
-    name: string;
-    quantity: number;
-    unitPrice: number;
-    cost?: number;
-    category?: string;
-  };
+      kind: "accessory";
+      name: string;
+      quantity: number;
+      unitPrice: number;
+      cost?: number;
+      category?: string;
+    };
 
 type Sale = {
   id: string;
@@ -857,7 +858,7 @@ const navItems = [
   { id: "inventory", label: "KHO HÀNG", icon: Boxes },
   { id: "software", label: "SỬA CHỮA", icon: Wrench },
   { id: "parts", label: "NHẬP HÀNG", icon: PackagePlus },
-  { id: "inbound", label: "BÁO GIÁ", icon: Cpu },
+  { id: "inbound", label: "LINH KIỆN", icon: Cpu },
   { id: "customers", label: "KHÁCH HÀNG", icon: Users },
   { id: "ledger", label: "CÔNG NỢ", icon: CreditCard },
   { id: "debt-notes", label: "MÌNH NỢ", icon: NotebookPen },
@@ -995,10 +996,10 @@ function loadSession(): { user: User; remember: boolean } | null {
       "user" in parsed && parsed.user
         ? (parsed as SessionPayload)
         : {
-          user: parsed as User,
-          loggedInAt: Date.now(),
-          remember: false,
-        };
+            user: parsed as User,
+            loggedInAt: Date.now(),
+            remember: false,
+          };
     if (!payload.user?.id || !payload.user?.username) {
       clearSession();
       return null;
@@ -1362,8 +1363,8 @@ export default function Home() {
   const [shopRepairBackendError, setShopRepairBackendError] = useState("");
   const [shopRepairPaying, setShopRepairPaying] = useState(false);
 
-  /** Nhập hàng — phiếu nhập (DB part_inbounds, page id `parts`). */
-  const [partInbounds, setPartInbounds] = useState<PartInbound[]>([]);
+  /** Nhập hàng — phiếu nhập (DB part_inbounds, page id `parts` & `inbound`). */
+  const [partInbounds, setPartInbounds] = useState<PartInbound[]>(initialPartInboundsSeed);
   const [partLoading, setPartLoading] = useState(false);
   const [partSaving, setPartSaving] = useState(false);
   const [partBackendError, setPartBackendError] = useState("");
@@ -1716,7 +1717,12 @@ export default function Home() {
         return;
       }
       const rows = await apiListPartInbounds(scope, currentUser.username);
-      const list = Array.isArray(rows) ? rows : [];
+      const list =
+        Array.isArray(rows) && rows.length > 0
+          ? rows
+          : initialPartInboundsSeed.filter(
+              (p) => !scope || p.storeId === scope
+            );
       setPartInbounds(list);
       setPartPage(1);
       setSelectedPartIds((prev) => prev.filter((id) => list.some((p) => p.id === id)));
@@ -1904,9 +1910,9 @@ export default function Home() {
     reloadCustomersFromDb,
   ]);
 
-  // Vào menu Nhập hàng & Linh kiện → tải lại (tránh grid trống nếu boot fail / timeout).
+  // Vào menu Nhập hàng → tải lại. Linh kiện có data source độc lập.
   useEffect(() => {
-    if (!currentUser || (activePage !== "parts" && activePage !== "inbound")) return;
+    if (!currentUser || activePage !== "parts") return;
     void reloadPartsFromDb();
   }, [currentUser, activePage, reloadPartsFromDb]);
 
@@ -2343,10 +2349,10 @@ export default function Home() {
         categoryCode === ACCESSORY_LOOKUP_CATEGORIES.cost;
       const normalized = isMoney
         ? sortMoneyLabelsAsc(
-          next
-            .map((x) => String(x).replace(/\D/g, ""))
-            .filter(Boolean)
-        )
+            next
+              .map((x) => String(x).replace(/\D/g, ""))
+              .filter(Boolean)
+          )
         : next;
       setLookupsByStore((prev) => ({
         ...prev,
@@ -2930,19 +2936,19 @@ export default function Home() {
             : []),
           ...(total > 0 && chongPct >= HIGH_PCT
             ? [
-              {
-                tone: "honor" as const,
-                text: "Chồng: Vinh danh trụ cột kinh tế gia đình",
-              },
-            ]
+                {
+                  tone: "honor" as const,
+                  text: "Chồng: Vinh danh trụ cột kinh tế gia đình",
+                },
+              ]
             : []),
           ...(total > 0 && voPct >= HIGH_PCT
             ? [
-              {
-                tone: "honor" as const,
-                text: "Vợ: Vinh danh trụ cột kinh tế gia đình",
-              },
-            ]
+                {
+                  tone: "honor" as const,
+                  text: "Vợ: Vinh danh trụ cột kinh tế gia đình",
+                },
+              ]
             : []),
         ],
       };
@@ -4643,11 +4649,11 @@ export default function Home() {
       currentUser?.role === "staff"
         ? currentUser.storeId
         : formStore ||
-        (editingPhone?.storeId as Exclude<StoreId, "all"> | undefined) ||
-        (clonePhoneDraft?.storeId as Exclude<StoreId, "all"> | undefined) ||
-        (storeFilter !== "all" ? storeFilter : undefined) ||
-        currentUser?.storeId ||
-        "store-1";
+          (editingPhone?.storeId as Exclude<StoreId, "all"> | undefined) ||
+          (clonePhoneDraft?.storeId as Exclude<StoreId, "all"> | undefined) ||
+          (storeFilter !== "all" ? storeFilter : undefined) ||
+          currentUser?.storeId ||
+          "store-1";
     const isEdit = Boolean(editingPhoneId);
     const isClone = !isEdit && Boolean(clonePhoneDraft);
     const payload: PhoneItem = {
@@ -4721,11 +4727,11 @@ export default function Home() {
       currentUser?.role === "staff"
         ? currentUser.storeId
         : formStore ||
-        (editingAccessory?.storeId as Exclude<StoreId, "all"> | undefined) ||
-        (cloneAccessoryDraft?.storeId as Exclude<StoreId, "all"> | undefined) ||
-        (storeFilter !== "all" ? storeFilter : undefined) ||
-        currentUser?.storeId ||
-        "store-1";
+          (editingAccessory?.storeId as Exclude<StoreId, "all"> | undefined) ||
+          (cloneAccessoryDraft?.storeId as Exclude<StoreId, "all"> | undefined) ||
+          (storeFilter !== "all" ? storeFilter : undefined) ||
+          currentUser?.storeId ||
+          "store-1";
     const isEdit = Boolean(editingAccessoryId);
     const isClone = !isEdit && Boolean(cloneAccessoryDraft);
     const qtyRaw = String(form.get("quantity") ?? "").trim();
@@ -4891,7 +4897,7 @@ export default function Home() {
       setViewingSaleId(mode === "view" ? sale.id : null);
       setSaleCustomerId(
         detail?.customerId ||
-        (local?.customerId && !local.customerId.startsWith("db") ? local.customerId : null)
+          (local?.customerId && !local.customerId.startsWith("db") ? local.customerId : null)
       );
       setSaleCustomerName(sale.customerName || "Khách lẻ");
       setSaleCustomerPhone(sale.customerPhone || "");
@@ -4944,29 +4950,29 @@ export default function Home() {
             .map((line, idx) =>
               line.kind === "phone"
                 ? {
-                  key: `phone-${line.phoneId || idx}-${sale.id}`,
-                  kind: "phone" as const,
-                  phoneId: line.phoneId || `legacy-phone-${idx}`,
-                  name: line.name,
-                  imei: line.imei || "",
-                  brand: line.brand,
-                  color: line.color,
-                  storage: line.storage,
-                  condition: line.condition,
-                  unitPrice: line.unitPrice,
-                  cost: line.cost,
-                }
+                    key: `phone-${line.phoneId || idx}-${sale.id}`,
+                    kind: "phone" as const,
+                    phoneId: line.phoneId || `legacy-phone-${idx}`,
+                    name: line.name,
+                    imei: line.imei || "",
+                    brand: line.brand,
+                    color: line.color,
+                    storage: line.storage,
+                    condition: line.condition,
+                    unitPrice: line.unitPrice,
+                    cost: line.cost,
+                  }
                 : {
-                  key: `acc-${idx}-${sale.id}`,
-                  kind: "accessory" as const,
-                  name:
-                    line.category && line.category !== "Khác"
-                      ? `${line.category}: ${line.name}`
-                      : line.name,
-                  quantity: line.quantity,
-                  unitPrice: line.unitPrice,
-                  cost: line.cost || 0,
-                }
+                    key: `acc-${idx}-${sale.id}`,
+                    kind: "accessory" as const,
+                    name:
+                      line.category && line.category !== "Khác"
+                        ? `${line.category}: ${line.name}`
+                        : line.name,
+                    quantity: line.quantity,
+                    unitPrice: line.unitPrice,
+                    cost: line.cost || 0,
+                  }
             );
           setSaleCart([...paidAccAndPhones, ...giftCartLinesFromSlots(giftSlots)]);
         } else {
@@ -4977,31 +4983,31 @@ export default function Home() {
             lines.map((line, idx) =>
               line.kind === "phone"
                 ? {
-                  key: `phone-${line.phoneId || idx}-${sale.id}`,
-                  kind: "phone" as const,
-                  phoneId: line.phoneId || `legacy-phone-${idx}`,
-                  name: line.name,
-                  imei: line.imei || "",
-                  brand: line.brand,
-                  color: line.color,
-                  storage: line.storage,
-                  condition: line.condition,
-                  unitPrice: line.unitPrice,
-                  cost: line.cost,
-                }
+                    key: `phone-${line.phoneId || idx}-${sale.id}`,
+                    kind: "phone" as const,
+                    phoneId: line.phoneId || `legacy-phone-${idx}`,
+                    name: line.name,
+                    imei: line.imei || "",
+                    brand: line.brand,
+                    color: line.color,
+                    storage: line.storage,
+                    condition: line.condition,
+                    unitPrice: line.unitPrice,
+                    cost: line.cost,
+                  }
                 : {
-                  key: `acc-${idx}-${sale.id}`,
-                  kind: "accessory" as const,
-                  name:
-                    line.unitPrice === 0 && line.category === "Tặng"
-                      ? line.name
-                      : line.category && line.category !== "Khác"
-                        ? `${line.category}: ${line.name}`
-                        : line.name,
-                  quantity: line.quantity,
-                  unitPrice: line.unitPrice,
-                  cost: line.cost || 0,
-                }
+                    key: `acc-${idx}-${sale.id}`,
+                    kind: "accessory" as const,
+                    name:
+                      line.unitPrice === 0 && line.category === "Tặng"
+                        ? line.name
+                        : line.category && line.category !== "Khác"
+                          ? `${line.category}: ${line.name}`
+                          : line.name,
+                    quantity: line.quantity,
+                    unitPrice: line.unitPrice,
+                    cost: line.cost || 0,
+                  }
             )
           );
         }
@@ -5377,20 +5383,20 @@ export default function Home() {
         lines: saleCart.map((line) =>
           line.kind === "phone"
             ? {
-              itemType: "Máy" as const,
-              phoneId: line.phoneId,
-              unitPrice: line.unitPrice,
-            }
+                itemType: "Máy" as const,
+                phoneId: line.phoneId,
+                unitPrice: line.unitPrice,
+              }
             : {
-              itemType: "Phụ kiện" as const,
-              itemName:
-                line.unitPrice === 0 && !line.name.toLowerCase().startsWith("tặng")
-                  ? `Tặng: ${line.name}`
-                  : line.name,
-              quantity: line.quantity,
-              unitPrice: line.unitPrice,
-              unitCost: line.cost || 0,
-            }
+                itemType: "Phụ kiện" as const,
+                itemName:
+                  line.unitPrice === 0 && !line.name.toLowerCase().startsWith("tặng")
+                    ? `Tặng: ${line.name}`
+                    : line.name,
+                quantity: line.quantity,
+                unitPrice: line.unitPrice,
+                unitCost: line.cost || 0,
+              }
         ),
       });
 
@@ -5411,9 +5417,9 @@ export default function Home() {
           saved.cost != null
             ? saved.cost
             : Math.max(
-              0,
-              Math.round((Number(saved.amount) || 0) - (Number(saved.profit) || 0))
-            ),
+                0,
+                Math.round((Number(saved.amount) || 0) - (Number(saved.profit) || 0))
+              ),
         profit: saved.profit,
         payment: (saved.payment as PaymentMethod) || paymentValue,
         status: "Hoàn tất",
@@ -6366,10 +6372,11 @@ export default function Home() {
         {uiToast ? (
           <div
             role="status"
-            className={`fixed left-1/2 top-6 z-[80] flex w-[min(92vw,36rem)] -translate-x-1/2 items-start gap-4 rounded-2xl border px-6 py-5 shadow-[0_20px_48px_rgba(15,23,42,0.18)] ${uiToast.type === "success"
+            className={`fixed left-1/2 top-6 z-[80] flex w-[min(92vw,36rem)] -translate-x-1/2 items-start gap-4 rounded-2xl border px-6 py-5 shadow-[0_20px_48px_rgba(15,23,42,0.18)] ${
+              uiToast.type === "success"
                 ? "border-emerald-300 bg-emerald-50 text-emerald-950"
                 : "border-red-200 bg-red-50 text-danger"
-              }`}
+            }`}
           >
             {uiToast.type === "success" ? (
               <CheckCircle2 size={36} className="mt-0.5 shrink-0 text-emerald-600" />
@@ -6377,8 +6384,9 @@ export default function Home() {
               <CircleAlert size={22} className="mt-0.5 shrink-0 text-danger" />
             )}
             <div
-              className={`min-w-0 flex-1 font-black leading-snug ${uiToast.type === "success" ? "text-lg sm:text-xl" : "text-sm font-bold"
-                }`}
+              className={`min-w-0 flex-1 font-black leading-snug ${
+                uiToast.type === "success" ? "text-lg sm:text-xl" : "text-sm font-bold"
+              }`}
             >
               {uiToast.message}
             </div>
@@ -6448,10 +6456,11 @@ export default function Home() {
                     key={tab.id}
                     type="button"
                     onClick={() => setReportHubTab(tab.id)}
-                    className={`h-10 rounded-lg px-3 text-sm font-black transition sm:px-4 ${reportHubTab === tab.id
+                    className={`h-10 rounded-lg px-3 text-sm font-black transition sm:px-4 ${
+                      reportHubTab === tab.id
                         ? "bg-brand text-white shadow-sm"
                         : "bg-transparent text-slate-600 hover:bg-white hover:text-brand"
-                      }`}
+                    }`}
                   >
                     {tab.label}
                   </button>
@@ -6474,86 +6483,88 @@ export default function Home() {
               reportHubTab === "software" ||
               reportHubTab === "repair" ||
               reportHubTab === "transfer") && (
-                <div className="flex flex-col gap-2 rounded-xl border border-line bg-white p-3 shadow-sm sm:flex-row sm:flex-wrap sm:items-end sm:gap-3">
-                  <div className="flex flex-wrap gap-1 rounded-lg border border-line bg-slate-50 p-1">
-                    {(
-                      [
-                        { id: "day" as const, label: "Ngày" },
-                        { id: "month" as const, label: "Tháng" },
-                        { id: "year" as const, label: "Năm" },
-                      ] as const
-                    ).map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => setReportPeriod(p.id)}
-                        className={`h-9 rounded-md px-3 text-sm font-bold transition ${reportPeriod === p.id
-                            ? "bg-white text-brand shadow-sm ring-1 ring-brand/20"
-                            : "text-muted hover:text-ink"
-                          }`}
-                      >
-                        {p.label}
-                      </button>
-                    ))}
-                  </div>
-                  {reportPeriod === "day" ? (
-                    <label className="grid gap-0.5">
-                      <span className="text-xs font-bold text-muted">Chọn ngày</span>
-                      <input
-                        type="date"
-                        value={reportDay}
-                        onChange={(e) => setReportDay(e.target.value)}
-                        className="h-10 rounded-lg border border-line px-3 text-sm font-bold"
-                      />
-                    </label>
-                  ) : null}
-                  {reportPeriod === "month" ? (
-                    <label className="grid gap-0.5">
-                      <span className="text-xs font-bold text-muted">Chọn tháng</span>
-                      <input
-                        type="month"
-                        value={inventoryReportMonth}
-                        onChange={(e) => setInventoryReportMonth(e.target.value)}
-                        className="h-10 rounded-lg border border-line px-3 text-sm font-bold"
-                      />
-                    </label>
-                  ) : null}
-                  {reportPeriod === "year" ? (
-                    <label className="grid gap-0.5">
-                      <span className="text-xs font-bold text-muted">Chọn năm</span>
-                      <select
-                        value={reportYear}
-                        onChange={(e) => setReportYear(e.target.value)}
-                        className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold"
-                      >
-                        <option value="2024">2024</option>
-                        <option value="2025">2025</option>
-                        <option value="2026">2026</option>
-                      </select>
-                    </label>
-                  ) : null}
-                  <p className="text-xs font-semibold text-muted sm:ml-auto sm:self-center">
-                    {storeName(storeFilter)}
-                    {reportPeriod === "day"
-                      ? ` · ${reportDay}`
-                      : reportPeriod === "month"
-                        ? ` · ${inventoryReportMonth}`
-                        : ` · ${reportYear}`}
-                  </p>
+              <div className="flex flex-col gap-2 rounded-xl border border-line bg-white p-3 shadow-sm sm:flex-row sm:flex-wrap sm:items-end sm:gap-3">
+                <div className="flex flex-wrap gap-1 rounded-lg border border-line bg-slate-50 p-1">
+                  {(
+                    [
+                      { id: "day" as const, label: "Ngày" },
+                      { id: "month" as const, label: "Tháng" },
+                      { id: "year" as const, label: "Năm" },
+                    ] as const
+                  ).map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setReportPeriod(p.id)}
+                      className={`h-9 rounded-md px-3 text-sm font-bold transition ${
+                        reportPeriod === p.id
+                          ? "bg-white text-brand shadow-sm ring-1 ring-brand/20"
+                          : "text-muted hover:text-ink"
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
                 </div>
-              )}
+                {reportPeriod === "day" ? (
+                  <label className="grid gap-0.5">
+                    <span className="text-xs font-bold text-muted">Chọn ngày</span>
+                    <input
+                      type="date"
+                      value={reportDay}
+                      onChange={(e) => setReportDay(e.target.value)}
+                      className="h-10 rounded-lg border border-line px-3 text-sm font-bold"
+                    />
+                  </label>
+                ) : null}
+                {reportPeriod === "month" ? (
+                  <label className="grid gap-0.5">
+                    <span className="text-xs font-bold text-muted">Chọn tháng</span>
+                    <input
+                      type="month"
+                      value={inventoryReportMonth}
+                      onChange={(e) => setInventoryReportMonth(e.target.value)}
+                      className="h-10 rounded-lg border border-line px-3 text-sm font-bold"
+                    />
+                  </label>
+                ) : null}
+                {reportPeriod === "year" ? (
+                  <label className="grid gap-0.5">
+                    <span className="text-xs font-bold text-muted">Chọn năm</span>
+                    <select
+                      value={reportYear}
+                      onChange={(e) => setReportYear(e.target.value)}
+                      className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold"
+                    >
+                      <option value="2024">2024</option>
+                      <option value="2025">2025</option>
+                      <option value="2026">2026</option>
+                    </select>
+                  </label>
+                ) : null}
+                <p className="text-xs font-semibold text-muted sm:ml-auto sm:self-center">
+                  {storeName(storeFilter)}
+                  {reportPeriod === "day"
+                    ? ` · ${reportDay}`
+                    : reportPeriod === "month"
+                      ? ` · ${inventoryReportMonth}`
+                      : ` · ${reportYear}`}
+                </p>
+              </div>
+            )}
 
             {reportHubTab === "overview" && (
               <div className="grid gap-4">
                 <div className="rounded-lg border border-brand/30 bg-brand-soft/60 p-3 text-sm font-semibold text-ink">
                   {dashboardSummaryLoading
                     ? "Đang đồng bộ báo cáo từ DB…"
-                    : `Tổng quan · ${storeName(storeFilter)} · ${reportPeriod === "day"
-                      ? reportDay
-                      : reportPeriod === "month"
-                        ? inventoryReportMonth
-                        : reportYear
-                    }. Kho = snapshot tồn; Bán/Bán Gà/PM/Sửa = theo kỳ đã chọn.`}
+                    : `Tổng quan · ${storeName(storeFilter)} · ${
+                        reportPeriod === "day"
+                          ? reportDay
+                          : reportPeriod === "month"
+                            ? inventoryReportMonth
+                            : reportYear
+                      }. Kho = snapshot tồn; Bán/Bán Gà/PM/Sửa = theo kỳ đã chọn.`}
                 </div>
 
                 {/* Biểu đồ cột: Chồng (PM) vs Vợ (Sửa + Bán + Gà) + cảnh báo / vinh danh */}
@@ -6736,10 +6747,11 @@ export default function Home() {
                                   {chart.pack.banners.map((b) => (
                                     <div
                                       key={b.text}
-                                      className={`rounded-lg px-3 py-2 text-sm font-bold ${b.tone === "honor"
+                                      className={`rounded-lg px-3 py-2 text-sm font-bold ${
+                                        b.tone === "honor"
                                           ? "border border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50 text-amber-900"
                                           : "border border-orange-200 bg-orange-50 text-orange-900"
-                                        }`}
+                                      }`}
                                     >
                                       {b.tone === "honor" ? "🏆 " : "⚠️ "}
                                       {b.text}
@@ -6868,8 +6880,8 @@ export default function Home() {
                     </div>
                   </div>
                   {supabaseReportMonthly &&
-                    inventoryMonthlyReport.revenue === 0 &&
-                    inventoryMonthlyReport.soldPhones === 0 ? (
+                  inventoryMonthlyReport.revenue === 0 &&
+                  inventoryMonthlyReport.soldPhones === 0 ? (
                     <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">
                       Chưa có phiếu bán trong tháng {inventoryReportMonth}. Vào{" "}
                       <strong>Bán hàng</strong> tạo phiếu rồi quay lại.
@@ -7391,10 +7403,11 @@ export default function Home() {
                               </td>
                               <td className="whitespace-nowrap px-3 py-2.5">
                                 <span
-                                  className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${row.paymentStatus === "Đã thanh toán"
+                                  className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${
+                                    row.paymentStatus === "Đã thanh toán"
                                       ? "bg-emerald-50 text-emerald-700"
                                       : "bg-red-50 text-red-600"
-                                    }`}
+                                  }`}
                                 >
                                   {row.paymentStatus === "Đã thanh toán" ? "Đã TT" : "Nợ"}
                                 </span>
@@ -7995,10 +8008,11 @@ export default function Home() {
                               </td>
                               <td className="px-4 py-3">
                                 <span
-                                  className={`mr-2 inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${row.source === "sale"
+                                  className={`mr-2 inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${
+                                    row.source === "sale"
                                       ? "bg-sky-50 text-sky-800"
                                       : "bg-amber-50 text-amber-900"
-                                    }`}
+                                  }`}
                                 >
                                   {row.sourceLabel}
                                 </span>
@@ -8019,10 +8033,7 @@ export default function Home() {
           </div>
         )}
 
-        {(activePage === "parts" || activePage === "inbound") && (() => {
-          const isLinhKienPage = activePage === "inbound";
-          const pageHeaderTitle = isLinhKienPage ? "Báo giá" : "Nhập hàng";
-          const PageHeaderIcon = isLinhKienPage ? Cpu : PackagePlus;
+        {activePage === "parts" && (() => {
           const storeIdForForm = resolvePartsStoreId();
           const q = partSearch.trim().toLowerCase();
           const baseByStore = partInbounds.filter(
@@ -8043,10 +8054,10 @@ export default function Home() {
           );
           const effectiveTypeFilter =
             partTypeFilter !== "all" &&
-              !typeFilterOptions.some(
-                (t) =>
-                  t.trim().toLowerCase() === partTypeFilter.trim().toLowerCase()
-              )
+            !typeFilterOptions.some(
+              (t) =>
+                t.trim().toLowerCase() === partTypeFilter.trim().toLowerCase()
+            )
               ? "all"
               : partTypeFilter;
           const list = afterDistributor
@@ -8539,88 +8550,89 @@ export default function Home() {
                         pagedList.map((row) => {
                           const checked = selectedPartIds.includes(row.id);
                           return (
-                            <tr
-                              key={row.id}
-                              className={`border-b border-line/80 last:border-0 hover:bg-slate-50/80 ${editingPartId === row.id
-                                  ? "bg-brand-soft/40"
-                                  : checked
-                                    ? "bg-amber-50/70"
-                                    : ""
-                                }`}
-                            >
-                              <td className="px-2 py-2.5 text-center">
-                                <input
-                                  type="checkbox"
-                                  className="h-4 w-4 cursor-pointer accent-brand"
-                                  checked={checked}
+                          <tr
+                            key={row.id}
+                            className={`border-b border-line/80 last:border-0 hover:bg-slate-50/80 ${
+                              editingPartId === row.id
+                                ? "bg-brand-soft/40"
+                                : checked
+                                  ? "bg-amber-50/70"
+                                  : ""
+                            }`}
+                          >
+                            <td className="px-2 py-2.5 text-center">
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 cursor-pointer accent-brand"
+                                checked={checked}
+                                disabled={partSaving}
+                                title="Chọn để xóa"
+                                onChange={(e) => {
+                                  const on = e.target.checked;
+                                  setSelectedPartIds((prev) =>
+                                    on
+                                      ? prev.includes(row.id)
+                                        ? prev
+                                        : [...prev, row.id]
+                                      : prev.filter((x) => x !== row.id)
+                                  );
+                                }}
+                              />
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">
+                              {formatDateVi(row.createdAt)}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2.5 text-xs font-bold text-muted">
+                              {storeName(row.storeId)}
+                            </td>
+                            <td className="px-3 py-2.5 font-bold text-ink">{row.distributor}</td>
+                            <td className="px-3 py-2.5">
+                              <span className="inline-flex rounded-full bg-brand-soft px-2 py-0.5 text-xs font-bold text-brand-dark">
+                                {row.partType}
+                              </span>
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">
+                              {row.brand?.trim() ? row.brand : "—"}
+                            </td>
+                            <td className="px-3 py-2.5 font-semibold text-ink">{row.partName}</td>
+                            <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">
+                              {row.color?.trim() ? row.color : "—"}
+                            </td>
+                            <td className="whitespace-nowrap px-3 py-2.5 text-right font-black text-ink">
+                              {row.quantity.toLocaleString("vi-VN")}
+                            </td>
+                            <td className="px-3 py-2.5">
+                              <div className="flex flex-nowrap items-center justify-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => openEditPartInboundForm(row.id)}
+                                  title="Sửa"
                                   disabled={partSaving}
-                                  title="Chọn để xóa"
-                                  onChange={(e) => {
-                                    const on = e.target.checked;
-                                    setSelectedPartIds((prev) =>
-                                      on
-                                        ? prev.includes(row.id)
-                                          ? prev
-                                          : [...prev, row.id]
-                                        : prev.filter((x) => x !== row.id)
-                                    );
-                                  }}
-                                />
-                              </td>
-                              <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">
-                                {formatDateVi(row.createdAt)}
-                              </td>
-                              <td className="whitespace-nowrap px-3 py-2.5 text-xs font-bold text-muted">
-                                {storeName(row.storeId)}
-                              </td>
-                              <td className="px-3 py-2.5 font-bold text-ink">{row.distributor}</td>
-                              <td className="px-3 py-2.5">
-                                <span className="inline-flex rounded-full bg-brand-soft px-2 py-0.5 text-xs font-bold text-brand-dark">
-                                  {row.partType}
-                                </span>
-                              </td>
-                              <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">
-                                {row.brand?.trim() ? row.brand : "—"}
-                              </td>
-                              <td className="px-3 py-2.5 font-semibold text-ink">{row.partName}</td>
-                              <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">
-                                {row.color?.trim() ? row.color : "—"}
-                              </td>
-                              <td className="whitespace-nowrap px-3 py-2.5 text-right font-black text-ink">
-                                {row.quantity.toLocaleString("vi-VN")}
-                              </td>
-                              <td className="px-3 py-2.5">
-                                <div className="flex flex-nowrap items-center justify-center gap-1.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => openEditPartInboundForm(row.id)}
-                                    title="Sửa"
-                                    disabled={partSaving}
-                                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20 disabled:opacity-45"
-                                  >
-                                    <Edit3 size={16} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => openClonePartInboundForm(row.id)}
-                                    title="Nhân bản"
-                                    disabled={partSaving}
-                                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100 disabled:opacity-45"
-                                  >
-                                    <CopyPlus size={16} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => void deletePartInbound(row.id)}
-                                    title="Xóa"
-                                    disabled={partSaving}
-                                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100 disabled:opacity-45"
-                                  >
-                                    <Trash2 size={16} />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
+                                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20 disabled:opacity-45"
+                                >
+                                  <Edit3 size={16} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openClonePartInboundForm(row.id)}
+                                  title="Nhân bản"
+                                  disabled={partSaving}
+                                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100 disabled:opacity-45"
+                                >
+                                  <CopyPlus size={16} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void deletePartInbound(row.id)}
+                                  title="Xóa"
+                                  disabled={partSaving}
+                                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100 disabled:opacity-45"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
                           );
                         })
                       )}
@@ -8705,7 +8717,18 @@ export default function Home() {
           );
         })()}
 
-
+        {activePage === "inbound" && currentUser && (
+          <PartsInventoryScreen
+            storeFilter={storeFilter}
+            writeStoreId={
+              storeFilter !== "all" ? storeFilter : currentUser.storeId || "store-1"
+            }
+            role={currentUser.role}
+            actorUsername={currentUser.username}
+            isStatsHidden={isStatsHidden}
+            onNotify={(type, message) => showUiToast(type, message)}
+          />
+        )}
 
         {activePage === "inventory" && (
           <section className="grid gap-4">
@@ -8797,13 +8820,13 @@ export default function Home() {
                         {isStatsHidden
                           ? "***"
                           : sales
-                            .filter(
-                              (s) =>
-                                s.itemType === "Phụ kiện" &&
-                                s.status === "Hoàn tất" &&
-                                (storeFilter === "all" || s.storeId === storeFilter)
-                            )
-                            .reduce((sum, s) => sum + s.quantity, 0)}
+                              .filter(
+                                (s) =>
+                                  s.itemType === "Phụ kiện" &&
+                                  s.status === "Hoàn tất" &&
+                                  (storeFilter === "all" || s.storeId === storeFilter)
+                              )
+                              .reduce((sum, s) => sum + s.quantity, 0)}
                       </strong>
                     </div>
                     <input
@@ -8968,8 +8991,8 @@ export default function Home() {
                         {isStatsHidden
                           ? "***"
                           : phones.filter(
-                            (p) => p.status === "Đã bán" && (storeFilter === "all" || p.storeId === storeFilter)
-                          ).length}
+                              (p) => p.status === "Đã bán" && (storeFilter === "all" || p.storeId === storeFilter)
+                            ).length}
                       </strong>
                     </div>
                     <div className="flex items-center justify-between gap-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2.5">
@@ -8978,8 +9001,8 @@ export default function Home() {
                         {isStatsHidden
                           ? "***"
                           : phones.filter(
-                            (p) => p.status === "Còn hàng" && (storeFilter === "all" || p.storeId === storeFilter)
-                          ).length}
+                              (p) => p.status === "Còn hàng" && (storeFilter === "all" || p.storeId === storeFilter)
+                            ).length}
                       </strong>
                     </div>
                     <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
@@ -8988,175 +9011,175 @@ export default function Home() {
                         {isStatsHidden
                           ? "***"
                           : phones.filter(
-                            (p) => p.status === "Chưa xử lý" && (storeFilter === "all" || p.storeId === storeFilter)
-                          ).length}
+                              (p) => p.status === "Chưa xử lý" && (storeFilter === "all" || p.storeId === storeFilter)
+                            ).length}
                       </strong>
                     </div>
                   </aside>
                 ) : null}
 
                 <div className="min-w-0">
-                  {inventoryTab === "phones" ? (
-                    <DataTable
-                      compact
-                      headers={["Tên máy", "Dung lượng", "IMEI", "Giá bán", "Màu sắc", "Dung lượng pin", "Pin", "Giá nhập", "Thao tác"]}
-                      rows={paginatedPhones.map((item) => [
-                        <div key={`name-${item.id}`} className="flex flex-col items-center gap-1.5">
-                          <div className="flex items-center justify-center gap-2 text-lg font-black text-brand">{item.name}</div>
-                          <span className="text-sm font-semibold text-slate-500">{item.brand} • <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-xs font-bold text-slate-600">{item.condition}</span></span>
-                        </div>,
-                        <span className="text-base font-bold text-slate-800" key={`storage-${item.id}`}>{item.storage}</span>,
-                        <span className="font-mono text-xl font-black tracking-wide text-red-600" key={`imei-${item.id}`}>{item.imei.slice(-5)}</span>,
-                        <span className="text-lg font-black text-emerald-600" key={`price-${item.id}`}>{formatMoney(item.expectedPrice)}</span>,
-                        <div key={`color-${item.id}`} className="flex items-center justify-center gap-2">
-                          <ColorDot color={item.color} />
-                          <span className="text-base font-medium text-slate-700">{item.color}</span>
-                        </div>,
-                        <span className="text-base font-bold text-slate-700" key={`batcap-${item.id}`}>{item.batteryCapacity || "—"}</span>,
-                        <div className="flex items-center justify-center gap-1.5 text-base font-bold text-amber-600" key={`bat-${item.id}`}>{item.batteryCondition}</div>,
-                        <span
-                          className="text-[11px] font-semibold leading-tight text-slate-500"
-                          key={`cost-${item.id}`}
-                          title="Giá nhập"
-                        >
-                          {formatMoney(item.cost)}
-                        </span>,
-                        <div key={item.id} className="flex flex-nowrap justify-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setViewingPhoneId(item.id)}
-                            title="Chi tiết"
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-900"
-                          >
-                            <Eye size={18} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openPhoneEditModal(item.id)}
-                            title="Sửa"
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20"
-                          >
-                            <Edit3 size={18} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openPhoneCloneModal(item.id)}
-                            title="Nhân bản thêm mới"
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100"
-                          >
-                            <CopyPlus size={18} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              item.status === "Đã bán"
-                                ? void deleteSoldPhoneItem(item.id)
-                                : openUnsoldPhoneHardDelete(item.id)
-                            }
-                            title={item.status === "Đã bán" ? "Xóa máy (xóa hẳn)" : "Xóa cứng máy chưa bán"}
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        </div>,
-                      ])}
-                    />
-                  ) : (
-                    <DataTable
-                      compact
-                      headers={[
-                        "Mã",
-                        "Danh mục",
-                        "Hãng",
-                        "Tên phụ kiện",
-                        "SL",
-                        "Giá bán",
-                        "Giá nhập",
-                        "Lợi nhuận",
-                        "Thao tác",
-                      ]}
-                      rows={paginatedAccessories.map((item) => [
-                        <span className="font-mono text-sm font-medium text-slate-500" key={`code-${item.id}`}>{item.code}</span>,
-                        <span className="text-sm font-semibold text-slate-700" key={`cat-${item.id}`}>{item.category || "—"}</span>,
-                        <span className="text-sm font-semibold text-slate-700" key={`brand-${item.id}`}>{item.brand || "—"}</span>,
-                        <div key={`name-${item.id}`} className="flex flex-col items-center gap-0.5">
-                          <span className="text-lg font-black text-brand">{item.name}</span>
-                          {item.note ? (
-                            <span className="max-w-[12rem] truncate text-xs font-semibold text-muted" title={item.note}>
-                              {item.note}
-                            </span>
-                          ) : null}
-                        </div>,
-                        <span className="text-base font-bold text-slate-800" key={`qty-${item.id}`}>{item.quantity}</span>,
-                        <span className="text-lg font-black text-emerald-600" key={`price-${item.id}`}>{formatMoney(item.price)}</span>,
-                        <span className="text-base font-medium text-slate-600" key={`cost-${item.id}`}>
-                          {isAccessorySensitiveHidden ? "***" : formatMoney(item.cost)}
-                        </span>,
-                        <span className="text-base font-bold text-amber-600" key={`profit-${item.id}`}>
-                          {isAccessorySensitiveHidden ? "***" : formatMoney(item.price - item.cost)}
-                        </span>,
-                        <div key={item.id} className="flex flex-nowrap justify-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setViewingAccessoryId(item.id)}
-                            title="Chi tiết"
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-900"
-                          >
-                            <Eye size={18} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openAccessoryEditModal(item.id)}
-                            title="Sửa"
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20"
-                          >
-                            <Edit3 size={18} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openAccessoryCloneModal(item.id)}
-                            title="Nhân bản thêm mới"
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100"
-                          >
-                            <CopyPlus size={18} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void deleteAccessoryItem(item.id)}
-                            title="Xóa phụ kiện"
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        </div>,
-                      ])}
-                    />
-                  )}
+              {inventoryTab === "phones" ? (
+                <DataTable
+                  compact
+                  headers={["Tên máy", "Dung lượng", "IMEI", "Giá bán", "Màu sắc", "Dung lượng pin", "Pin", "Giá nhập", "Thao tác"]}
+                  rows={paginatedPhones.map((item) => [
+                    <div key={`name-${item.id}`} className="flex flex-col items-center gap-1.5">
+                      <div className="flex items-center justify-center gap-2 text-lg font-black text-brand">{item.name}</div>
+                      <span className="text-sm font-semibold text-slate-500">{item.brand} • <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-xs font-bold text-slate-600">{item.condition}</span></span>
+                    </div>,
+                    <span className="text-base font-bold text-slate-800" key={`storage-${item.id}`}>{item.storage}</span>,
+                    <span className="font-mono text-xl font-black tracking-wide text-red-600" key={`imei-${item.id}`}>{item.imei.slice(-5)}</span>,
+                    <span className="text-lg font-black text-emerald-600" key={`price-${item.id}`}>{formatMoney(item.expectedPrice)}</span>,
+                    <div key={`color-${item.id}`} className="flex items-center justify-center gap-2">
+                      <ColorDot color={item.color} />
+                      <span className="text-base font-medium text-slate-700">{item.color}</span>
+                    </div>,
+                    <span className="text-base font-bold text-slate-700" key={`batcap-${item.id}`}>{item.batteryCapacity || "—"}</span>,
+                    <div className="flex items-center justify-center gap-1.5 text-base font-bold text-amber-600" key={`bat-${item.id}`}>{item.batteryCondition}</div>,
+                    <span
+                      className="text-[11px] font-semibold leading-tight text-slate-500"
+                      key={`cost-${item.id}`}
+                      title="Giá nhập"
+                    >
+                      {formatMoney(item.cost)}
+                    </span>,
+                    <div key={item.id} className="flex flex-nowrap justify-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setViewingPhoneId(item.id)}
+                        title="Chi tiết"
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-900"
+                      >
+                        <Eye size={18} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openPhoneEditModal(item.id)}
+                        title="Sửa"
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20"
+                      >
+                        <Edit3 size={18} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openPhoneCloneModal(item.id)}
+                        title="Nhân bản thêm mới"
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100"
+                      >
+                        <CopyPlus size={18} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          item.status === "Đã bán"
+                            ? void deleteSoldPhoneItem(item.id)
+                            : openUnsoldPhoneHardDelete(item.id)
+                        }
+                        title={item.status === "Đã bán" ? "Xóa máy (xóa hẳn)" : "Xóa cứng máy chưa bán"}
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>,
+                  ])}
+                />
+              ) : (
+                <DataTable
+                  compact
+                  headers={[
+                    "Mã",
+                    "Danh mục",
+                    "Hãng",
+                    "Tên phụ kiện",
+                    "SL",
+                    "Giá bán",
+                    "Giá nhập",
+                    "Lợi nhuận",
+                    "Thao tác",
+                  ]}
+                  rows={paginatedAccessories.map((item) => [
+                    <span className="font-mono text-sm font-medium text-slate-500" key={`code-${item.id}`}>{item.code}</span>,
+                    <span className="text-sm font-semibold text-slate-700" key={`cat-${item.id}`}>{item.category || "—"}</span>,
+                    <span className="text-sm font-semibold text-slate-700" key={`brand-${item.id}`}>{item.brand || "—"}</span>,
+                    <div key={`name-${item.id}`} className="flex flex-col items-center gap-0.5">
+                      <span className="text-lg font-black text-brand">{item.name}</span>
+                      {item.note ? (
+                        <span className="max-w-[12rem] truncate text-xs font-semibold text-muted" title={item.note}>
+                          {item.note}
+                        </span>
+                      ) : null}
+                    </div>,
+                    <span className="text-base font-bold text-slate-800" key={`qty-${item.id}`}>{item.quantity}</span>,
+                    <span className="text-lg font-black text-emerald-600" key={`price-${item.id}`}>{formatMoney(item.price)}</span>,
+                    <span className="text-base font-medium text-slate-600" key={`cost-${item.id}`}>
+                      {isAccessorySensitiveHidden ? "***" : formatMoney(item.cost)}
+                    </span>,
+                    <span className="text-base font-bold text-amber-600" key={`profit-${item.id}`}>
+                      {isAccessorySensitiveHidden ? "***" : formatMoney(item.price - item.cost)}
+                    </span>,
+                    <div key={item.id} className="flex flex-nowrap justify-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setViewingAccessoryId(item.id)}
+                        title="Chi tiết"
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-900"
+                      >
+                        <Eye size={18} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openAccessoryEditModal(item.id)}
+                        title="Sửa"
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20"
+                      >
+                        <Edit3 size={18} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openAccessoryCloneModal(item.id)}
+                        title="Nhân bản thêm mới"
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100"
+                      >
+                        <CopyPlus size={18} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void deleteAccessoryItem(item.id)}
+                        title="Xóa phụ kiện"
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>,
+                  ])}
+                />
+              )}
 
-                  <div className="mt-4 flex flex-col gap-3 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
-                    <span className="text-sm font-semibold text-muted">
-                      Hiển thị {inventoryRowsCount === 0 ? 0 : inventoryStart + 1}-{Math.min(inventoryStart + inventoryPageSize, inventoryRowsCount)} / {inventoryRowsCount}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        disabled={safeInventoryPage === 1}
-                        onClick={() => setInventoryPage((page) => Math.max(1, page - 1))}
-                        className="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-45"
-                      >
-                        <ChevronLeft size={16} />
-                        Trước
-                      </button>
-                      <span className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-black text-slate-700">{safeInventoryPage}</span>
-                      <button
-                        disabled={safeInventoryPage === inventoryTotalPages}
-                        onClick={() => setInventoryPage((page) => Math.min(inventoryTotalPages, page + 1))}
-                        className="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-45"
-                      >
-                        Sau
-                        <ChevronRight size={16} />
-                      </button>
-                    </div>
-                  </div>
+              <div className="mt-4 flex flex-col gap-3 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <span className="text-sm font-semibold text-muted">
+                  Hiển thị {inventoryRowsCount === 0 ? 0 : inventoryStart + 1}-{Math.min(inventoryStart + inventoryPageSize, inventoryRowsCount)} / {inventoryRowsCount}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    disabled={safeInventoryPage === 1}
+                    onClick={() => setInventoryPage((page) => Math.max(1, page - 1))}
+                    className="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <ChevronLeft size={16} />
+                    Trước
+                  </button>
+                  <span className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-black text-slate-700">{safeInventoryPage}</span>
+                  <button
+                    disabled={safeInventoryPage === inventoryTotalPages}
+                    onClick={() => setInventoryPage((page) => Math.min(inventoryTotalPages, page + 1))}
+                    className="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    Sau
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              </div>
                 </div>
               </div>
             </section>
@@ -9164,8 +9187,9 @@ export default function Home() {
             {isInventoryModalOpen && (
               <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-md">
                 <section
-                  className={`relative max-h-[92vh] w-full overflow-auto rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl ${inventoryTab === "accessories" ? "max-w-[768px]" : "max-w-[860px]"
-                    }`}
+                  className={`relative max-h-[92vh] w-full overflow-auto rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl ${
+                    inventoryTab === "accessories" ? "max-w-[768px]" : "max-w-[860px]"
+                  }`}
                 >
                   {inventorySaving ? (
                     <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 rounded-2xl bg-white/55 backdrop-blur-sm">
@@ -9174,13 +9198,15 @@ export default function Home() {
                     </div>
                   ) : null}
                   <div
-                    className={`sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-200/60 bg-white/80 backdrop-blur-md ${inventoryTab === "accessories" ? "p-3 sm:p-4" : "items-start gap-4 p-5"
-                      }`}
+                    className={`sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-200/60 bg-white/80 backdrop-blur-md ${
+                      inventoryTab === "accessories" ? "p-3 sm:p-4" : "items-start gap-4 p-5"
+                    }`}
                   >
                     <div className="min-w-0 flex-1">
                       <h2
-                        className={`font-black text-slate-800 ${inventoryTab === "accessories" ? "text-lg sm:text-xl" : "text-2xl"
-                          }`}
+                        className={`font-black text-slate-800 ${
+                          inventoryTab === "accessories" ? "text-lg sm:text-xl" : "text-2xl"
+                        }`}
                       >
                         {inventoryTab === "phones"
                           ? editingPhone
@@ -9244,8 +9270,9 @@ export default function Home() {
                     </button>
                   </div>
                   <div
-                    className={`${inventoryTab === "accessories" ? "p-3 sm:p-4" : "p-5"} ${inventorySaving ? "pointer-events-none select-none" : ""
-                      }`}
+                    className={`${inventoryTab === "accessories" ? "p-3 sm:p-4" : "p-5"} ${
+                      inventorySaving ? "pointer-events-none select-none" : ""
+                    }`}
                   >
                     {inventoryBackendError ? (
                       <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-danger">
@@ -9825,20 +9852,22 @@ export default function Home() {
             <button
               type="button"
               onClick={() => setSoftwareHubTab("repair")}
-              className={`inline-flex h-10 items-center rounded-lg px-4 text-sm font-black transition ${softwareHubTab === "repair"
+              className={`inline-flex h-10 items-center rounded-lg px-4 text-sm font-black transition ${
+                softwareHubTab === "repair"
                   ? "bg-brand text-white shadow-sm"
                   : "bg-transparent text-muted hover:bg-slate-50 hover:text-ink"
-                }`}
+              }`}
             >
               Sửa chữa
             </button>
             <button
               type="button"
               onClick={() => setSoftwareHubTab("ban-ga")}
-              className={`inline-flex h-10 items-center rounded-lg px-4 text-sm font-black transition ${softwareHubTab === "ban-ga"
+              className={`inline-flex h-10 items-center rounded-lg px-4 text-sm font-black transition ${
+                softwareHubTab === "ban-ga"
                   ? "bg-brand text-white shadow-sm"
                   : "bg-transparent text-muted hover:bg-slate-50 hover:text-ink"
-                }`}
+              }`}
             >
               Bán Gà
             </button>
@@ -10001,9 +10030,9 @@ export default function Home() {
                       item.cost != null
                         ? item.cost
                         : Math.max(
-                          0,
-                          Math.round((Number(item.amount) || 0) - (Number(item.profit) || 0))
-                        );
+                            0,
+                            Math.round((Number(item.amount) || 0) - (Number(item.profit) || 0))
+                          );
                     return [
                       item.createdAt,
                       <span key={`c-${item.id}`} className="font-bold text-brand whitespace-nowrap">
@@ -10189,10 +10218,11 @@ export default function Home() {
                             }
                             setSaleModalTab("accessory");
                           }}
-                          className={`inline-flex h-11 items-center justify-center gap-2 rounded-xl text-sm font-black shadow-sm ring-1 transition ${saleModalTab === "accessory"
+                          className={`inline-flex h-11 items-center justify-center gap-2 rounded-xl text-sm font-black shadow-sm ring-1 transition ${
+                            saleModalTab === "accessory"
                               ? "bg-amber-500 text-white ring-amber-400 hover:bg-amber-600"
                               : "bg-white text-amber-800 ring-amber-200 hover:bg-amber-50"
-                            }`}
+                          }`}
                         >
                           <PackagePlus size={17} />
                           Bán Phụ Kiện
@@ -10204,10 +10234,11 @@ export default function Home() {
                             // Vào tab Máy: thu gọn (bấm 1 nút mới mở cả 2 cụm)
                             setSalePhoneDetailsOpen(false);
                           }}
-                          className={`inline-flex h-11 items-center justify-center gap-2 rounded-xl text-sm font-black shadow-sm ring-1 transition ${saleModalTab === "phone"
+                          className={`inline-flex h-11 items-center justify-center gap-2 rounded-xl text-sm font-black shadow-sm ring-1 transition ${
+                            saleModalTab === "phone"
                               ? "bg-indigo-600 text-white ring-indigo-400 hover:bg-indigo-700"
                               : "bg-white text-indigo-700 ring-indigo-200 hover:bg-indigo-50"
-                            }`}
+                          }`}
                         >
                           <Smartphone size={17} />
                           Bán Máy
@@ -10225,10 +10256,11 @@ export default function Home() {
                       <button
                         type="button"
                         onClick={() => setSalePhoneDetailsOpen((v) => !v)}
-                        className={`inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border px-3 text-sm font-black transition ${salePhoneDetailsOpen
+                        className={`inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border px-3 text-sm font-black transition ${
+                          salePhoneDetailsOpen
                             ? "border-indigo-300 bg-indigo-50 text-indigo-800"
                             : "border-line bg-white text-slate-700 hover:bg-slate-50"
-                          }`}
+                        }`}
                       >
                         {salePhoneDetailsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                         Thông tin bán hàng & khách hàng
@@ -10247,105 +10279,108 @@ export default function Home() {
                     {(isSaleReadOnly ||
                       saleModalTab === "accessory" ||
                       salePhoneDetailsOpen) && (
-                        <div className="grid gap-2">
-                          <div className="grid gap-2 sm:grid-cols-2">
-                            <label className="grid gap-0.5">
-                              <span className="text-xs font-bold text-slate-700">Cửa hàng</span>
-                              {currentUser?.role === "staff" || isSaleReadOnly ? (
-                                <>
-                                  <input type="hidden" value={saleStoreId} readOnly />
-                                  <div className="flex h-9 items-center rounded-md border border-line bg-slate-50 px-2.5 text-sm font-bold text-ink">
-                                    {storeName(saleStoreId)}
-                                  </div>
-                                </>
-                              ) : (
-                                <select
-                                  value={saleStoreId}
-                                  onChange={(e) => {
-                                    const next = e.target.value as Exclude<StoreId, "all">;
-                                    setSaleStoreId(next);
-                                    setSaleCart((prev) => {
-                                      const kept = prev.filter((l) => {
-                                        if (l.kind !== "phone") return true;
-                                        const ph = phones.find((p) => p.id === l.phoneId);
-                                        return ph?.storeId === next;
-                                      });
-                                      const keptKeys = new Set(kept.map((l) => l.key));
-                                      setSaleEditablePhonePriceKeys((keys) => keys.filter((key) => keptKeys.has(key)));
-                                      if (salePhonePriceSavingKey && !keptKeys.has(salePhonePriceSavingKey)) {
-                                        setSalePhonePriceSavingKey(null);
-                                      }
-                                      return kept;
-                                    });
-                                  }}
-                                  className="h-9 rounded-md border border-line bg-white px-2.5 text-sm font-semibold"
-                                >
-                                  {stores.map((s) => (
-                                    <option key={s.id} value={s.id}>
-                                      {s.name}
-                                    </option>
-                                  ))}
-                                </select>
-                              )}
-                            </label>
-                            <label className="grid gap-0.5">
-                              <span className="text-xs font-bold text-slate-700">
-                                Ngày bán {!isSaleReadOnly ? <span className="text-red-500">*</span> : null}
-                              </span>
-                              <input
-                                type="datetime-local"
-                                required={!isSaleReadOnly && (saleModalTab === "accessory" || salePhoneDetailsOpen)}
-                                value={saleSoldAt}
-                                onChange={(e) => setSaleSoldAt(e.target.value)}
-                                readOnly={isSaleReadOnly}
-                                disabled={isSaleReadOnly}
-                                className={`h-9 rounded-md border border-line px-2 text-sm font-semibold outline-none focus:border-brand ${isSaleReadOnly ? "cursor-default bg-slate-50 text-slate-700" : "bg-white"
-                                  }`}
-                              />
-                            </label>
-                          </div>
-                          <div className="grid gap-2 sm:grid-cols-2">
-                            <label className="grid gap-0.5">
-                              <span className="text-xs font-bold text-slate-700">
-                                Hình thức thanh toán {!isSaleReadOnly ? <span className="text-red-500">*</span> : null}
-                              </span>
-                              <select
-                                required={!isSaleReadOnly && (saleModalTab === "accessory" || salePhoneDetailsOpen)}
-                                value={salePayMethod}
-                                onChange={(e) => setSalePayMethod(e.target.value as SalePayMethod)}
-                                disabled={isSaleReadOnly}
-                                className={`h-9 rounded-md border border-line px-2.5 text-sm font-semibold ${isSaleReadOnly ? "cursor-default bg-slate-50 text-slate-700" : "bg-white"
-                                  }`}
-                              >
-                                {SALE_PAY_METHOD_OPTIONS.map((p) => (
-                                  <option key={p} value={p}>
-                                    {p}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                            <label className="grid gap-0.5">
-                              <span className="text-xs font-bold text-slate-700">
-                                Trạng thái thanh toán {!isSaleReadOnly ? <span className="text-red-500">*</span> : null}
-                              </span>
-                              <select
-                                required={!isSaleReadOnly && (saleModalTab === "accessory" || salePhoneDetailsOpen)}
-                                value={salePayStatus}
-                                onChange={(e) => setSalePayStatus(e.target.value as SalePayStatus)}
-                                disabled={isSaleReadOnly}
-                                className={`h-9 rounded-md border border-line px-2.5 text-sm font-semibold ${isSaleReadOnly ? "cursor-default bg-slate-50 text-slate-700" : "bg-white"
-                                  }`}
-                              >
-                                {SALE_PAY_STATUS_OPTIONS.map((p) => (
-                                  <option key={p} value={p}>
-                                    {p}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                          </div>
-                        </div>
-                      )}
+                    <div className="grid gap-2">
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <label className="grid gap-0.5">
+                          <span className="text-xs font-bold text-slate-700">Cửa hàng</span>
+                          {currentUser?.role === "staff" || isSaleReadOnly ? (
+                            <>
+                              <input type="hidden" value={saleStoreId} readOnly />
+                              <div className="flex h-9 items-center rounded-md border border-line bg-slate-50 px-2.5 text-sm font-bold text-ink">
+                                {storeName(saleStoreId)}
+                              </div>
+                            </>
+                          ) : (
+                            <select
+                              value={saleStoreId}
+                              onChange={(e) => {
+                                const next = e.target.value as Exclude<StoreId, "all">;
+                                setSaleStoreId(next);
+                                setSaleCart((prev) => {
+                                  const kept = prev.filter((l) => {
+                                    if (l.kind !== "phone") return true;
+                                    const ph = phones.find((p) => p.id === l.phoneId);
+                                    return ph?.storeId === next;
+                                  });
+                                  const keptKeys = new Set(kept.map((l) => l.key));
+                                  setSaleEditablePhonePriceKeys((keys) => keys.filter((key) => keptKeys.has(key)));
+                                  if (salePhonePriceSavingKey && !keptKeys.has(salePhonePriceSavingKey)) {
+                                    setSalePhonePriceSavingKey(null);
+                                  }
+                                  return kept;
+                                });
+                              }}
+                              className="h-9 rounded-md border border-line bg-white px-2.5 text-sm font-semibold"
+                            >
+                              {stores.map((s) => (
+                                <option key={s.id} value={s.id}>
+                                  {s.name}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </label>
+                        <label className="grid gap-0.5">
+                          <span className="text-xs font-bold text-slate-700">
+                            Ngày bán {!isSaleReadOnly ? <span className="text-red-500">*</span> : null}
+                          </span>
+                          <input
+                            type="datetime-local"
+                            required={!isSaleReadOnly && (saleModalTab === "accessory" || salePhoneDetailsOpen)}
+                            value={saleSoldAt}
+                            onChange={(e) => setSaleSoldAt(e.target.value)}
+                            readOnly={isSaleReadOnly}
+                            disabled={isSaleReadOnly}
+                            className={`h-9 rounded-md border border-line px-2 text-sm font-semibold outline-none focus:border-brand ${
+                              isSaleReadOnly ? "cursor-default bg-slate-50 text-slate-700" : "bg-white"
+                            }`}
+                          />
+                        </label>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <label className="grid gap-0.5">
+                          <span className="text-xs font-bold text-slate-700">
+                            Hình thức thanh toán {!isSaleReadOnly ? <span className="text-red-500">*</span> : null}
+                          </span>
+                          <select
+                            required={!isSaleReadOnly && (saleModalTab === "accessory" || salePhoneDetailsOpen)}
+                            value={salePayMethod}
+                            onChange={(e) => setSalePayMethod(e.target.value as SalePayMethod)}
+                            disabled={isSaleReadOnly}
+                            className={`h-9 rounded-md border border-line px-2.5 text-sm font-semibold ${
+                              isSaleReadOnly ? "cursor-default bg-slate-50 text-slate-700" : "bg-white"
+                            }`}
+                          >
+                            {SALE_PAY_METHOD_OPTIONS.map((p) => (
+                              <option key={p} value={p}>
+                                {p}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="grid gap-0.5">
+                          <span className="text-xs font-bold text-slate-700">
+                            Trạng thái thanh toán {!isSaleReadOnly ? <span className="text-red-500">*</span> : null}
+                          </span>
+                          <select
+                            required={!isSaleReadOnly && (saleModalTab === "accessory" || salePhoneDetailsOpen)}
+                            value={salePayStatus}
+                            onChange={(e) => setSalePayStatus(e.target.value as SalePayStatus)}
+                            disabled={isSaleReadOnly}
+                            className={`h-9 rounded-md border border-line px-2.5 text-sm font-semibold ${
+                              isSaleReadOnly ? "cursor-default bg-slate-50 text-slate-700" : "bg-white"
+                            }`}
+                          >
+                            {SALE_PAY_STATUS_OPTIONS.map((p) => (
+                              <option key={p} value={p}>
+                                {p}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                    </div>
+                    )}
 
                     {/* Nội dung theo tab — ẩn khi chỉ xem */}
                     {!isSaleReadOnly ? (
@@ -10460,134 +10495,134 @@ export default function Home() {
                           <div className="grid gap-2">
                             {/* Khách hàng — cùng nút «Thông tin bán hàng & khách hàng» */}
                             {salePhoneDetailsOpen ? (
-                              <div className="rounded-lg border border-line/80 bg-slate-50/80 px-2.5 py-2">
-                                <div className="mb-1.5 flex flex-wrap items-center justify-between gap-1.5">
-                                  <p className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-slate-600">
-                                    <Users size={13} className="text-muted" />
-                                    Khách hàng
-                                  </p>
-                                  <button
-                                    type="button"
-                                    onClick={resetSaleCustomerToWalkIn}
-                                    className="rounded-full border border-line bg-white px-2 py-0.5 text-[11px] font-bold text-muted hover:bg-white"
-                                  >
-                                    Về khách lẻ
-                                  </button>
-                                </div>
-                                <div className="grid gap-2 sm:grid-cols-2">
-                                  <label className="grid gap-0.5">
-                                    <span className="text-xs font-bold text-slate-700">
-                                      Tên khách <span className="text-red-500">*</span>
-                                    </span>
-                                    <div className="relative">
-                                      <input
-                                        value={saleCustomerName}
-                                        onChange={(e) => {
-                                          setSaleCustomerName(e.target.value);
-                                          setSaleCustomerId(null);
-                                          setSaleCustomerSuggestOpen(true);
-                                        }}
-                                        onFocus={() => setSaleCustomerSuggestOpen(true)}
-                                        onBlur={() => {
-                                          window.setTimeout(() => setSaleCustomerSuggestOpen(false), 180);
-                                        }}
-                                        required={
-                                          salePhoneDetailsOpen &&
-                                          saleCart.some((l) => l.kind === "phone")
-                                        }
-                                        className="h-9 w-full rounded-md border border-line bg-white px-2.5 text-sm font-semibold outline-none focus:border-brand"
-                                        placeholder="Bắt buộc khi bán máy"
-                                        autoComplete="off"
-                                      />
-                                      {saleCustomerSuggestOpen && saleCustomerSuggestions.length > 0 ? (
-                                        <ul className="absolute z-20 mt-1 max-h-44 w-full overflow-auto rounded-lg border border-line bg-white py-1 shadow-panel">
-                                          {saleCustomerSuggestions.map((c) => (
-                                            <li key={c.id}>
-                                              <button
-                                                type="button"
-                                                onMouseDown={(e) => e.preventDefault()}
-                                                onClick={() => selectSaleCustomer(c)}
-                                                className="flex w-full flex-col items-start px-2.5 py-1.5 text-left hover:bg-brand-soft"
-                                              >
-                                                <span className="text-sm font-bold text-ink">{c.name}</span>
-                                                <span className="text-[11px] font-semibold text-muted">
-                                                  {c.phone || "Không SĐT"}
-                                                  {c.address ? ` · ${c.address}` : ""}
-                                                </span>
-                                              </button>
-                                            </li>
-                                          ))}
-                                        </ul>
-                                      ) : null}
-                                    </div>
-                                  </label>
-                                  <div className="grid min-w-0 gap-0.5">
-                                    <span className="text-xs font-bold text-slate-700">Số điện thoại</span>
-                                    <div className="flex min-w-0 items-center gap-1.5">
-                                      <input
-                                        value={saleCustomerPhone}
-                                        onChange={(e) => {
-                                          setSaleCustomerPhone(e.target.value);
-                                          setSaleCustomerId(null);
-                                          setSaleCustomerSuggestOpen(true);
-                                        }}
-                                        onFocus={() => setSaleCustomerSuggestOpen(true)}
-                                        onBlur={() => {
-                                          window.setTimeout(() => setSaleCustomerSuggestOpen(false), 180);
-                                        }}
-                                        className="h-9 min-w-0 w-0 flex-[1_1_0%] max-w-[9.5rem] rounded-md border border-line bg-white px-2 text-sm font-semibold outline-none focus:border-brand sm:max-w-none sm:flex-[1_1_55%]"
-                                        placeholder="SĐT"
-                                        autoComplete="off"
-                                      />
-                                      <button
-                                        type="button"
-                                        onClick={handleSaveSaleCustomer}
-                                        title="Lưu khách hàng"
-                                        className="inline-flex h-9 min-w-0 flex-[1_1_45%] items-center justify-center gap-1.5 rounded-md border border-brand bg-brand-soft px-2.5 text-xs font-bold text-brand-dark hover:bg-brand hover:text-white sm:flex-none sm:px-3 sm:text-sm"
-                                      >
-                                        <Users size={14} />
-                                        Lưu khách
-                                      </button>
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="mt-2 grid min-w-0 gap-2 sm:grid-cols-2">
-                                  <label className="grid min-w-0 gap-0.5">
-                                    <span className="text-xs font-bold text-slate-700">Địa chỉ</span>
+                            <div className="rounded-lg border border-line/80 bg-slate-50/80 px-2.5 py-2">
+                              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-1.5">
+                                <p className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-slate-600">
+                                  <Users size={13} className="text-muted" />
+                                  Khách hàng
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={resetSaleCustomerToWalkIn}
+                                  className="rounded-full border border-line bg-white px-2 py-0.5 text-[11px] font-bold text-muted hover:bg-white"
+                                >
+                                  Về khách lẻ
+                                </button>
+                              </div>
+                              <div className="grid gap-2 sm:grid-cols-2">
+                                <label className="grid gap-0.5">
+                                  <span className="text-xs font-bold text-slate-700">
+                                    Tên khách <span className="text-red-500">*</span>
+                                  </span>
+                                  <div className="relative">
                                     <input
-                                      value={saleCustomerAddress}
+                                      value={saleCustomerName}
                                       onChange={(e) => {
-                                        setSaleCustomerAddress(e.target.value);
+                                        setSaleCustomerName(e.target.value);
                                         setSaleCustomerId(null);
+                                        setSaleCustomerSuggestOpen(true);
                                       }}
+                                      onFocus={() => setSaleCustomerSuggestOpen(true)}
+                                      onBlur={() => {
+                                        window.setTimeout(() => setSaleCustomerSuggestOpen(false), 180);
+                                      }}
+                                      required={
+                                        salePhoneDetailsOpen &&
+                                        saleCart.some((l) => l.kind === "phone")
+                                      }
                                       className="h-9 w-full rounded-md border border-line bg-white px-2.5 text-sm font-semibold outline-none focus:border-brand"
-                                      placeholder="Không bắt buộc"
+                                      placeholder="Bắt buộc khi bán máy"
                                       autoComplete="off"
                                     />
-                                  </label>
-                                  <div className="grid min-w-0 gap-0.5">
-                                    <span className="text-xs font-bold text-slate-700">Bảo hành</span>
-                                    <div className="min-w-0 [&_label>span]:hidden">
-                                      <ManageableSelect
-                                        key={`sale-warranty-${saleWarrantyKey}-${saleStoreId}`}
-                                        label="Bảo hành"
-                                        name="saleWarranty"
-                                        options={saleWarrantyOptions}
-                                        setOptions={setSaleWarrantyOptions}
-                                        defaultValue={saleWarranty}
-                                        required={false}
-                                        categoryCode={SALE_LOOKUP_CATEGORIES.warranty}
-                                        storeId={saleStoreId}
-                                        allowManage
-                                        allowFreeText
-                                        actorUsername={currentUser?.username ?? ""}
-                                        onValueChange={setSaleWarranty}
-                                        onManageNotify={(type, message) => showUiToast(type, message)}
-                                      />
-                                    </div>
+                                    {saleCustomerSuggestOpen && saleCustomerSuggestions.length > 0 ? (
+                                      <ul className="absolute z-20 mt-1 max-h-44 w-full overflow-auto rounded-lg border border-line bg-white py-1 shadow-panel">
+                                        {saleCustomerSuggestions.map((c) => (
+                                          <li key={c.id}>
+                                            <button
+                                              type="button"
+                                              onMouseDown={(e) => e.preventDefault()}
+                                              onClick={() => selectSaleCustomer(c)}
+                                              className="flex w-full flex-col items-start px-2.5 py-1.5 text-left hover:bg-brand-soft"
+                                            >
+                                              <span className="text-sm font-bold text-ink">{c.name}</span>
+                                              <span className="text-[11px] font-semibold text-muted">
+                                                {c.phone || "Không SĐT"}
+                                                {c.address ? ` · ${c.address}` : ""}
+                                              </span>
+                                            </button>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    ) : null}
+                                  </div>
+                                </label>
+                                <div className="grid min-w-0 gap-0.5">
+                                  <span className="text-xs font-bold text-slate-700">Số điện thoại</span>
+                                  <div className="flex min-w-0 items-center gap-1.5">
+                                    <input
+                                      value={saleCustomerPhone}
+                                      onChange={(e) => {
+                                        setSaleCustomerPhone(e.target.value);
+                                        setSaleCustomerId(null);
+                                        setSaleCustomerSuggestOpen(true);
+                                      }}
+                                      onFocus={() => setSaleCustomerSuggestOpen(true)}
+                                      onBlur={() => {
+                                        window.setTimeout(() => setSaleCustomerSuggestOpen(false), 180);
+                                      }}
+                                      className="h-9 min-w-0 w-0 flex-[1_1_0%] max-w-[9.5rem] rounded-md border border-line bg-white px-2 text-sm font-semibold outline-none focus:border-brand sm:max-w-none sm:flex-[1_1_55%]"
+                                      placeholder="SĐT"
+                                      autoComplete="off"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={handleSaveSaleCustomer}
+                                      title="Lưu khách hàng"
+                                      className="inline-flex h-9 min-w-0 flex-[1_1_45%] items-center justify-center gap-1.5 rounded-md border border-brand bg-brand-soft px-2.5 text-xs font-bold text-brand-dark hover:bg-brand hover:text-white sm:flex-none sm:px-3 sm:text-sm"
+                                    >
+                                      <Users size={14} />
+                                      Lưu khách
+                                    </button>
                                   </div>
                                 </div>
                               </div>
+                              <div className="mt-2 grid min-w-0 gap-2 sm:grid-cols-2">
+                                <label className="grid min-w-0 gap-0.5">
+                                  <span className="text-xs font-bold text-slate-700">Địa chỉ</span>
+                                  <input
+                                    value={saleCustomerAddress}
+                                    onChange={(e) => {
+                                      setSaleCustomerAddress(e.target.value);
+                                      setSaleCustomerId(null);
+                                    }}
+                                    className="h-9 w-full rounded-md border border-line bg-white px-2.5 text-sm font-semibold outline-none focus:border-brand"
+                                    placeholder="Không bắt buộc"
+                                    autoComplete="off"
+                                  />
+                                </label>
+                                <div className="grid min-w-0 gap-0.5">
+                                  <span className="text-xs font-bold text-slate-700">Bảo hành</span>
+                                  <div className="min-w-0 [&_label>span]:hidden">
+                                    <ManageableSelect
+                                      key={`sale-warranty-${saleWarrantyKey}-${saleStoreId}`}
+                                      label="Bảo hành"
+                                      name="saleWarranty"
+                                      options={saleWarrantyOptions}
+                                      setOptions={setSaleWarrantyOptions}
+                                      defaultValue={saleWarranty}
+                                      required={false}
+                                      categoryCode={SALE_LOOKUP_CATEGORIES.warranty}
+                                      storeId={saleStoreId}
+                                      allowManage
+                                      allowFreeText
+                                      actorUsername={currentUser?.username ?? ""}
+                                      onValueChange={setSaleWarranty}
+                                      onManageNotify={(type, message) => showUiToast(type, message)}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
                             ) : null}
 
                             {/* Tặng PK: Sạc/Ốp/CL khóa tên; Khác free text; giá 0 mờ; >0 → giỏ */}
@@ -10610,10 +10645,11 @@ export default function Home() {
                                     setSaleBuyMoreOpen((v) => !v);
                                     if (!saleBuyMoreOpen) setSaleAccFormKey((k) => k + 1);
                                   }}
-                                  className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-lg px-3 text-sm font-bold shadow-sm transition ${saleBuyMoreOpen
+                                  className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-lg px-3 text-sm font-bold shadow-sm transition ${
+                                    saleBuyMoreOpen
                                       ? "bg-amber-600 text-white hover:bg-amber-700"
                                       : "bg-amber-500 text-white hover:bg-amber-600"
-                                    }`}
+                                  }`}
                                 >
                                   <Plus size={15} />
                                   {saleBuyMoreOpen ? "Đóng mua thêm" : "Mua thêm"}
@@ -10654,10 +10690,11 @@ export default function Home() {
                                             costInput: formatInputMoney(e.target.value),
                                           })
                                         }
-                                        className={`h-8 w-full rounded-md border border-fuchsia-200/80 bg-white px-1.5 text-right text-sm font-bold outline-none focus:border-fuchsia-500 focus:ring-1 focus:ring-fuchsia-100 ${costEmpty
+                                        className={`h-8 w-full rounded-md border border-fuchsia-200/80 bg-white px-1.5 text-right text-sm font-bold outline-none focus:border-fuchsia-500 focus:ring-1 focus:ring-fuchsia-100 ${
+                                          costEmpty
                                             ? "text-muted/50 placeholder:text-muted/40"
                                             : "text-fuchsia-950"
-                                          }`}
+                                        }`}
                                         placeholder="0"
                                         title="Giá nhập tặng — để trống = 0; > 0 tự thêm giỏ"
                                       />
@@ -10773,10 +10810,11 @@ export default function Home() {
                                     return !open;
                                   });
                                 }}
-                                className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left transition ${salePhoneListOpen
+                                className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left transition ${
+                                  salePhoneListOpen
                                     ? "bg-indigo-100/80 ring-1 ring-indigo-200"
                                     : "bg-white/80 ring-1 ring-indigo-100 hover:bg-indigo-50"
-                                  }`}
+                                }`}
                               >
                                 <span className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-indigo-800">
                                   <Smartphone size={13} />
@@ -10786,10 +10824,11 @@ export default function Home() {
                                   </span>
                                 </span>
                                 <span
-                                  className={`inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-xs font-bold ${salePhoneListOpen
+                                  className={`inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-xs font-bold ${
+                                    salePhoneListOpen
                                       ? "bg-indigo-600 text-white"
                                       : "bg-indigo-600 text-white hover:bg-indigo-700"
-                                    }`}
+                                  }`}
                                 >
                                   {salePhoneListOpen ? "Thu gọn" : "Chọn máy"}
                                   <ChevronDown
@@ -10939,18 +10978,18 @@ export default function Home() {
                             {saleGifts
                               .filter((g) => parseShopMoney(g.costInput) > 0)
                               .map((g) => (
-                                <div
-                                  key={g.id}
-                                  className="flex items-center justify-between gap-2 rounded-lg border border-fuchsia-100 bg-white px-2.5 py-1.5"
-                                >
-                                  <span className="truncate text-sm font-bold text-ink">{g.name || "—"}</span>
-                                  <span className="shrink-0 text-sm font-bold text-fuchsia-800">
-                                    {isSaleSensitiveHidden
-                                      ? "***"
-                                      : formatMoney(parseShopMoney(g.costInput) || 0)}
-                                  </span>
-                                </div>
-                              ))}
+                              <div
+                                key={g.id}
+                                className="flex items-center justify-between gap-2 rounded-lg border border-fuchsia-100 bg-white px-2.5 py-1.5"
+                              >
+                                <span className="truncate text-sm font-bold text-ink">{g.name || "—"}</span>
+                                <span className="shrink-0 text-sm font-bold text-fuchsia-800">
+                                  {isSaleSensitiveHidden
+                                    ? "***"
+                                    : formatMoney(parseShopMoney(g.costInput) || 0)}
+                                </span>
+                              </div>
+                            ))}
                           </div>
                         </div>
                       </>
@@ -10996,173 +11035,178 @@ export default function Home() {
                               line.kind === "phone" && isSalePhonePriceEditable(line.key);
                             const isPhonePriceSaving = salePhonePriceSavingKey === line.key;
                             return (
-                              <li
-                                key={line.key}
-                                className={`flex flex-wrap items-center gap-2 rounded-lg border px-2.5 py-1.5 ${isGift
-                                    ? "border-fuchsia-200 bg-fuchsia-50/60"
-                                    : "border-line bg-white"
-                                  }`}
-                              >
-                                <div className="min-w-0 flex-1 basis-[10rem]">
-                                  {line.kind === "phone" ? (
-                                    <p className="truncate text-sm font-bold text-ink">
-                                      <span className="mr-1 font-black text-indigo-700">{line.name}</span>
-                                      {line.color ? (
-                                        <span className="font-semibold text-slate-500"> · {line.color}</span>
-                                      ) : null}
-                                      {line.storage ? (
-                                        <span className="font-semibold text-slate-500"> · {line.storage}</span>
-                                      ) : null}
-                                      <span className="ml-1 font-mono text-[11px] font-medium text-slate-400">
-                                        {line.imei}
-                                      </span>
-                                    </p>
-                                  ) : (
-                                    <div className="flex min-w-0 flex-wrap items-center gap-1">
-                                      <span
-                                        className={`shrink-0 rounded px-1 py-0.5 text-[10px] font-black uppercase ${isGift
-                                            ? "bg-fuchsia-100 text-fuchsia-800 ring-1 ring-fuchsia-200"
-                                            : "bg-amber-50 text-amber-800"
-                                          }`}
-                                      >
-                                        {isGift ? "Tặng" : "PK"}
-                                      </span>
-                                      {isSaleReadOnly || isGift ? (
-                                        <span className="min-w-0 truncate text-sm font-bold text-ink">
-                                          {line.name}
-                                        </span>
-                                      ) : (
-                                        <input
-                                          value={line.name}
-                                          onChange={(e) => updateSaleCartName(line.key, e.target.value)}
-                                          className="h-7 min-w-0 flex-1 basis-[6rem] rounded border border-transparent bg-transparent px-1 text-sm font-bold text-ink outline-none hover:border-line focus:border-brand focus:bg-white"
-                                          title="Sửa tên PK"
-                                          placeholder="Tên PK"
-                                        />
-                                      )}
-                                      {line.quantity > 1 ? (
-                                        <span className="shrink-0 text-xs font-semibold text-muted">
-                                          ×{line.quantity}
-                                        </span>
-                                      ) : null}
-                                    </div>
-                                  )}
-                                </div>
-                                {/* Giá nhập — tặng chỉ hiện cột này */}
-                                <div className="flex shrink-0 flex-col items-end gap-0.5">
-                                  <span className="text-[10px] font-bold text-muted">Giá nhập</span>
-                                  {isSaleReadOnly || line.kind === "phone" || isGift ? (
-                                    <span
-                                      className={`inline-flex h-8 min-w-[4.5rem] items-center justify-end rounded-md border px-2 text-sm font-bold ${isGift
-                                          ? "border-fuchsia-200 bg-white text-fuchsia-900"
-                                          : "border-line bg-slate-50 text-slate-700"
-                                        }`}
-                                      title="Giá nhập (đơn vị shop)"
-                                    >
-                                      {isSaleSensitiveHidden ? "***" : formatMoney(lineCost)}
+                            <li
+                              key={line.key}
+                              className={`flex flex-wrap items-center gap-2 rounded-lg border px-2.5 py-1.5 ${
+                                isGift
+                                  ? "border-fuchsia-200 bg-fuchsia-50/60"
+                                  : "border-line bg-white"
+                              }`}
+                            >
+                              <div className="min-w-0 flex-1 basis-[10rem]">
+                                {line.kind === "phone" ? (
+                                  <p className="truncate text-sm font-bold text-ink">
+                                    <span className="mr-1 font-black text-indigo-700">{line.name}</span>
+                                    {line.color ? (
+                                      <span className="font-semibold text-slate-500"> · {line.color}</span>
+                                    ) : null}
+                                    {line.storage ? (
+                                      <span className="font-semibold text-slate-500"> · {line.storage}</span>
+                                    ) : null}
+                                    <span className="ml-1 font-mono text-[11px] font-medium text-slate-400">
+                                      {line.imei}
                                     </span>
-                                  ) : (
-                                    <input
-                                      inputMode="numeric"
-                                      value={lineCost ? formatInputMoney(lineCost) : ""}
-                                      onChange={(e) =>
-                                        updateSaleCartCost(line.key, parseShopMoney(e.target.value))
-                                      }
-                                      className="h-8 w-20 rounded-md border border-line px-2 text-right text-sm font-bold text-slate-700 outline-none focus:border-brand"
-                                      title="Giá nhập (đơn vị shop)"
-                                      placeholder="0"
-                                    />
-                                  )}
-                                </div>
-                                {/* Giá bán — ẩn với tặng */}
-                                {!isGift ? (
-                                  <div className="flex shrink-0 flex-col items-end gap-0.5">
-                                    <span className="text-[10px] font-bold text-muted">Giá bán</span>
-                                    {isSaleReadOnly ? (
-                                      <span className="inline-flex h-8 min-w-[4.5rem] items-center justify-end rounded-md border border-line bg-slate-50 px-2 text-sm font-bold text-emerald-700">
-                                        {isSaleSensitiveHidden ? "***" : formatMoney(line.unitPrice)}
+                                  </p>
+                                ) : (
+                                  <div className="flex min-w-0 flex-wrap items-center gap-1">
+                                    <span
+                                      className={`shrink-0 rounded px-1 py-0.5 text-[10px] font-black uppercase ${
+                                        isGift
+                                          ? "bg-fuchsia-100 text-fuchsia-800 ring-1 ring-fuchsia-200"
+                                          : "bg-amber-50 text-amber-800"
+                                      }`}
+                                    >
+                                      {isGift ? "Tặng" : "PK"}
+                                    </span>
+                                    {isSaleReadOnly || isGift ? (
+                                      <span className="min-w-0 truncate text-sm font-bold text-ink">
+                                        {line.name}
                                       </span>
-                                    ) : line.kind === "phone" ? (
-                                      <div className="flex items-center gap-1">
-                                        <input
-                                          inputMode="numeric"
-                                          value={
-                                            line.unitPrice ? formatInputMoney(line.unitPrice) : ""
-                                          }
-                                          onChange={(e) =>
-                                            updateSaleCartUnitPrice(line.key, parseShopMoney(e.target.value))
-                                          }
-                                          disabled={!isPhonePriceEditable || isPhonePriceSaving}
-                                          className={`h-8 w-20 rounded-md border px-2 text-right text-sm font-bold outline-none ${isPhonePriceEditable
-                                              ? "border-brand bg-white text-emerald-700 focus:ring-2 focus:ring-brand-soft"
-                                              : "border-line bg-slate-50 text-slate-700"
-                                            } disabled:cursor-not-allowed`}
-                                          title={
-                                            isPhonePriceEditable
-                                              ? "Giá bán mới - bấm dấu tick để lưu vào kho"
-                                              : "Giá bán lấy từ kho - bấm bút chì để sửa"
-                                          }
-                                        />
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            isPhonePriceEditable
-                                              ? void saveSalePhonePriceToInventory(line)
-                                              : enableSalePhonePriceEdit(line)
-                                          }
-                                          disabled={saleSaving || Boolean(salePhonePriceSavingKey)}
-                                          className={`inline-flex h-8 w-8 items-center justify-center rounded-md border text-sm font-bold transition disabled:opacity-60 ${isPhonePriceEditable
-                                              ? "border-brand bg-brand text-white hover:bg-brand-dark"
-                                              : "border-line bg-white text-muted hover:bg-slate-50"
-                                            }`}
-                                          title={
-                                            isPhonePriceEditable
-                                              ? "Cập nhật giá bán vào kho"
-                                              : "Sửa giá bán máy"
-                                          }
-                                        >
-                                          {isPhonePriceSaving ? (
-                                            <Loader2 size={14} className="animate-spin" />
-                                          ) : isPhonePriceEditable ? (
-                                            <CheckCircle2 size={14} />
-                                          ) : (
-                                            <Edit3 size={14} />
-                                          )}
-                                        </button>
-                                      </div>
                                     ) : (
                                       <input
-                                        inputMode="numeric"
-                                        value={
-                                          line.unitPrice ? formatInputMoney(line.unitPrice) : ""
-                                        }
-                                        onChange={(e) =>
-                                          updateSaleCartUnitPrice(line.key, parseShopMoney(e.target.value))
-                                        }
-                                        className="h-8 w-20 rounded-md border border-line px-2 text-right text-sm font-bold text-emerald-700 outline-none focus:border-brand"
-                                        title="Giá bán (đơn vị shop)"
+                                        value={line.name}
+                                        onChange={(e) => updateSaleCartName(line.key, e.target.value)}
+                                        className="h-7 min-w-0 flex-1 basis-[6rem] rounded border border-transparent bg-transparent px-1 text-sm font-bold text-ink outline-none hover:border-line focus:border-brand focus:bg-white"
+                                        title="Sửa tên PK"
+                                        placeholder="Tên PK"
                                       />
                                     )}
+                                    {line.quantity > 1 ? (
+                                      <span className="shrink-0 text-xs font-semibold text-muted">
+                                        ×{line.quantity}
+                                      </span>
+                                    ) : null}
                                   </div>
-                                ) : null}
-                                {line.kind === "accessory" && line.quantity > 1 ? (
-                                  <span className="w-16 shrink-0 self-end pb-1 text-right text-xs font-black text-ink">
-                                    {isSaleSensitiveHidden
-                                      ? "***"
-                                      : formatMoney(line.unitPrice * line.quantity)}
-                                  </span>
-                                ) : null}
-                                {!isSaleReadOnly ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => removeSaleCartLine(line.key)}
-                                    className="self-end rounded-md bg-red-50 p-1.5 text-danger hover:bg-red-100"
-                                    title="Xóa"
+                                )}
+                              </div>
+                              {/* Giá nhập — tặng chỉ hiện cột này */}
+                              <div className="flex shrink-0 flex-col items-end gap-0.5">
+                                <span className="text-[10px] font-bold text-muted">Giá nhập</span>
+                                {isSaleReadOnly || line.kind === "phone" || isGift ? (
+                                  <span
+                                    className={`inline-flex h-8 min-w-[4.5rem] items-center justify-end rounded-md border px-2 text-sm font-bold ${
+                                      isGift
+                                        ? "border-fuchsia-200 bg-white text-fuchsia-900"
+                                        : "border-line bg-slate-50 text-slate-700"
+                                    }`}
+                                    title="Giá nhập (đơn vị shop)"
                                   >
-                                    <Trash2 size={14} />
-                                  </button>
-                                ) : null}
-                              </li>
+                                    {isSaleSensitiveHidden ? "***" : formatMoney(lineCost)}
+                                  </span>
+                                ) : (
+                                  <input
+                                    inputMode="numeric"
+                                    value={lineCost ? formatInputMoney(lineCost) : ""}
+                                    onChange={(e) =>
+                                      updateSaleCartCost(line.key, parseShopMoney(e.target.value))
+                                    }
+                                    className="h-8 w-20 rounded-md border border-line px-2 text-right text-sm font-bold text-slate-700 outline-none focus:border-brand"
+                                    title="Giá nhập (đơn vị shop)"
+                                    placeholder="0"
+                                  />
+                                )}
+                              </div>
+                              {/* Giá bán — ẩn với tặng */}
+                              {!isGift ? (
+                              <div className="flex shrink-0 flex-col items-end gap-0.5">
+                                <span className="text-[10px] font-bold text-muted">Giá bán</span>
+                                {isSaleReadOnly ? (
+                                  <span className="inline-flex h-8 min-w-[4.5rem] items-center justify-end rounded-md border border-line bg-slate-50 px-2 text-sm font-bold text-emerald-700">
+                                    {isSaleSensitiveHidden ? "***" : formatMoney(line.unitPrice)}
+                                  </span>
+                                ) : line.kind === "phone" ? (
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      inputMode="numeric"
+                                      value={
+                                        line.unitPrice ? formatInputMoney(line.unitPrice) : ""
+                                      }
+                                      onChange={(e) =>
+                                        updateSaleCartUnitPrice(line.key, parseShopMoney(e.target.value))
+                                      }
+                                      disabled={!isPhonePriceEditable || isPhonePriceSaving}
+                                      className={`h-8 w-20 rounded-md border px-2 text-right text-sm font-bold outline-none ${
+                                        isPhonePriceEditable
+                                          ? "border-brand bg-white text-emerald-700 focus:ring-2 focus:ring-brand-soft"
+                                          : "border-line bg-slate-50 text-slate-700"
+                                      } disabled:cursor-not-allowed`}
+                                      title={
+                                        isPhonePriceEditable
+                                          ? "Giá bán mới - bấm dấu tick để lưu vào kho"
+                                          : "Giá bán lấy từ kho - bấm bút chì để sửa"
+                                      }
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        isPhonePriceEditable
+                                          ? void saveSalePhonePriceToInventory(line)
+                                          : enableSalePhonePriceEdit(line)
+                                      }
+                                      disabled={saleSaving || Boolean(salePhonePriceSavingKey)}
+                                      className={`inline-flex h-8 w-8 items-center justify-center rounded-md border text-sm font-bold transition disabled:opacity-60 ${
+                                        isPhonePriceEditable
+                                          ? "border-brand bg-brand text-white hover:bg-brand-dark"
+                                          : "border-line bg-white text-muted hover:bg-slate-50"
+                                      }`}
+                                      title={
+                                        isPhonePriceEditable
+                                          ? "Cập nhật giá bán vào kho"
+                                          : "Sửa giá bán máy"
+                                      }
+                                    >
+                                      {isPhonePriceSaving ? (
+                                        <Loader2 size={14} className="animate-spin" />
+                                      ) : isPhonePriceEditable ? (
+                                        <CheckCircle2 size={14} />
+                                      ) : (
+                                        <Edit3 size={14} />
+                                      )}
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <input
+                                    inputMode="numeric"
+                                    value={
+                                      line.unitPrice ? formatInputMoney(line.unitPrice) : ""
+                                    }
+                                    onChange={(e) =>
+                                      updateSaleCartUnitPrice(line.key, parseShopMoney(e.target.value))
+                                    }
+                                    className="h-8 w-20 rounded-md border border-line px-2 text-right text-sm font-bold text-emerald-700 outline-none focus:border-brand"
+                                    title="Giá bán (đơn vị shop)"
+                                  />
+                                )}
+                              </div>
+                              ) : null}
+                              {line.kind === "accessory" && line.quantity > 1 ? (
+                                <span className="w-16 shrink-0 self-end pb-1 text-right text-xs font-black text-ink">
+                                  {isSaleSensitiveHidden
+                                    ? "***"
+                                    : formatMoney(line.unitPrice * line.quantity)}
+                                </span>
+                              ) : null}
+                              {!isSaleReadOnly ? (
+                                <button
+                                  type="button"
+                                  onClick={() => removeSaleCartLine(line.key)}
+                                  className="self-end rounded-md bg-red-50 p-1.5 text-danger hover:bg-red-100"
+                                  title="Xóa"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              ) : null}
+                            </li>
                             );
                           })}
                         </ul>
@@ -11453,11 +11497,11 @@ export default function Home() {
           let filteredCustomers = !q
             ? [...customers]
             : customers.filter((c) => {
-              const hay = `${c.name} ${c.phone} ${c.address} ${c.note}`.toLowerCase();
-              const qDigits = digits(customerQuery);
-              if (qDigits && digits(c.phone).includes(qDigits)) return true;
-              return hay.includes(q);
-            });
+                const hay = `${c.name} ${c.phone} ${c.address} ${c.note}`.toLowerCase();
+                const qDigits = digits(customerQuery);
+                if (qDigits && digits(c.phone).includes(qDigits)) return true;
+                return hay.includes(q);
+              });
 
           filteredCustomers.sort((a, b) => {
             const sa = statsOf(a.id);
@@ -11572,10 +11616,11 @@ export default function Home() {
                         setCustomerStatsPeriod(id);
                         setCustomerPage(1);
                       }}
-                      className={`h-9 rounded-md px-3 text-sm font-bold transition ${customerStatsPeriod === id
+                      className={`h-9 rounded-md px-3 text-sm font-bold transition ${
+                        customerStatsPeriod === id
                           ? "bg-white text-brand shadow-sm"
                           : "text-muted hover:text-ink"
-                        }`}
+                      }`}
                     >
                       {label}
                     </button>
@@ -11850,8 +11895,9 @@ export default function Home() {
                         </span>,
                         <span
                           key={`v-${customer.id}`}
-                          className={`font-black tabular-nums ${st.visits > 0 ? "text-ink" : "text-muted"
-                            }`}
+                          className={`font-black tabular-nums ${
+                            st.visits > 0 ? "text-ink" : "text-muted"
+                          }`}
                           title={`Bán ${st.saleCount} · PM ${st.softwareCount} · SC ${st.repairCount}`}
                         >
                           {st.visits}
@@ -11863,15 +11909,17 @@ export default function Home() {
                         </span>,
                         <span
                           key={`sa-${customer.id}`}
-                          className={`font-black tabular-nums ${st.saleAmount > 0 ? "text-fuchsia-800" : "text-muted"
-                            }`}
+                          className={`font-black tabular-nums ${
+                            st.saleAmount > 0 ? "text-fuchsia-800" : "text-muted"
+                          }`}
                         >
                           {st.saleAmount > 0 ? formatMoney(st.saleAmount) : "—"}
                         </span>,
                         <span
                           key={`sv-${customer.id}`}
-                          className={`font-black tabular-nums ${svc > 0 ? "text-violet-800" : "text-muted"
-                            }`}
+                          className={`font-black tabular-nums ${
+                            svc > 0 ? "text-violet-800" : "text-muted"
+                          }`}
                         >
                           {svc > 0 ? formatMoney(svc) : "—"}
                           {st.repairDebtCount > 0 ? (
@@ -12261,104 +12309,105 @@ export default function Home() {
 
               {mergeGroupDigits && currentUser.role === "owner"
                 ? (() => {
-                  const group = customerDupGroups.find(
-                    (g) => g.phoneDigits === mergeGroupDigits
-                  );
-                  if (!group) return null;
-                  return (
-                    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-md">
-                      <section className="relative max-h-[92vh] w-full max-w-[520px] overflow-auto rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
-                        {customerMerging ? (
-                          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-2xl bg-white/55 backdrop-blur-sm">
-                            <Loader2 size={36} className="animate-spin text-brand" />
-                            <p className="text-sm font-black text-ink">Đang gộp…</p>
-                          </div>
-                        ) : null}
-                        <div className="flex items-center justify-between border-b border-slate-200/60 p-4">
-                          <div>
-                            <h2 className="text-lg font-black text-slate-800">
-                              Gộp SĐT trùng
-                            </h2>
-                            <p className="mt-0.5 text-sm font-semibold text-muted">
-                              {group.phoneDisplay} · {group.customers.length} hồ sơ
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={closeMergePanel}
-                            disabled={customerMerging}
-                            className="h-9 rounded-xl border border-slate-200/60 bg-white/50 px-4 text-sm font-black text-slate-600 hover:bg-white disabled:opacity-50"
-                          >
-                            Đóng
-                          </button>
-                        </div>
-                        <div className="grid gap-3 p-4">
-                          <p className="text-sm font-semibold text-muted">
-                            Chọn <strong className="text-ink">hồ sơ giữ lại</strong>. Các hồ
-                            sơ còn lại sẽ ẩn; phiếu bán chuyển về hồ sơ giữ.
-                          </p>
-                          <ul className="grid gap-2">
-                            {group.customers.map((c) => {
-                              const selected = mergeKeepId === c.id;
-                              return (
-                                <li key={c.id}>
-                                  <label
-                                    className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 ${selected
-                                        ? "border-brand bg-brand-soft"
-                                        : "border-line bg-white hover:bg-slate-50"
-                                      }`}
-                                  >
-                                    <input
-                                      type="radio"
-                                      name="merge-keep"
-                                      className="mt-1 accent-brand"
-                                      checked={selected}
-                                      onChange={() => setMergeKeepId(c.id)}
-                                      disabled={customerMerging}
-                                    />
-                                    <div className="min-w-0">
-                                      <div className="font-bold text-ink">{c.name}</div>
-                                      <div className="text-xs font-semibold text-muted">
-                                        {c.phone || "—"}
-                                        {c.address ? ` · ${c.address}` : ""}
-                                      </div>
-                                      {c.note ? (
-                                        <div className="mt-0.5 text-xs font-semibold text-slate-600">
-                                          {c.note}
-                                        </div>
-                                      ) : null}
-                                    </div>
-                                  </label>
-                                </li>
-                              );
-                            })}
-                          </ul>
-                          <div className="flex justify-end gap-2 border-t border-line pt-3">
+                    const group = customerDupGroups.find(
+                      (g) => g.phoneDigits === mergeGroupDigits
+                    );
+                    if (!group) return null;
+                    return (
+                      <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-md">
+                        <section className="relative max-h-[92vh] w-full max-w-[520px] overflow-auto rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
+                          {customerMerging ? (
+                            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-2xl bg-white/55 backdrop-blur-sm">
+                              <Loader2 size={36} className="animate-spin text-brand" />
+                              <p className="text-sm font-black text-ink">Đang gộp…</p>
+                            </div>
+                          ) : null}
+                          <div className="flex items-center justify-between border-b border-slate-200/60 p-4">
+                            <div>
+                              <h2 className="text-lg font-black text-slate-800">
+                                Gộp SĐT trùng
+                              </h2>
+                              <p className="mt-0.5 text-sm font-semibold text-muted">
+                                {group.phoneDisplay} · {group.customers.length} hồ sơ
+                              </p>
+                            </div>
                             <button
                               type="button"
                               onClick={closeMergePanel}
                               disabled={customerMerging}
-                              className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted disabled:opacity-50"
+                              className="h-9 rounded-xl border border-slate-200/60 bg-white/50 px-4 text-sm font-black text-slate-600 hover:bg-white disabled:opacity-50"
                             >
-                              Hủy
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void confirmMergeGroup()}
-                              disabled={customerMerging || !mergeKeepId}
-                              className="inline-flex h-10 items-center gap-2 rounded-lg bg-amber-600 px-4 font-bold text-white hover:bg-amber-700 disabled:opacity-50"
-                            >
-                              {customerMerging ? (
-                                <Loader2 size={18} className="animate-spin" />
-                              ) : null}
-                              Xác nhận gộp
+                              Đóng
                             </button>
                           </div>
-                        </div>
-                      </section>
-                    </div>
-                  );
-                })()
+                          <div className="grid gap-3 p-4">
+                            <p className="text-sm font-semibold text-muted">
+                              Chọn <strong className="text-ink">hồ sơ giữ lại</strong>. Các hồ
+                              sơ còn lại sẽ ẩn; phiếu bán chuyển về hồ sơ giữ.
+                            </p>
+                            <ul className="grid gap-2">
+                              {group.customers.map((c) => {
+                                const selected = mergeKeepId === c.id;
+                                return (
+                                  <li key={c.id}>
+                                    <label
+                                      className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 ${
+                                        selected
+                                          ? "border-brand bg-brand-soft"
+                                          : "border-line bg-white hover:bg-slate-50"
+                                      }`}
+                                    >
+                                      <input
+                                        type="radio"
+                                        name="merge-keep"
+                                        className="mt-1 accent-brand"
+                                        checked={selected}
+                                        onChange={() => setMergeKeepId(c.id)}
+                                        disabled={customerMerging}
+                                      />
+                                      <div className="min-w-0">
+                                        <div className="font-bold text-ink">{c.name}</div>
+                                        <div className="text-xs font-semibold text-muted">
+                                          {c.phone || "—"}
+                                          {c.address ? ` · ${c.address}` : ""}
+                                        </div>
+                                        {c.note ? (
+                                          <div className="mt-0.5 text-xs font-semibold text-slate-600">
+                                            {c.note}
+                                          </div>
+                                        ) : null}
+                                      </div>
+                                    </label>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                            <div className="flex justify-end gap-2 border-t border-line pt-3">
+                              <button
+                                type="button"
+                                onClick={closeMergePanel}
+                                disabled={customerMerging}
+                                className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted disabled:opacity-50"
+                              >
+                                Hủy
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void confirmMergeGroup()}
+                                disabled={customerMerging || !mergeKeepId}
+                                className="inline-flex h-10 items-center gap-2 rounded-lg bg-amber-600 px-4 font-bold text-white hover:bg-amber-700 disabled:opacity-50"
+                              >
+                                {customerMerging ? (
+                                  <Loader2 size={18} className="animate-spin" />
+                                ) : null}
+                                Xác nhận gộp
+                              </button>
+                            </div>
+                          </div>
+                        </section>
+                      </div>
+                    );
+                  })()
                 : null}
             </section>
           );
@@ -12565,89 +12614,89 @@ export default function Home() {
                     Đang tải mình nợ…
                   </div>
                 ) : (
-                  <DataTable
-                    compact
-                    headers={[
-                      "Người mình nợ",
-                      "Ngày nợ",
-                      "Loại món nợ",
-                      "Số tiền nợ",
-                      "Cửa hàng",
-                      "Trạng thái",
-                      "Thao tác",
-                    ]}
-                    emptyMessage="Chưa có khoản mình nợ phù hợp bộ lọc."
-                    rows={filteredOwnDebts.map((item) => {
-                      const isOpen = item.status === "open";
-                      return [
-                        <div key={`c-${item.id}`} className="flex flex-col items-center gap-0.5">
-                          <span className="text-base font-black text-brand">{item.creditorName}</span>
-                          {item.note ? (
-                            <span className="text-xs font-semibold text-muted">{item.note}</span>
-                          ) : null}
-                        </div>,
-                        <span key={`d-${item.id}`} className="text-sm font-bold text-slate-700">
-                          {formatDateVi(item.debtDate)}
-                        </span>,
-                        <span
-                          key={`t-${item.id}`}
-                          className="rounded-full bg-slate-100 px-2.5 py-1 text-sm font-bold text-slate-700"
+                <DataTable
+                  compact
+                  headers={[
+                    "Người mình nợ",
+                    "Ngày nợ",
+                    "Loại món nợ",
+                    "Số tiền nợ",
+                    "Cửa hàng",
+                    "Trạng thái",
+                    "Thao tác",
+                  ]}
+                  emptyMessage="Chưa có khoản mình nợ phù hợp bộ lọc."
+                  rows={filteredOwnDebts.map((item) => {
+                    const isOpen = item.status === "open";
+                    return [
+                      <div key={`c-${item.id}`} className="flex flex-col items-center gap-0.5">
+                        <span className="text-base font-black text-brand">{item.creditorName}</span>
+                        {item.note ? (
+                          <span className="text-xs font-semibold text-muted">{item.note}</span>
+                        ) : null}
+                      </div>,
+                      <span key={`d-${item.id}`} className="text-sm font-bold text-slate-700">
+                        {formatDateVi(item.debtDate)}
+                      </span>,
+                      <span
+                        key={`t-${item.id}`}
+                        className="rounded-full bg-slate-100 px-2.5 py-1 text-sm font-bold text-slate-700"
+                      >
+                        {item.debtType}
+                      </span>,
+                      <span key={`a-${item.id}`} className="text-lg font-black text-red-600">
+                        {isOwnDebtSensitiveHidden ? "***" : formatMoney(item.amount)}
+                      </span>,
+                      <span key={`s-${item.id}`} className="text-sm font-semibold text-slate-600">
+                        {storeName(item.storeId)}
+                      </span>,
+                      <StatusBadge key={`st-${item.id}`} tone={ownStatusTone(item.status)}>
+                        {ownStatusLabel(item.status)}
+                      </StatusBadge>,
+                      <div key={`act-${item.id}`} className="flex flex-nowrap justify-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => openOwnDebtEditModal(item.id)}
+                          title="Sửa"
+                          disabled={item.status === "cancelled"}
+                          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20 disabled:cursor-not-allowed disabled:opacity-40"
                         >
-                          {item.debtType}
-                        </span>,
-                        <span key={`a-${item.id}`} className="text-lg font-black text-red-600">
-                          {isOwnDebtSensitiveHidden ? "***" : formatMoney(item.amount)}
-                        </span>,
-                        <span key={`s-${item.id}`} className="text-sm font-semibold text-slate-600">
-                          {storeName(item.storeId)}
-                        </span>,
-                        <StatusBadge key={`st-${item.id}`} tone={ownStatusTone(item.status)}>
-                          {ownStatusLabel(item.status)}
-                        </StatusBadge>,
-                        <div key={`act-${item.id}`} className="flex flex-nowrap justify-center gap-1.5">
+                          <Edit3 size={18} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openOwnDebtCloneModal(item.id)}
+                          title="Nhân bản"
+                          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100"
+                        >
+                          <CopyPlus size={18} />
+                        </button>
+                        {isOpen ? (
                           <button
                             type="button"
-                            onClick={() => openOwnDebtEditModal(item.id)}
-                            title="Sửa"
-                            disabled={item.status === "cancelled"}
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20 disabled:cursor-not-allowed disabled:opacity-40"
+                            onClick={() => void markOwnDebtPaid(item.id)}
+                            title="Đánh dấu đã trả"
+                            disabled={ownDebtSaving}
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-40"
                           >
-                            <Edit3 size={18} />
+                            <CheckCircle2 size={18} />
                           </button>
+                        ) : null}
+                        {item.status !== "cancelled" && currentUser.role === "owner" ? (
                           <button
                             type="button"
-                            onClick={() => openOwnDebtCloneModal(item.id)}
-                            title="Nhân bản"
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100"
+                            onClick={() => void cancelOwnDebtItem(item.id)}
+                            title="Hủy"
+                            disabled={ownDebtSaving}
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100 disabled:opacity-40"
                           >
-                            <CopyPlus size={18} />
+                            <Trash2 size={18} />
                           </button>
-                          {isOpen ? (
-                            <button
-                              type="button"
-                              onClick={() => void markOwnDebtPaid(item.id)}
-                              title="Đánh dấu đã trả"
-                              disabled={ownDebtSaving}
-                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-40"
-                            >
-                              <CheckCircle2 size={18} />
-                            </button>
-                          ) : null}
-                          {item.status !== "cancelled" && currentUser.role === "owner" ? (
-                            <button
-                              type="button"
-                              onClick={() => void cancelOwnDebtItem(item.id)}
-                              title="Hủy"
-                              disabled={ownDebtSaving}
-                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100 disabled:opacity-40"
-                            >
-                              <Trash2 size={18} />
-                            </button>
-                          ) : null}
-                        </div>,
-                      ];
-                    })}
-                  />
+                        ) : null}
+                      </div>,
+                    ];
+                  })}
+                />
                 )}
               </Panel>
 
@@ -12998,7 +13047,7 @@ export default function Home() {
                   <strong className="mt-1 block text-2xl font-black text-fuchsia-900">
                     {isDebtSensitiveHidden ? "***" : formatMoney(totalSale)}
                   </strong>
-                </div>
+                        </div>
                 <div className="rounded-lg border border-violet-200 bg-violet-50 px-4 py-3">
                   <span className="text-sm font-bold text-violet-800">Nợ sửa chữa</span>
                   <strong className="mt-1 block text-2xl font-black text-violet-900">
@@ -13020,411 +13069,413 @@ export default function Home() {
               </div>
 
               <Panel title="Sổ công nợ">
-                {debtsError ? (
-                  <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-danger">
-                    {debtsError}
-                  </div>
-                ) : null}
+                  {debtsError ? (
+                    <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-danger">
+                      {debtsError}
+                    </div>
+                  ) : null}
 
-                <div className="mb-3 inline-flex w-full max-w-full flex-wrap gap-1 rounded-lg border border-line bg-slate-100 p-1">
-                  {debtTabs.map((tab) => {
-                    const active = debtTab === tab.id;
-                    const activeCls =
-                      tab.tone === "sky"
-                        ? "bg-white text-sky-800 shadow-sm"
-                        : tab.tone === "fuchsia"
-                          ? "bg-white text-fuchsia-900 shadow-sm"
-                          : tab.tone === "violet"
-                            ? "bg-white text-violet-900 shadow-sm"
-                            : "bg-white text-amber-900 shadow-sm";
-                    return (
-                      <button
-                        key={tab.id}
-                        type="button"
-                        onClick={() => {
-                          setDebtTab(tab.id);
+                  <div className="mb-3 inline-flex w-full max-w-full flex-wrap gap-1 rounded-lg border border-line bg-slate-100 p-1">
+                    {debtTabs.map((tab) => {
+                      const active = debtTab === tab.id;
+                      const activeCls =
+                        tab.tone === "sky"
+                          ? "bg-white text-sky-800 shadow-sm"
+                          : tab.tone === "fuchsia"
+                            ? "bg-white text-fuchsia-900 shadow-sm"
+                            : tab.tone === "violet"
+                              ? "bg-white text-violet-900 shadow-sm"
+                              : "bg-white text-amber-900 shadow-sm";
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => {
+                            setDebtTab(tab.id);
+                            setSelectedDebtIds([]);
+                            setDebtCustomerQuery("");
+                            setDebtPage(1);
+                          }}
+                          className={`inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-md px-3 text-sm font-bold transition ${
+                            active ? activeCls : "text-muted hover:text-ink"
+                          }`}
+                        >
+                          {tab.label}
+                          <span
+                            className={`rounded-full px-1.5 py-0.5 text-xs font-black ${
+                              active ? "bg-slate-100 text-slate-700" : "bg-white/80 text-slate-500"
+                            }`}
+                          >
+                            {tab.count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <select
+                      value={debtStatusFilter}
+                      onChange={(e) => {
+                        setDebtStatusFilter(e.target.value as typeof debtStatusFilter);
+                        setSelectedDebtIds([]);
+                        setDebtPage(1);
+                      }}
+                      className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold"
+                    >
+                      <option value="open">Đang nợ</option>
+                      <option value="paid">Đã TT</option>
+                      <option value="cancelled">Đã hủy</option>
+                      <option value="all">Tất cả TT</option>
+                    </select>
+                    <div className="relative min-w-[14rem] flex-1">
+                      <Search className="pointer-events-none absolute left-3 top-2.5 text-muted" size={16} />
+                      <input
+                        list="debt-customer-datalist"
+                        value={debtCustomerQuery}
+                        onChange={(e) => {
+                          setDebtCustomerQuery(e.target.value);
                           setSelectedDebtIds([]);
-                          setDebtCustomerQuery("");
                           setDebtPage(1);
                         }}
-                        className={`inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-md px-3 text-sm font-bold transition ${active ? activeCls : "text-muted hover:text-ink"
-                          }`}
-                      >
-                        {tab.label}
-                        <span
-                          className={`rounded-full px-1.5 py-0.5 text-xs font-black ${active ? "bg-slate-100 text-slate-700" : "bg-white/80 text-slate-500"
-                            }`}
-                        >
-                          {tab.count}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="mb-3 flex flex-wrap items-center gap-2">
-                  <select
-                    value={debtStatusFilter}
-                    onChange={(e) => {
-                      setDebtStatusFilter(e.target.value as typeof debtStatusFilter);
-                      setSelectedDebtIds([]);
-                      setDebtPage(1);
-                    }}
-                    className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold"
-                  >
-                    <option value="open">Đang nợ</option>
-                    <option value="paid">Đã TT</option>
-                    <option value="cancelled">Đã hủy</option>
-                    <option value="all">Tất cả TT</option>
-                  </select>
-                  <div className="relative min-w-[14rem] flex-1">
-                    <Search className="pointer-events-none absolute left-3 top-2.5 text-muted" size={16} />
-                    <input
-                      list="debt-customer-datalist"
-                      value={debtCustomerQuery}
-                      onChange={(e) => {
-                        setDebtCustomerQuery(e.target.value);
-                        setSelectedDebtIds([]);
-                        setDebtPage(1);
-                      }}
-                      placeholder="Chọn hoặc gõ tên khách nợ…"
-                      className="h-10 w-full rounded-lg border border-line bg-white py-2 pl-9 pr-3 text-sm font-semibold outline-none focus:border-brand"
-                      autoComplete="off"
-                    />
-                    <datalist id="debt-customer-datalist">
-                      {debtCustomerOptions.map((name) => (
-                        <option key={name} value={name} />
-                      ))}
-                    </datalist>
-                  </div>
-                  {debtCustomerQuery.trim() ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDebtCustomerQuery("");
-                        setSelectedDebtIds([]);
-                        setDebtPage(1);
-                      }}
-                      className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold text-muted hover:bg-slate-50"
-                    >
-                      Xóa lọc khách
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => setIsDebtSensitiveHidden((v) => !v)}
-                    className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-3 font-bold text-slate-600"
-                  >
-                    {isDebtSensitiveHidden ? <EyeOff size={18} /> : <Eye size={18} />}
-                    {isDebtSensitiveHidden ? "Hiện" : "Ẩn"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={debtsSaving || openSelected.length === 0}
-                    onClick={() => void markSelectedDebtsPaid()}
-                    className="inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-600 px-3 font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
-                  >
-                    {debtsSaving ? (
-                      <Loader2 size={18} className="animate-spin" />
-                    ) : (
-                      <CheckCircle2 size={18} />
-                    )}
-                    {openSelected.length > 0 ? `Thu nợ (${openSelected.length})` : "Thu nợ"}
-                  </button>
-                  {debtTab === "manual" ? (
-                    <button
-                      type="button"
-                      onClick={openManualDebtCreateModal}
-                      className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark"
-                    >
-                      <Plus size={18} />
-                      Thêm nợ
-                    </button>
-                  ) : null}
-                </div>
-
-                {debtTab === "sale" ? (
-                  <p className="mb-3 rounded-lg border border-fuchsia-100 bg-fuchsia-50 px-3 py-2 text-sm font-semibold text-fuchsia-900">
-                    Nợ bán hàng = tổng tiền phiếu NỢ DAI. Thu nợ → chuyển sang Tiền mặt.
-                  </p>
-                ) : null}
-                {debtTab === "repair" ? (
-                  <p className="mb-3 rounded-lg border border-violet-100 bg-violet-50 px-3 py-2 text-sm font-semibold text-violet-900">
-                    Nợ sửa chữa = báo giá đơn NỢ DAI. Thu nợ → Đã thanh toán.
-                  </p>
-                ) : null}
-                {debtTab === "software" ? (
-                  <p className="mb-3 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-900">
-                    Nợ phần mềm = báo giá đơn. Chọn dòng → Thu nợ → Đã thanh toán.
-                  </p>
-                ) : null}
-
-                {showCustomerDebtSummary ? (
-                  <div className="mb-3 flex w-fit max-w-full flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg border border-brand/25 bg-brand-soft px-3 py-2 text-left">
-                    <div className="text-sm font-bold text-brand-dark">
-                      {filteredCustomerNames.length === 1 ? (
-                        <>
-                          Tổng nợ của <span className="font-black">{filteredCustomerNames[0]}</span>
-                          <span className="ml-1 font-semibold text-muted">
-                            ({displayDebts.length} khoản · {openIds.length} đang nợ)
-                          </span>
-                        </>
-                      ) : (
-                        <>
-                          Tổng nợ khớp lọc{" "}
-                          <span className="font-black">“{debtCustomerQuery.trim()}”</span>
-                          <span className="ml-1 font-semibold text-muted">
-                            ({filteredCustomerNames.length} khách · {displayDebts.length} khoản ·{" "}
-                            {openIds.length} đang nợ)
-                          </span>
-                        </>
-                      )}
+                        placeholder="Chọn hoặc gõ tên khách nợ…"
+                        className="h-10 w-full rounded-lg border border-line bg-white py-2 pl-9 pr-3 text-sm font-semibold outline-none focus:border-brand"
+                        autoComplete="off"
+                      />
+                      <datalist id="debt-customer-datalist">
+                        {debtCustomerOptions.map((name) => (
+                          <option key={name} value={name} />
+                        ))}
+                      </datalist>
                     </div>
-                    <strong className="text-lg font-black text-red-600">
-                      {isDebtSensitiveHidden ? "***" : formatMoney(filteredCustomerOpenTotal)}
-                    </strong>
-                  </div>
-                ) : null}
-
-                {openIds.length > 0 || openSelected.length > 0 ? (
-                  <div className="mb-3 flex flex-wrap items-center gap-3">
-                    {openIds.length > 0 ? (
-                      <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-bold text-slate-700">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 accent-brand"
-                          checked={allOpenSelected}
-                          disabled={debtsSaving}
-                          onChange={(e) => {
-                            const on = e.target.checked;
-                            setSelectedDebtIds((prev) => {
-                              if (on) {
-                                const set = new Set(prev);
-                                openIds.forEach((id) => set.add(id));
-                                return Array.from(set);
-                              }
-                              return prev.filter((id) => !openIds.includes(id));
-                            });
-                          }}
-                        />
-                        Chọn tất cả đang nợ theo lọc ({openIds.length})
-                      </label>
+                    {debtCustomerQuery.trim() ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDebtCustomerQuery("");
+                          setSelectedDebtIds([]);
+                          setDebtPage(1);
+                        }}
+                        className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold text-muted hover:bg-slate-50"
+                      >
+                        Xóa lọc khách
+                      </button>
                     ) : null}
-                    {openSelected.length > 0 ? (
-                      <div className="ml-auto flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm">
-                        <span className="font-bold text-emerald-800">
-                          Tổng đã chọn
-                          <span className="ml-1 font-semibold text-muted">
-                            ({openSelected.length} khoản)
-                          </span>
-                        </span>
-                        <strong className="text-base font-black tabular-nums text-red-600">
-                          {isDebtSensitiveHidden ? "***" : formatMoney(openSelectedTotal)}
-                        </strong>
+                    <button
+                      type="button"
+                      onClick={() => setIsDebtSensitiveHidden((v) => !v)}
+                      className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-3 font-bold text-slate-600"
+                    >
+                      {isDebtSensitiveHidden ? <EyeOff size={18} /> : <Eye size={18} />}
+                      {isDebtSensitiveHidden ? "Hiện" : "Ẩn"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={debtsSaving || openSelected.length === 0}
+                      onClick={() => void markSelectedDebtsPaid()}
+                      className="inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-600 px-3 font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      {debtsSaving ? (
+                        <Loader2 size={18} className="animate-spin" />
+                      ) : (
+                        <CheckCircle2 size={18} />
+                      )}
+                      {openSelected.length > 0 ? `Thu nợ (${openSelected.length})` : "Thu nợ"}
+                    </button>
+                    {debtTab === "manual" ? (
+                      <button
+                        type="button"
+                        onClick={openManualDebtCreateModal}
+                        className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark"
+                      >
+                        <Plus size={18} />
+                        Thêm nợ
+                      </button>
+                    ) : null}
+                  </div>
+
+                  {debtTab === "sale" ? (
+                    <p className="mb-3 rounded-lg border border-fuchsia-100 bg-fuchsia-50 px-3 py-2 text-sm font-semibold text-fuchsia-900">
+                      Nợ bán hàng = tổng tiền phiếu NỢ DAI. Thu nợ → chuyển sang Tiền mặt.
+                    </p>
+                  ) : null}
+                  {debtTab === "repair" ? (
+                    <p className="mb-3 rounded-lg border border-violet-100 bg-violet-50 px-3 py-2 text-sm font-semibold text-violet-900">
+                      Nợ sửa chữa = báo giá đơn NỢ DAI. Thu nợ → Đã thanh toán.
+                    </p>
+                  ) : null}
+                  {debtTab === "software" ? (
+                    <p className="mb-3 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-900">
+                      Nợ phần mềm = báo giá đơn. Chọn dòng → Thu nợ → Đã thanh toán.
+                    </p>
+                  ) : null}
+
+                  {showCustomerDebtSummary ? (
+                    <div className="mb-3 flex w-fit max-w-full flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg border border-brand/25 bg-brand-soft px-3 py-2 text-left">
+                      <div className="text-sm font-bold text-brand-dark">
+                        {filteredCustomerNames.length === 1 ? (
+                          <>
+                            Tổng nợ của <span className="font-black">{filteredCustomerNames[0]}</span>
+                            <span className="ml-1 font-semibold text-muted">
+                              ({displayDebts.length} khoản · {openIds.length} đang nợ)
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            Tổng nợ khớp lọc{" "}
+                            <span className="font-black">“{debtCustomerQuery.trim()}”</span>
+                            <span className="ml-1 font-semibold text-muted">
+                              ({filteredCustomerNames.length} khách · {displayDebts.length} khoản ·{" "}
+                              {openIds.length} đang nợ)
+                            </span>
+                          </>
+                        )}
                       </div>
-                    ) : null}
-                  </div>
-                ) : null}
+                      <strong className="text-lg font-black text-red-600">
+                        {isDebtSensitiveHidden ? "***" : formatMoney(filteredCustomerOpenTotal)}
+                      </strong>
+                    </div>
+                  ) : null}
 
-                {debtsLoading ? (
-                  <div className="inline-flex items-center gap-2 text-sm font-bold text-muted">
-                    <Loader2 size={16} className="animate-spin" /> Đang tải công nợ…
-                  </div>
-                ) : (
-                  <DataTable
-                    compact
-                    headers={[
-                      "",
-                      "Ngày",
-                      "Nguồn",
-                      "Khách / nội dung",
-                      "Cửa hàng",
-                      "Số nợ",
-                      "Trạng thái",
-                      "Thao tác",
-                    ]}
-                    rows={pagedDebts.map((item) => {
-                      const isOpen = item.status === "open";
-                      const checked = selectedDebtIds.includes(item.id);
-                      return [
-                        <div
-                          key={`chk-${item.id}`}
-                          className="flex items-center justify-center"
-                          onClick={(e) => e.stopPropagation()}
-                          onMouseDown={(e) => e.stopPropagation()}
-                        >
+                  {openIds.length > 0 || openSelected.length > 0 ? (
+                    <div className="mb-3 flex flex-wrap items-center gap-3">
+                      {openIds.length > 0 ? (
+                        <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-bold text-slate-700">
                           <input
                             type="checkbox"
-                            className="h-4 w-4 cursor-pointer accent-brand disabled:cursor-not-allowed"
-                            checked={checked}
-                            disabled={!isOpen || debtsSaving}
-                            title={isOpen ? "Chọn để thu nợ" : "Chỉ chọn được khoản đang nợ"}
-                            onClick={(e) => e.stopPropagation()}
+                            className="h-4 w-4 accent-brand"
+                            checked={allOpenSelected}
+                            disabled={debtsSaving}
                             onChange={(e) => {
-                              e.stopPropagation();
                               const on = e.target.checked;
-                              setSelectedDebtIds((prev) =>
-                                on
-                                  ? prev.includes(item.id)
-                                    ? prev
-                                    : [...prev, item.id]
-                                  : prev.filter((x) => x !== item.id)
-                              );
+                              setSelectedDebtIds((prev) => {
+                                if (on) {
+                                  const set = new Set(prev);
+                                  openIds.forEach((id) => set.add(id));
+                                  return Array.from(set);
+                                }
+                                return prev.filter((id) => !openIds.includes(id));
+                              });
                             }}
                           />
-                        </div>,
-                        <span key={`dt-${item.id}`} className="text-sm font-semibold">
-                          {item.debtDate || "—"}
-                        </span>,
-                        sourceBadge(item.source),
-                        <div key={`info-${item.id}`} className="text-left">
-                          <button
-                            type="button"
-                            title="Mở hồ sơ khách hàng"
-                            onClick={() =>
-                              openCustomerFromNamePhone(
-                                item.customerName,
-                                item.customerPhone
-                              )
-                            }
-                            className="text-left font-bold text-brand hover:underline"
-                          >
-                            {item.customerName}
-                          </button>
-                          <div className="text-sm font-semibold text-slate-600">{item.title}</div>
-                          {item.customerPhone ? (
-                            <div className="text-xs font-semibold text-muted">{item.customerPhone}</div>
-                          ) : null}
-                        </div>,
-                        storeName(item.storeId),
-                        <span key={`amt-${item.id}`} className="font-black text-red-600">
-                          {isDebtSensitiveHidden ? "***" : formatMoney(item.amount)}
-                        </span>,
-                        <StatusBadge
-                          key={`st-${item.id}`}
-                          tone={
-                            item.status === "open" ? "danger" : item.status === "paid" ? "ok" : "neutral"
-                          }
-                        >
-                          {statusLabel(item.status)}
-                        </StatusBadge>,
-                        <div key={`act-${item.id}`} className="flex flex-nowrap justify-center gap-1">
-                          <button
-                            type="button"
-                            title="Mở khách hàng"
-                            onClick={() =>
-                              openCustomerFromNamePhone(
-                                item.customerName,
-                                item.customerPhone
-                              )
-                            }
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-slate-50 text-slate-700 hover:bg-slate-100"
-                          >
-                            <Users size={16} />
-                          </button>
-                          {item.source === "manual" && isOpen ? (
-                            <button
-                              type="button"
-                              title="Sửa"
-                              onClick={() => openManualDebtEditModal(item.sourceId)}
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-brand-soft text-brand"
-                            >
-                              <Edit3 size={16} />
-                            </button>
-                          ) : null}
-                          {item.source === "manual" ? (
-                            <button
-                              type="button"
-                              title="Nhân bản"
-                              onClick={() => openManualDebtCloneModal(item.sourceId)}
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100"
-                            >
-                              <CopyPlus size={16} />
-                            </button>
-                          ) : null}
-                          {item.source === "software" ? (
-                            <button
-                              type="button"
-                              title="Mở phần mềm"
-                              onClick={() => {
-                                setActivePage("online-repairs");
-                                setViewingOnlineRepairId(item.sourceId);
-                              }}
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-sky-50 text-sky-700"
-                            >
-                              <Eye size={16} />
-                            </button>
-                          ) : null}
-                          {item.source === "repair" ? (
-                            <button
-                              type="button"
-                              title="Mở sửa chữa"
-                              onClick={() => setActivePage("software")}
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-violet-50 text-violet-700"
-                            >
-                              <Eye size={16} />
-                            </button>
-                          ) : null}
-                          {item.source === "manual" && isOpen && currentUser.role === "owner" ? (
-                            <button
-                              type="button"
-                              title="Hủy nợ"
-                              onClick={() => void cancelManualDebtItem(item.sourceId)}
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-danger"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          ) : null}
-                        </div>,
-                      ];
-                    })}
-                  />
-                )}
+                          Chọn tất cả đang nợ theo lọc ({openIds.length})
+                        </label>
+                      ) : null}
+                      {openSelected.length > 0 ? (
+                        <div className="ml-auto flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm">
+                          <span className="font-bold text-emerald-800">
+                            Tổng đã chọn
+                            <span className="ml-1 font-semibold text-muted">
+                              ({openSelected.length} khoản)
+                            </span>
+                          </span>
+                          <strong className="text-base font-black tabular-nums text-red-600">
+                            {isDebtSensitiveHidden ? "***" : formatMoney(openSelectedTotal)}
+                          </strong>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
 
-                <div className="mt-3 flex flex-col gap-3 border-t border-line pt-3 sm:flex-row sm:items-center sm:justify-between">
-                  <span className="text-sm font-semibold text-muted">
-                    Hiển thị{" "}
-                    <strong className="text-ink">
-                      {debtRowsCount === 0 ? 0 : debtStart + 1}–
-                      {Math.min(debtStart + debtPageSize, debtRowsCount)}
-                    </strong>{" "}
-                    / tổng{" "}
-                    <strong className="text-ink">
-                      {debtRowsCount.toLocaleString("vi-VN")}
-                    </strong>{" "}
-                    khoản
-                    {debtRowsCount > 0 ? (
-                      <span className="ml-1 text-muted">
-                        (trang {safeDebtPage}/{debtTotalPages})
-                      </span>
-                    ) : null}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      disabled={safeDebtPage <= 1}
-                      onClick={() => setDebtPage((p) => Math.max(1, p - 1))}
-                      className="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-45"
-                    >
-                      <ChevronLeft size={16} />
-                      Trước
-                    </button>
-                    <span className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-black text-slate-700">
-                      {safeDebtPage}
+                  {debtsLoading ? (
+                    <div className="inline-flex items-center gap-2 text-sm font-bold text-muted">
+                      <Loader2 size={16} className="animate-spin" /> Đang tải công nợ…
+                    </div>
+                  ) : (
+                    <DataTable
+                      compact
+                      headers={[
+                        "",
+                        "Ngày",
+                        "Nguồn",
+                        "Khách / nội dung",
+                        "Cửa hàng",
+                        "Số nợ",
+                        "Trạng thái",
+                        "Thao tác",
+                      ]}
+                      rows={pagedDebts.map((item) => {
+                        const isOpen = item.status === "open";
+                        const checked = selectedDebtIds.includes(item.id);
+                        return [
+                          <div
+                            key={`chk-${item.id}`}
+                            className="flex items-center justify-center"
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                          >
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 cursor-pointer accent-brand disabled:cursor-not-allowed"
+                              checked={checked}
+                              disabled={!isOpen || debtsSaving}
+                              title={isOpen ? "Chọn để thu nợ" : "Chỉ chọn được khoản đang nợ"}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                const on = e.target.checked;
+                                setSelectedDebtIds((prev) =>
+                                  on
+                                    ? prev.includes(item.id)
+                                      ? prev
+                                      : [...prev, item.id]
+                                    : prev.filter((x) => x !== item.id)
+                                );
+                              }}
+                            />
+                          </div>,
+                          <span key={`dt-${item.id}`} className="text-sm font-semibold">
+                            {item.debtDate || "—"}
+                          </span>,
+                          sourceBadge(item.source),
+                          <div key={`info-${item.id}`} className="text-left">
+                            <button
+                              type="button"
+                              title="Mở hồ sơ khách hàng"
+                              onClick={() =>
+                                openCustomerFromNamePhone(
+                                  item.customerName,
+                                  item.customerPhone
+                                )
+                              }
+                              className="text-left font-bold text-brand hover:underline"
+                            >
+                              {item.customerName}
+                            </button>
+                            <div className="text-sm font-semibold text-slate-600">{item.title}</div>
+                            {item.customerPhone ? (
+                              <div className="text-xs font-semibold text-muted">{item.customerPhone}</div>
+                            ) : null}
+                          </div>,
+                          storeName(item.storeId),
+                          <span key={`amt-${item.id}`} className="font-black text-red-600">
+                            {isDebtSensitiveHidden ? "***" : formatMoney(item.amount)}
+                          </span>,
+                          <StatusBadge
+                            key={`st-${item.id}`}
+                            tone={
+                              item.status === "open" ? "danger" : item.status === "paid" ? "ok" : "neutral"
+                            }
+                          >
+                            {statusLabel(item.status)}
+                          </StatusBadge>,
+                          <div key={`act-${item.id}`} className="flex flex-nowrap justify-center gap-1">
+                            <button
+                              type="button"
+                              title="Mở khách hàng"
+                              onClick={() =>
+                                openCustomerFromNamePhone(
+                                  item.customerName,
+                                  item.customerPhone
+                                )
+                              }
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-slate-50 text-slate-700 hover:bg-slate-100"
+                            >
+                              <Users size={16} />
+                            </button>
+                            {item.source === "manual" && isOpen ? (
+                              <button
+                                type="button"
+                                title="Sửa"
+                                onClick={() => openManualDebtEditModal(item.sourceId)}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-brand-soft text-brand"
+                              >
+                                <Edit3 size={16} />
+                              </button>
+                            ) : null}
+                            {item.source === "manual" ? (
+                              <button
+                                type="button"
+                                title="Nhân bản"
+                                onClick={() => openManualDebtCloneModal(item.sourceId)}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100"
+                              >
+                                <CopyPlus size={16} />
+                              </button>
+                            ) : null}
+                            {item.source === "software" ? (
+                              <button
+                                type="button"
+                                title="Mở phần mềm"
+                                onClick={() => {
+                                  setActivePage("online-repairs");
+                                  setViewingOnlineRepairId(item.sourceId);
+                                }}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-sky-50 text-sky-700"
+                              >
+                                <Eye size={16} />
+                              </button>
+                            ) : null}
+                            {item.source === "repair" ? (
+                              <button
+                                type="button"
+                                title="Mở sửa chữa"
+                                onClick={() => setActivePage("software")}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-violet-50 text-violet-700"
+                              >
+                                <Eye size={16} />
+                              </button>
+                            ) : null}
+                            {item.source === "manual" && isOpen && currentUser.role === "owner" ? (
+                              <button
+                                type="button"
+                                title="Hủy nợ"
+                                onClick={() => void cancelManualDebtItem(item.sourceId)}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-red-50 text-danger"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            ) : null}
+                          </div>,
+                        ];
+                      })}
+                    />
+                  )}
+
+                  <div className="mt-3 flex flex-col gap-3 border-t border-line pt-3 sm:flex-row sm:items-center sm:justify-between">
+                    <span className="text-sm font-semibold text-muted">
+                      Hiển thị{" "}
+                      <strong className="text-ink">
+                        {debtRowsCount === 0 ? 0 : debtStart + 1}–
+                        {Math.min(debtStart + debtPageSize, debtRowsCount)}
+                      </strong>{" "}
+                      / tổng{" "}
+                      <strong className="text-ink">
+                        {debtRowsCount.toLocaleString("vi-VN")}
+                      </strong>{" "}
+                      khoản
+                      {debtRowsCount > 0 ? (
+                        <span className="ml-1 text-muted">
+                          (trang {safeDebtPage}/{debtTotalPages})
+                        </span>
+                      ) : null}
                     </span>
-                    <button
-                      type="button"
-                      disabled={safeDebtPage >= debtTotalPages}
-                      onClick={() =>
-                        setDebtPage((p) => Math.min(debtTotalPages, p + 1))
-                      }
-                      className="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-45"
-                    >
-                      Sau
-                      <ChevronRight size={16} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={safeDebtPage <= 1}
+                        onClick={() => setDebtPage((p) => Math.max(1, p - 1))}
+                        className="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        <ChevronLeft size={16} />
+                        Trước
+                      </button>
+                      <span className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-black text-slate-700">
+                        {safeDebtPage}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={safeDebtPage >= debtTotalPages}
+                        onClick={() =>
+                          setDebtPage((p) => Math.min(debtTotalPages, p + 1))
+                        }
+                        className="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        Sau
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
                   </div>
-                </div>
               </Panel>
 
               {isManualDebtModalOpen ? (
@@ -13587,309 +13638,309 @@ export default function Home() {
           const relatedLogs =
             viewingLog && viewingLog.target.trim()
               ? logs.filter(
-                (l) =>
-                  l.id !== viewingLog.id &&
-                  l.target.trim() === viewingLog.target.trim()
-              )
+                  (l) =>
+                    l.id !== viewingLog.id &&
+                    l.target.trim() === viewingLog.target.trim()
+                )
               : [];
 
           return (
             <>
-              <Panel title="Nhật ký thao tác">
-                <p className="mb-3 text-sm font-semibold text-muted">
-                  Lưu trên máy chủ — vẫn còn sau khi tải lại trang. Mặc định 30 ngày gần nhất.
-                </p>
+            <Panel title="Nhật ký thao tác">
+              <p className="mb-3 text-sm font-semibold text-muted">
+                Lưu trên máy chủ — vẫn còn sau khi tải lại trang. Mặc định 30 ngày gần nhất.
+              </p>
 
-                <div className="mb-4 grid gap-3 rounded-xl border border-line bg-slate-50/80 p-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-                  <Field label="Từ ngày">
-                    <input
-                      type="date"
-                      value={logFrom}
-                      onChange={(e) => setLogFrom(e.target.value)}
-                      className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-semibold text-ink"
-                    />
-                  </Field>
-                  <Field label="Đến ngày">
-                    <input
-                      type="date"
-                      value={logTo}
-                      onChange={(e) => setLogTo(e.target.value)}
-                      className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-semibold text-ink"
-                    />
-                  </Field>
-                  <Field label="Cửa hàng">
-                    {currentUser.role === "staff" ? (
-                      <div className="flex h-10 w-full items-center rounded-lg border border-line bg-white px-3 text-sm font-semibold text-slate-700">
-                        {storeName(currentUser.storeId)}
-                      </div>
-                    ) : (
-                      <select
-                        value={logStoreSelectValue}
-                        onChange={(e) => {
-                          const v = e.target.value as StoreId;
-                          setLogStoreFilter(v);
-                        }}
-                        className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-semibold text-ink"
-                      >
-                        <option value="all">Tất cả cửa hàng</option>
-                        {stores.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  </Field>
-                  <Field label="Người thao tác">
-                    <input
-                      type="text"
-                      value={logUserQ}
-                      onChange={(e) => setLogUserQ(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") applyLogFilters();
-                      }}
-                      placeholder="Username…"
-                      className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-semibold text-ink"
-                    />
-                  </Field>
-                  <Field label="Hành động">
-                    <input
-                      type="text"
-                      value={logActionQ}
-                      onChange={(e) => setLogActionQ(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") applyLogFilters();
-                      }}
-                      placeholder="VD: Thêm máy…"
-                      className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-semibold text-ink"
-                    />
-                  </Field>
-                  <Field label="Tìm kiếm">
-                    <input
-                      type="text"
-                      value={logSearchQ}
-                      onChange={(e) => setLogSearchQ(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") applyLogFilters();
-                      }}
-                      placeholder="Hành động + dữ liệu…"
-                      className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-semibold text-ink"
-                    />
-                  </Field>
-                </div>
-
-                <div className="mb-4 flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={applyLogFilters}
-                    disabled={logsLoading}
-                    className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 text-sm font-bold text-white hover:bg-brand-dark disabled:opacity-60"
-                  >
-                    {logsLoading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
-                    Lọc
-                  </button>
-                  <button
-                    type="button"
-                    onClick={resetLogFilters}
-                    disabled={logsLoading}
-                    className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-                  >
-                    Xóa lọc
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setLogFilterTick((t) => t + 1)}
-                    disabled={logsLoading}
-                    className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-                    title="Tải lại"
-                  >
-                    {logsLoading ? <Loader2 size={16} className="animate-spin" /> : <Activity size={16} />}
-                    Tải lại
-                  </button>
-                </div>
-
-                {logsError ? (
-                  <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-danger">
-                    {logsError}
-                  </div>
-                ) : null}
-
-                {logsLoading && logs.length === 0 ? (
-                  <div className="inline-flex items-center gap-2 py-8 text-sm font-bold text-muted">
-                    <Loader2 size={18} className="animate-spin text-brand" />
-                    Đang tải nhật ký…
-                  </div>
-                ) : (
-                  <DataTable
-                    compact
-                    headers={[
-                      "Thời gian",
-                      "Người thao tác",
-                      "Cửa hàng",
-                      "Hành động",
-                      "Dữ liệu",
-                      "Thao tác",
-                    ]}
-                    rows={logs.map((item) => [
-                      <span key={`t-${item.id}`} className="whitespace-nowrap text-sm font-semibold text-slate-700">
-                        {item.createdAt}
-                      </span>,
-                      <span key={`u-${item.id}`} className="font-bold text-ink">
-                        {item.user || "—"}
-                      </span>,
-                      <span key={`s-${item.id}`} className="text-sm font-semibold text-slate-600">
-                        {storeName(item.storeId)}
-                      </span>,
-                      <span key={`a-${item.id}`} className="font-bold text-brand">
-                        {item.action}
-                      </span>,
-                      <span
-                        key={`d-${item.id}`}
-                        className="max-w-[14rem] truncate text-sm font-semibold text-slate-700"
-                        title={item.target}
-                      >
-                        {item.target || "—"}
-                      </span>,
-                      <div key={`act-${item.id}`} className="flex justify-center">
-                        <button
-                          type="button"
-                          onClick={() => setViewingLogId(item.id)}
-                          title="Xem chi tiết lịch sử thao tác"
-                          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-900"
-                        >
-                          <Eye size={18} />
-                        </button>
-                      </div>,
-                    ])}
-                    emptyMessage={
-                      logsTotal === 0
-                        ? "Chưa có nhật ký trong khoảng lọc."
-                        : "Không có dòng trên trang này."
-                    }
+              <div className="mb-4 grid gap-3 rounded-xl border border-line bg-slate-50/80 p-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+                <Field label="Từ ngày">
+                  <input
+                    type="date"
+                    value={logFrom}
+                    onChange={(e) => setLogFrom(e.target.value)}
+                    className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-semibold text-ink"
                   />
-                )}
-
-                <div className="mt-4 flex flex-col gap-3 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
-                  <span className="text-sm font-semibold text-muted">
-                    Hiển thị {logsTotal === 0 ? 0 : logStart}–{logEnd} / {logsTotal}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      disabled={safeLogPage <= 1 || logsLoading}
-                      onClick={() => setLogPage((p) => Math.max(1, p - 1))}
-                      className="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-45"
-                    >
-                      <ChevronLeft size={16} />
-                      Trước
-                    </button>
-                    <span className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-black text-slate-700">
-                      {safeLogPage} / {logTotalPages}
-                    </span>
-                    <button
-                      type="button"
-                      disabled={safeLogPage >= logTotalPages || logsLoading}
-                      onClick={() => setLogPage((p) => Math.min(logTotalPages, p + 1))}
-                      className="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-45"
-                    >
-                      Sau
-                      <ChevronRight size={16} />
-                    </button>
-                  </div>
-                </div>
-              </Panel>
-
-              {viewingLog ? (
-                <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-md">
-                  <section className="max-h-[92vh] w-full max-w-[640px] overflow-auto rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
-                    <div className="flex items-center justify-between border-b border-slate-200/60 bg-gradient-to-r from-brand/10 to-transparent p-5">
-                      <div className="flex items-center gap-3">
-                        <div className="grid h-11 w-11 place-items-center rounded-full bg-brand-soft text-brand">
-                          <ClipboardList size={22} />
-                        </div>
-                        <div>
-                          <h2 className="text-xl font-black text-brand">Chi tiết lịch sử thao tác</h2>
-                          <p className="text-sm font-semibold text-muted">{viewingLog.action}</p>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setViewingLogId(null)}
-                        className="h-9 rounded-xl border border-slate-200/60 bg-white/50 px-4 text-sm font-bold text-slate-600 backdrop-blur-md transition hover:bg-white hover:text-slate-900"
-                      >
-                        Đóng
-                      </button>
+                </Field>
+                <Field label="Đến ngày">
+                  <input
+                    type="date"
+                    value={logTo}
+                    onChange={(e) => setLogTo(e.target.value)}
+                    className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-semibold text-ink"
+                  />
+                </Field>
+                <Field label="Cửa hàng">
+                  {currentUser.role === "staff" ? (
+                    <div className="flex h-10 w-full items-center rounded-lg border border-line bg-white px-3 text-sm font-semibold text-slate-700">
+                      {storeName(currentUser.storeId)}
                     </div>
-                    <div className="grid gap-3 p-5">
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <Field label="Thời gian">
-                          <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-sm font-semibold text-slate-800">
-                            {viewingLog.createdAt || "—"}
-                          </div>
-                        </Field>
-                        <Field label="Người thao tác">
-                          <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-sm font-semibold text-slate-800">
-                            {viewingLog.user || "—"}
-                          </div>
-                        </Field>
-                      </div>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <Field label="Cửa hàng">
-                          <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-sm font-semibold text-slate-800">
-                            {storeName(viewingLog.storeId)}
-                          </div>
-                        </Field>
-                        <Field label="Hành động">
-                          <div className="flex h-10 w-full items-center rounded-lg border border-line bg-brand-soft px-3 text-sm font-black text-brand">
-                            {viewingLog.action || "—"}
-                          </div>
-                        </Field>
-                      </div>
-                      <Field label="Dữ liệu / đối tượng">
-                        <div className="min-h-10 w-full rounded-lg border border-line bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-800">
-                          {viewingLog.target || "—"}
-                        </div>
-                      </Field>
-                      <Field label="Mã nhật ký">
-                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-mono text-xs font-semibold text-slate-600">
-                          {viewingLog.id}
-                        </div>
-                      </Field>
-                      {viewingLog.meta && Object.keys(viewingLog.meta).length > 0 ? (
-                        <Field label="Chi tiết bổ sung (meta)">
-                          <pre className="max-h-40 overflow-auto rounded-lg border border-line bg-slate-50 p-3 text-xs font-semibold text-slate-700">
-                            {JSON.stringify(viewingLog.meta, null, 2)}
-                          </pre>
-                        </Field>
-                      ) : null}
+                  ) : (
+                    <select
+                      value={logStoreSelectValue}
+                      onChange={(e) => {
+                        const v = e.target.value as StoreId;
+                        setLogStoreFilter(v);
+                      }}
+                      className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-semibold text-ink"
+                    >
+                      <option value="all">Tất cả cửa hàng</option>
+                      {stores.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </Field>
+                <Field label="Người thao tác">
+                  <input
+                    type="text"
+                    value={logUserQ}
+                    onChange={(e) => setLogUserQ(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") applyLogFilters();
+                    }}
+                    placeholder="Username…"
+                    className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-semibold text-ink"
+                  />
+                </Field>
+                <Field label="Hành động">
+                  <input
+                    type="text"
+                    value={logActionQ}
+                    onChange={(e) => setLogActionQ(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") applyLogFilters();
+                    }}
+                    placeholder="VD: Thêm máy…"
+                    className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-semibold text-ink"
+                  />
+                </Field>
+                <Field label="Tìm kiếm">
+                  <input
+                    type="text"
+                    value={logSearchQ}
+                    onChange={(e) => setLogSearchQ(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") applyLogFilters();
+                    }}
+                    placeholder="Hành động + dữ liệu…"
+                    className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-semibold text-ink"
+                  />
+                </Field>
+              </div>
 
-                      {relatedLogs.length > 0 ? (
-                        <div className="rounded-xl border border-line bg-slate-50/80 p-3">
-                          <p className="mb-2 text-xs font-black uppercase tracking-wide text-muted">
-                            Thao tác liên quan (cùng dữ liệu · trên trang này)
-                          </p>
-                          <ul className="grid max-h-40 gap-1.5 overflow-auto">
-                            {relatedLogs.map((r) => (
-                              <li key={r.id}>
-                                <button
-                                  type="button"
-                                  onClick={() => setViewingLogId(r.id)}
-                                  className="flex w-full flex-col rounded-lg border border-line bg-white px-3 py-2 text-left transition hover:border-brand/40 hover:bg-brand-soft/40 sm:flex-row sm:items-center sm:justify-between sm:gap-2"
-                                >
-                                  <span className="text-sm font-bold text-brand">{r.action}</span>
-                                  <span className="text-xs font-semibold text-muted">
-                                    {r.createdAt} · {r.user}
-                                  </span>
-                                </button>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : null}
-                    </div>
-                  </section>
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={applyLogFilters}
+                  disabled={logsLoading}
+                  className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 text-sm font-bold text-white hover:bg-brand-dark disabled:opacity-60"
+                >
+                  {logsLoading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+                  Lọc
+                </button>
+                <button
+                  type="button"
+                  onClick={resetLogFilters}
+                  disabled={logsLoading}
+                  className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Xóa lọc
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLogFilterTick((t) => t + 1)}
+                  disabled={logsLoading}
+                  className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                  title="Tải lại"
+                >
+                  {logsLoading ? <Loader2 size={16} className="animate-spin" /> : <Activity size={16} />}
+                  Tải lại
+                </button>
+              </div>
+
+              {logsError ? (
+                <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-danger">
+                  {logsError}
                 </div>
               ) : null}
+
+              {logsLoading && logs.length === 0 ? (
+                <div className="inline-flex items-center gap-2 py-8 text-sm font-bold text-muted">
+                  <Loader2 size={18} className="animate-spin text-brand" />
+                  Đang tải nhật ký…
+                </div>
+              ) : (
+                <DataTable
+                  compact
+                  headers={[
+                    "Thời gian",
+                    "Người thao tác",
+                    "Cửa hàng",
+                    "Hành động",
+                    "Dữ liệu",
+                    "Thao tác",
+                  ]}
+                  rows={logs.map((item) => [
+                    <span key={`t-${item.id}`} className="whitespace-nowrap text-sm font-semibold text-slate-700">
+                      {item.createdAt}
+                    </span>,
+                    <span key={`u-${item.id}`} className="font-bold text-ink">
+                      {item.user || "—"}
+                    </span>,
+                    <span key={`s-${item.id}`} className="text-sm font-semibold text-slate-600">
+                      {storeName(item.storeId)}
+                    </span>,
+                    <span key={`a-${item.id}`} className="font-bold text-brand">
+                      {item.action}
+                    </span>,
+                    <span
+                      key={`d-${item.id}`}
+                      className="max-w-[14rem] truncate text-sm font-semibold text-slate-700"
+                      title={item.target}
+                    >
+                      {item.target || "—"}
+                    </span>,
+                    <div key={`act-${item.id}`} className="flex justify-center">
+                      <button
+                        type="button"
+                        onClick={() => setViewingLogId(item.id)}
+                        title="Xem chi tiết lịch sử thao tác"
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-900"
+                      >
+                        <Eye size={18} />
+                      </button>
+                    </div>,
+                  ])}
+                  emptyMessage={
+                    logsTotal === 0
+                      ? "Chưa có nhật ký trong khoảng lọc."
+                      : "Không có dòng trên trang này."
+                  }
+                />
+              )}
+
+              <div className="mt-4 flex flex-col gap-3 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <span className="text-sm font-semibold text-muted">
+                  Hiển thị {logsTotal === 0 ? 0 : logStart}–{logEnd} / {logsTotal}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={safeLogPage <= 1 || logsLoading}
+                    onClick={() => setLogPage((p) => Math.max(1, p - 1))}
+                    className="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <ChevronLeft size={16} />
+                    Trước
+                  </button>
+                  <span className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-black text-slate-700">
+                    {safeLogPage} / {logTotalPages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={safeLogPage >= logTotalPages || logsLoading}
+                    onClick={() => setLogPage((p) => Math.min(logTotalPages, p + 1))}
+                    className="inline-flex h-9 items-center gap-1 rounded-lg border border-line bg-white px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    Sau
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              </div>
+            </Panel>
+
+            {viewingLog ? (
+              <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-md">
+                <section className="max-h-[92vh] w-full max-w-[640px] overflow-auto rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
+                  <div className="flex items-center justify-between border-b border-slate-200/60 bg-gradient-to-r from-brand/10 to-transparent p-5">
+                    <div className="flex items-center gap-3">
+                      <div className="grid h-11 w-11 place-items-center rounded-full bg-brand-soft text-brand">
+                        <ClipboardList size={22} />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-black text-brand">Chi tiết lịch sử thao tác</h2>
+                        <p className="text-sm font-semibold text-muted">{viewingLog.action}</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setViewingLogId(null)}
+                      className="h-9 rounded-xl border border-slate-200/60 bg-white/50 px-4 text-sm font-bold text-slate-600 backdrop-blur-md transition hover:bg-white hover:text-slate-900"
+                    >
+                      Đóng
+                    </button>
+                  </div>
+                  <div className="grid gap-3 p-5">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label="Thời gian">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-sm font-semibold text-slate-800">
+                          {viewingLog.createdAt || "—"}
+                        </div>
+                      </Field>
+                      <Field label="Người thao tác">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-sm font-semibold text-slate-800">
+                          {viewingLog.user || "—"}
+                        </div>
+                      </Field>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label="Cửa hàng">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-sm font-semibold text-slate-800">
+                          {storeName(viewingLog.storeId)}
+                        </div>
+                      </Field>
+                      <Field label="Hành động">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-brand-soft px-3 text-sm font-black text-brand">
+                          {viewingLog.action || "—"}
+                        </div>
+                      </Field>
+                    </div>
+                    <Field label="Dữ liệu / đối tượng">
+                      <div className="min-h-10 w-full rounded-lg border border-line bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-800">
+                        {viewingLog.target || "—"}
+                      </div>
+                    </Field>
+                    <Field label="Mã nhật ký">
+                      <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-mono text-xs font-semibold text-slate-600">
+                        {viewingLog.id}
+                      </div>
+                    </Field>
+                    {viewingLog.meta && Object.keys(viewingLog.meta).length > 0 ? (
+                      <Field label="Chi tiết bổ sung (meta)">
+                        <pre className="max-h-40 overflow-auto rounded-lg border border-line bg-slate-50 p-3 text-xs font-semibold text-slate-700">
+                          {JSON.stringify(viewingLog.meta, null, 2)}
+                        </pre>
+                      </Field>
+                    ) : null}
+
+                    {relatedLogs.length > 0 ? (
+                      <div className="rounded-xl border border-line bg-slate-50/80 p-3">
+                        <p className="mb-2 text-xs font-black uppercase tracking-wide text-muted">
+                          Thao tác liên quan (cùng dữ liệu · trên trang này)
+                        </p>
+                        <ul className="grid max-h-40 gap-1.5 overflow-auto">
+                          {relatedLogs.map((r) => (
+                            <li key={r.id}>
+                              <button
+                                type="button"
+                                onClick={() => setViewingLogId(r.id)}
+                                className="flex w-full flex-col rounded-lg border border-line bg-white px-3 py-2 text-left transition hover:border-brand/40 hover:bg-brand-soft/40 sm:flex-row sm:items-center sm:justify-between sm:gap-2"
+                              >
+                                <span className="text-sm font-bold text-brand">{r.action}</span>
+                                <span className="text-xs font-semibold text-muted">
+                                  {r.createdAt} · {r.user}
+                                </span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </div>
+                </section>
+              </div>
+            ) : null}
             </>
           );
         })()}
@@ -13957,8 +14008,9 @@ export default function Home() {
                                 return (
                                   <label
                                     key={`${acc.id}-${menu.id}`}
-                                    className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-semibold ${checked ? "border-brand/30 bg-brand-soft text-brand-dark" : "border-line bg-white text-slate-600"
-                                      } ${isOwnerRow ? "cursor-default opacity-80" : ""}`}
+                                    className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-semibold ${
+                                      checked ? "border-brand/30 bg-brand-soft text-brand-dark" : "border-line bg-white text-slate-600"
+                                    } ${isOwnerRow ? "cursor-default opacity-80" : ""}`}
                                   >
                                     <input
                                       type="checkbox"
@@ -14001,10 +14053,11 @@ export default function Home() {
                                 disabled={busy || isSelf}
                                 title={isSelf ? "Không thể tự vô hiệu hóa" : active ? "Vô hiệu hóa" : "Kích hoạt lại"}
                                 onClick={() => void toggleAccountActive(acc.id, !active)}
-                                className={`inline-flex h-9 items-center justify-center rounded-lg px-3 text-xs font-bold disabled:opacity-50 ${active
+                                className={`inline-flex h-9 items-center justify-center rounded-lg px-3 text-xs font-bold disabled:opacity-50 ${
+                                  active
                                     ? "bg-red-50 text-danger hover:bg-red-100"
                                     : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                                  }`}
+                                }`}
                               >
                                 {active ? "Inactive" : "Active"}
                               </button>
@@ -14114,813 +14167,816 @@ export default function Home() {
           );
 
           return (
-            <section className="grid gap-4">
-              {(shopRepairBackendError || shopRepairLoading) && (
-                <div
-                  className={`rounded-lg border p-3 text-sm font-semibold ${shopRepairBackendError
-                      ? "border-red-200 bg-red-50 text-danger"
-                      : "border-line bg-white text-muted"
-                    }`}
-                >
-                  {shopRepairBackendError || "Đang tải đơn sửa chữa từ Supabase…"}
-                  {!shopRepairLoading && shopRepairBackendError ? (
+          <section className="grid gap-4">
+            {(shopRepairBackendError || shopRepairLoading) && (
+              <div
+                className={`rounded-lg border p-3 text-sm font-semibold ${
+                  shopRepairBackendError
+                    ? "border-red-200 bg-red-50 text-danger"
+                    : "border-line bg-white text-muted"
+                }`}
+              >
+                {shopRepairBackendError || "Đang tải đơn sửa chữa từ Supabase…"}
+                {!shopRepairLoading && shopRepairBackendError ? (
+                  <button
+                    type="button"
+                    onClick={() => void reloadShopRepairsFromDb()}
+                    className="ml-2 font-bold text-brand hover:underline"
+                  >
+                    Thử lại
+                  </button>
+                ) : null}
+              </div>
+            )}
+
+            {isShopRepairModalOpen && (() => {
+              const formDefaults = editingShopRepairId
+                ? shopRepairs.find((r) => r.id === editingShopRepairId) ?? null
+                : cloneShopRepairDraft;
+              const isCloneMode = !editingShopRepairId && Boolean(cloneShopRepairDraft);
+              return (
+              <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/60 p-4 backdrop-blur-md">
+                <div className="relative my-auto w-full max-w-4xl rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
+                  {shopRepairSaving ? (
+                    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 rounded-2xl bg-white/55 backdrop-blur-sm">
+                      <Loader2 size={40} className="animate-spin text-brand" />
+                      <p className="text-base font-black text-ink">Đang lưu…</p>
+                    </div>
+                  ) : null}
+                  <div className="flex items-center justify-between border-b border-slate-200/60 bg-white/80 p-4 backdrop-blur-md">
+                    <h2 className="text-xl font-black text-brand">
+                      {editingShopRepairId
+                        ? "Sửa đơn Sửa chữa"
+                        : isCloneMode
+                          ? "Tạo đơn (nhân bản)"
+                          : "Tạo đơn Sửa chữa"}
+                    </h2>
                     <button
                       type="button"
-                      onClick={() => void reloadShopRepairsFromDb()}
-                      className="ml-2 font-bold text-brand hover:underline"
+                      onClick={closeShopRepairModal}
+                      disabled={shopRepairSaving}
+                      className="grid h-8 w-8 place-items-center rounded-full bg-slate-200 text-slate-500 hover:bg-slate-300 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      Thử lại
+                      <X size={18} />
                     </button>
-                  ) : null}
-                </div>
-              )}
-
-              {isShopRepairModalOpen && (() => {
-                const formDefaults = editingShopRepairId
-                  ? shopRepairs.find((r) => r.id === editingShopRepairId) ?? null
-                  : cloneShopRepairDraft;
-                const isCloneMode = !editingShopRepairId && Boolean(cloneShopRepairDraft);
-                return (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/60 p-4 backdrop-blur-md">
-                    <div className="relative my-auto w-full max-w-4xl rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
-                      {shopRepairSaving ? (
-                        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 rounded-2xl bg-white/55 backdrop-blur-sm">
-                          <Loader2 size={40} className="animate-spin text-brand" />
-                          <p className="text-base font-black text-ink">Đang lưu…</p>
-                        </div>
-                      ) : null}
-                      <div className="flex items-center justify-between border-b border-slate-200/60 bg-white/80 p-4 backdrop-blur-md">
-                        <h2 className="text-xl font-black text-brand">
-                          {editingShopRepairId
-                            ? "Sửa đơn Sửa chữa"
-                            : isCloneMode
-                              ? "Tạo đơn (nhân bản)"
-                              : "Tạo đơn Sửa chữa"}
-                        </h2>
-                        <button
-                          type="button"
-                          onClick={closeShopRepairModal}
-                          disabled={shopRepairSaving}
-                          className="grid h-8 w-8 place-items-center rounded-full bg-slate-200 text-slate-500 hover:bg-slate-300 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <X size={18} />
-                        </button>
+                  </div>
+                  <div className={`p-4 ${shopRepairSaving ? "pointer-events-none select-none" : ""}`}>
+                    {isCloneMode ? (
+                      <div className="mb-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800">
+                        Đã copy thông tin đơn mẫu — sửa nếu cần, rồi lưu thành đơn mới (mock).
                       </div>
-                      <div className={`p-4 ${shopRepairSaving ? "pointer-events-none select-none" : ""}`}>
-                        {isCloneMode ? (
-                          <div className="mb-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800">
-                            Đã copy thông tin đơn mẫu — sửa nếu cần, rồi lưu thành đơn mới (mock).
-                          </div>
-                        ) : null}
-                        <form
-                          key={
-                            editingShopRepairId ??
-                            (isCloneMode ? `clone-${cloneShopRepairFormKey}` : "new")
-                          }
-                          onSubmit={(e) => {
-                            e.preventDefault();
-                            if (shopRepairSaving) return;
-                            void saveShopRepairFromForm(new FormData(e.currentTarget));
-                          }}
-                          className="grid gap-3"
-                          autoComplete="off"
-                          spellCheck={false}
-                        >
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <ManageableSelect
-                              label="Khách hàng"
-                              name="customerName"
-                              options={shopRepairCustomerOptions}
-                              setOptions={setFormLookupOptions(REPAIR_LOOKUP_CATEGORIES.customer, repairLookupStoreId)}
-                              defaultValue={formDefaults?.customerName ?? "Khách lẻ"}
-                              categoryCode={REPAIR_LOOKUP_CATEGORIES.customer}
-                              storeId={repairLookupStoreId}
-                              onRenameCascade={reloadShopRepairsFromDb}
-                              allowManage
-                              allowFreeText
-                              actorUsername={currentUser?.username ?? ""}
-                            />
-                            <ManageableSelect
-                              label="Tên máy"
-                              name="deviceName"
-                              options={shopRepairDeviceOptions}
-                              setOptions={setFormLookupOptions(REPAIR_LOOKUP_CATEGORIES.device, repairLookupStoreId)}
-                              defaultValue={formDefaults?.deviceName}
-                              categoryCode={REPAIR_LOOKUP_CATEGORIES.device}
-                              storeId={repairLookupStoreId}
-                              onRenameCascade={reloadShopRepairsFromDb}
-                              allowManage
-                              allowFreeText
-                              actorUsername={currentUser?.username ?? ""}
-                            />
-                          </div>
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <ManageableSelect
-                              label="Tình trạng"
-                              name="condition"
-                              options={shopRepairConditionOptions}
-                              setOptions={setFormLookupOptions(REPAIR_LOOKUP_CATEGORIES.condition, repairLookupStoreId)}
-                              defaultValue={formDefaults?.condition}
-                              required={false}
-                              categoryCode={REPAIR_LOOKUP_CATEGORIES.condition}
-                              storeId={repairLookupStoreId}
-                              onRenameCascade={reloadShopRepairsFromDb}
-                              allowManage
-                              allowFreeText
-                              actorUsername={currentUser?.username ?? ""}
-                            />
-                            <ManageableSelect
-                              label="Bảo hành"
-                              name="warranty"
-                              options={shopRepairWarrantyOptions}
-                              setOptions={setFormLookupOptions(REPAIR_LOOKUP_CATEGORIES.warranty, repairLookupStoreId)}
-                              defaultValue={formDefaults?.warranty}
-                              required={false}
-                              categoryCode={REPAIR_LOOKUP_CATEGORIES.warranty}
-                              storeId={repairLookupStoreId}
-                              onRenameCascade={reloadShopRepairsFromDb}
-                              allowManage
-                              allowFreeText
-                              actorUsername={currentUser?.username ?? ""}
-                            />
-                          </div>
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <ManageableSelect
-                              label="Báo giá"
-                              name="quote"
-                              options={shopRepairQuoteOptions}
-                              setOptions={setFormLookupOptions(REPAIR_LOOKUP_CATEGORIES.quote, repairLookupStoreId)}
-                              defaultValue={formatInputMoney(formDefaults?.quote ?? "")}
-                              categoryCode={REPAIR_LOOKUP_CATEGORIES.quote}
-                              storeId={repairLookupStoreId}
-                              onRenameCascade={reloadShopRepairsFromDb}
-                              allowManage
-                              allowFreeText
-                              actorUsername={currentUser?.username ?? ""}
-                            />
-                            <ManageableSelect
-                              label="Phí dịch vụ"
-                              name="deposit"
-                              options={shopRepairFeeOptions}
-                              setOptions={setFormLookupOptions(REPAIR_LOOKUP_CATEGORIES.fee, repairLookupStoreId)}
-                              defaultValue={
-                                formDefaults != null
-                                  ? formatInputMoney(formDefaults.deposit ?? "")
-                                  : ""
-                              }
+                    ) : null}
+                    <form
+                      key={
+                        editingShopRepairId ??
+                        (isCloneMode ? `clone-${cloneShopRepairFormKey}` : "new")
+                      }
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (shopRepairSaving) return;
+                        void saveShopRepairFromForm(new FormData(e.currentTarget));
+                      }}
+                      className="grid gap-3"
+                      autoComplete="off"
+                      spellCheck={false}
+                    >
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <ManageableSelect
+                    label="Khách hàng"
+                    name="customerName"
+                    options={shopRepairCustomerOptions}
+                    setOptions={setFormLookupOptions(REPAIR_LOOKUP_CATEGORIES.customer, repairLookupStoreId)}
+                    defaultValue={formDefaults?.customerName ?? "Khách lẻ"}
+                    categoryCode={REPAIR_LOOKUP_CATEGORIES.customer}
+                    storeId={repairLookupStoreId}
+                    onRenameCascade={reloadShopRepairsFromDb}
+                    allowManage
+                    allowFreeText
+                    actorUsername={currentUser?.username ?? ""}
+                  />
+                  <ManageableSelect
+                    label="Tên máy"
+                    name="deviceName"
+                    options={shopRepairDeviceOptions}
+                    setOptions={setFormLookupOptions(REPAIR_LOOKUP_CATEGORIES.device, repairLookupStoreId)}
+                    defaultValue={formDefaults?.deviceName}
+                    categoryCode={REPAIR_LOOKUP_CATEGORIES.device}
+                    storeId={repairLookupStoreId}
+                    onRenameCascade={reloadShopRepairsFromDb}
+                    allowManage
+                    allowFreeText
+                    actorUsername={currentUser?.username ?? ""}
+                  />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <ManageableSelect
+                    label="Tình trạng"
+                    name="condition"
+                    options={shopRepairConditionOptions}
+                    setOptions={setFormLookupOptions(REPAIR_LOOKUP_CATEGORIES.condition, repairLookupStoreId)}
+                    defaultValue={formDefaults?.condition}
+                    required={false}
+                    categoryCode={REPAIR_LOOKUP_CATEGORIES.condition}
+                    storeId={repairLookupStoreId}
+                    onRenameCascade={reloadShopRepairsFromDb}
+                    allowManage
+                    allowFreeText
+                    actorUsername={currentUser?.username ?? ""}
+                  />
+                  <ManageableSelect
+                    label="Bảo hành"
+                    name="warranty"
+                    options={shopRepairWarrantyOptions}
+                    setOptions={setFormLookupOptions(REPAIR_LOOKUP_CATEGORIES.warranty, repairLookupStoreId)}
+                    defaultValue={formDefaults?.warranty}
+                    required={false}
+                    categoryCode={REPAIR_LOOKUP_CATEGORIES.warranty}
+                    storeId={repairLookupStoreId}
+                    onRenameCascade={reloadShopRepairsFromDb}
+                    allowManage
+                    allowFreeText
+                    actorUsername={currentUser?.username ?? ""}
+                  />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <ManageableSelect
+                    label="Báo giá"
+                    name="quote"
+                    options={shopRepairQuoteOptions}
+                    setOptions={setFormLookupOptions(REPAIR_LOOKUP_CATEGORIES.quote, repairLookupStoreId)}
+                    defaultValue={formatInputMoney(formDefaults?.quote ?? "")}
+                    categoryCode={REPAIR_LOOKUP_CATEGORIES.quote}
+                    storeId={repairLookupStoreId}
+                    onRenameCascade={reloadShopRepairsFromDb}
+                    allowManage
+                    allowFreeText
+                    actorUsername={currentUser?.username ?? ""}
+                  />
+                  <ManageableSelect
+                    label="Phí dịch vụ"
+                    name="deposit"
+                    options={shopRepairFeeOptions}
+                    setOptions={setFormLookupOptions(REPAIR_LOOKUP_CATEGORIES.fee, repairLookupStoreId)}
+                    defaultValue={
+                      formDefaults != null
+                        ? formatInputMoney(formDefaults.deposit ?? "")
+                        : ""
+                    }
+                    required
+                    categoryCode={REPAIR_LOOKUP_CATEGORIES.fee}
+                    storeId={repairLookupStoreId}
+                    onRenameCascade={reloadShopRepairsFromDb}
+                    allowManage
+                    allowFreeText
+                    actorUsername={currentUser?.username ?? ""}
+                  />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {(() => {
+                    const raw = formDefaults?.receiveDate || vnNowDateTimeLocal();
+                    const local = String(raw).slice(0, 16).replace(" ", "T");
+                    const [datePart = "", timePart = ""] = local.includes("T")
+                      ? local.split("T")
+                      : [local.slice(0, 10), "00:00"];
+                    const [hourPart = "00", minutePart = "00"] = (timePart || "00:00")
+                      .slice(0, 5)
+                      .split(":");
+                    const hours = Array.from({ length: 24 }, (_, i) =>
+                      String(i).padStart(2, "0")
+                    );
+                    const minutes = Array.from({ length: 60 }, (_, i) =>
+                      String(i).padStart(2, "0")
+                    );
+                    return (
+                      <div className="grid min-w-0 gap-1.5 sm:col-span-1">
+                        <span className="text-base font-black text-slate-950">
+                          Ngày & giờ <span className="ml-1 text-red-500">*</span>
+                        </span>
+                        <div className="grid min-w-0 grid-cols-[minmax(0,1.4fr)_minmax(0,0.7fr)_minmax(0,0.7fr)] gap-2">
+                          <label className="grid min-w-0 gap-1">
+                            <span className="text-xs font-bold text-brand">Ngày</span>
+                            <input
+                              name="receiveDatePart"
+                              type="date"
                               required
-                              categoryCode={REPAIR_LOOKUP_CATEGORIES.fee}
-                              storeId={repairLookupStoreId}
-                              onRenameCascade={reloadShopRepairsFromDb}
-                              allowManage
-                              allowFreeText
-                              actorUsername={currentUser?.username ?? ""}
+                              defaultValue={datePart}
+                              className="h-10 w-full min-w-0 rounded-lg border border-line bg-brand-soft/40 px-2 text-sm font-black text-brand outline-none focus:border-brand"
                             />
-                          </div>
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            {(() => {
-                              const raw = formDefaults?.receiveDate || vnNowDateTimeLocal();
-                              const local = String(raw).slice(0, 16).replace(" ", "T");
-                              const [datePart = "", timePart = ""] = local.includes("T")
-                                ? local.split("T")
-                                : [local.slice(0, 10), "00:00"];
-                              const [hourPart = "00", minutePart = "00"] = (timePart || "00:00")
-                                .slice(0, 5)
-                                .split(":");
-                              const hours = Array.from({ length: 24 }, (_, i) =>
-                                String(i).padStart(2, "0")
-                              );
-                              const minutes = Array.from({ length: 60 }, (_, i) =>
-                                String(i).padStart(2, "0")
-                              );
-                              return (
-                                <div className="grid min-w-0 gap-1.5 sm:col-span-1">
-                                  <span className="text-base font-black text-slate-950">
-                                    Ngày & giờ <span className="ml-1 text-red-500">*</span>
-                                  </span>
-                                  <div className="grid min-w-0 grid-cols-[minmax(0,1.4fr)_minmax(0,0.7fr)_minmax(0,0.7fr)] gap-2">
-                                    <label className="grid min-w-0 gap-1">
-                                      <span className="text-xs font-bold text-brand">Ngày</span>
-                                      <input
-                                        name="receiveDatePart"
-                                        type="date"
-                                        required
-                                        defaultValue={datePart}
-                                        className="h-10 w-full min-w-0 rounded-lg border border-line bg-brand-soft/40 px-2 text-sm font-black text-brand outline-none focus:border-brand"
-                                      />
-                                    </label>
-                                    <label className="grid min-w-0 gap-1">
-                                      <span className="text-xs font-bold text-amber-800">Giờ</span>
-                                      <select
-                                        name="receiveHour"
-                                        required
-                                        defaultValue={hourPart.padStart(2, "0")}
-                                        className="h-10 w-full min-w-0 rounded-lg border border-line bg-amber-50 px-1.5 text-sm font-black text-amber-900 outline-none focus:border-amber-500"
-                                      >
-                                        {hours.map((h) => (
-                                          <option key={`h-${h}`} value={h}>{h}</option>
-                                        ))}
-                                      </select>
-                                    </label>
-                                    <label className="grid min-w-0 gap-1">
-                                      <span className="text-xs font-bold text-amber-800">Phút</span>
-                                      <select
-                                        name="receiveMinute"
-                                        required
-                                        defaultValue={minutePart.padStart(2, "0")}
-                                        className="h-10 w-full min-w-0 rounded-lg border border-line bg-amber-50 px-1.5 text-sm font-black text-amber-900 outline-none focus:border-amber-500"
-                                      >
-                                        {minutes.map((m) => (
-                                          <option key={`m-${m}`} value={m}>{m}</option>
-                                        ))}
-                                      </select>
-                                    </label>
-                                  </div>
-                                </div>
-                              );
-                            })()}
-                            <Field label="Trạng thái TT" required>
-                              <select
-                                name="paymentStatus"
-                                required
-                                defaultValue={formDefaults?.paymentStatus ?? "Đã thanh toán"}
-                                className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
-                              >
-                                <option value="Đã thanh toán">Đã thanh toán</option>
-                                <option value="NỢ DAI">NỢ DAI</option>
-                              </select>
-                            </Field>
-                          </div>
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <Field label="Hình thức thanh toán" required>
-                              <select
-                                name="paymentMethod"
-                                required
-                                defaultValue={formDefaults?.paymentMethod ?? "Tiền mặt"}
-                                className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
-                              >
-                                {SALE_PAY_METHOD_OPTIONS.map((m) => (
-                                  <option key={m} value={m}>
-                                    {m}
-                                  </option>
-                                ))}
-                              </select>
-                            </Field>
-                          </div>
-                          <div className="flex justify-end gap-2 border-t border-line pt-4">
-                            <button
-                              type="button"
-                              onClick={closeShopRepairModal}
-                              disabled={shopRepairSaving}
-                              className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted disabled:opacity-50"
+                          </label>
+                          <label className="grid min-w-0 gap-1">
+                            <span className="text-xs font-bold text-amber-800">Giờ</span>
+                            <select
+                              name="receiveHour"
+                              required
+                              defaultValue={hourPart.padStart(2, "0")}
+                              className="h-10 w-full min-w-0 rounded-lg border border-line bg-amber-50 px-1.5 text-sm font-black text-amber-900 outline-none focus:border-amber-500"
                             >
-                              Hủy
-                            </button>
-                            <button
-                              type="submit"
-                              disabled={shopRepairSaving}
-                              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-70"
+                              {hours.map((h) => (
+                                <option key={`h-${h}`} value={h}>{h}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="grid min-w-0 gap-1">
+                            <span className="text-xs font-bold text-amber-800">Phút</span>
+                            <select
+                              name="receiveMinute"
+                              required
+                              defaultValue={minutePart.padStart(2, "0")}
+                              className="h-10 w-full min-w-0 rounded-lg border border-line bg-amber-50 px-1.5 text-sm font-black text-amber-900 outline-none focus:border-amber-500"
                             >
-                              {shopRepairSaving ? (
-                                <Loader2 size={18} className="animate-spin" />
-                              ) : editingShopRepairId ? (
-                                <Edit3 size={18} />
-                              ) : isCloneMode ? (
-                                <CopyPlus size={18} />
-                              ) : (
-                                <Plus size={18} />
-                              )}
-                              {shopRepairSaving
-                                ? "Đang lưu…"
-                                : editingShopRepairId
-                                  ? "Lưu thay đổi"
-                                  : isCloneMode
-                                    ? "Lưu đơn mới"
-                                    : "Tạo đơn"}
-                            </button>
-                          </div>
-                        </form>
+                              {minutes.map((m) => (
+                                <option key={`m-${m}`} value={m}>{m}</option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              <div className="grid gap-4">
-                <div className="rounded-lg bg-gradient-to-br from-emerald-800 via-brand to-teal-700 p-4 sm:p-5 text-white shadow relative overflow-hidden flex flex-col md:flex-row justify-between items-center md:text-left text-center gap-4 mb-4">
-                  <div className="absolute top-0 right-0 -mt-16 -mr-16 h-64 w-64 rounded-full bg-white/10 blur-3xl mix-blend-overlay pointer-events-none"></div>
-                  <div className="absolute bottom-0 left-0 -mb-16 -ml-16 h-48 w-48 rounded-full bg-white/10 blur-2xl pointer-events-none"></div>
-                  <div className="relative z-10 md:w-1/2">
-                    <h1 className="text-lg sm:text-xl font-black uppercase tracking-tight text-white drop-shadow-sm">
-                      Trung Tâm Sửa Chữa Điện Thoại Kim Chi
-                    </h1>
-                  </div>
-                  <div className="relative z-10 md:w-1/2 flex flex-col md:items-end gap-1">
-                    <p className="flex items-center gap-2 text-xs font-bold text-white sm:text-sm">
-                      <span className="hidden h-1.5 w-1.5 shrink-0 rounded-full bg-white md:block"></span>
-                      Nhanh — Uy tín — Bảo hành rõ ràng
-                    </p>
-                    <p className="flex items-center gap-2 text-xs font-semibold text-white sm:text-sm">
-                      <span className="hidden h-1.5 w-1.5 shrink-0 rounded-full bg-white md:block"></span>
-                      Nơi Trao trọn niềm tin số 1 của khách hàng Tại Phường Nam Sách, TP. Hải Phòng
-                    </p>
+                    );
+                  })()}
+                  <Field label="Trạng thái TT" required>
+                    <select
+                      name="paymentStatus"
+                      required
+                      defaultValue={formDefaults?.paymentStatus ?? "Đã thanh toán"}
+                      className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
+                    >
+                      <option value="Đã thanh toán">Đã thanh toán</option>
+                      <option value="NỢ DAI">NỢ DAI</option>
+                    </select>
+                  </Field>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Hình thức thanh toán" required>
+                    <select
+                      name="paymentMethod"
+                      required
+                      defaultValue={formDefaults?.paymentMethod ?? "Tiền mặt"}
+                      className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
+                    >
+                      {SALE_PAY_METHOD_OPTIONS.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+                <div className="flex justify-end gap-2 border-t border-line pt-4">
+                  <button
+                    type="button"
+                    onClick={closeShopRepairModal}
+                    disabled={shopRepairSaving}
+                    className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted disabled:opacity-50"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={shopRepairSaving}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {shopRepairSaving ? (
+                      <Loader2 size={18} className="animate-spin" />
+                    ) : editingShopRepairId ? (
+                      <Edit3 size={18} />
+                    ) : isCloneMode ? (
+                      <CopyPlus size={18} />
+                    ) : (
+                      <Plus size={18} />
+                    )}
+                    {shopRepairSaving
+                      ? "Đang lưu…"
+                      : editingShopRepairId
+                        ? "Lưu thay đổi"
+                        : isCloneMode
+                          ? "Lưu đơn mới"
+                          : "Tạo đơn"}
+                  </button>
+                </div>
+              </form>
                   </div>
                 </div>
+              </div>
+              );
+            })()}
 
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="rounded-lg border border-brand bg-emerald-50 p-4">
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <span className="block text-sm font-bold text-emerald-800">Lợi nhuận Tháng</span>
-                      <input
-                        type="month"
-                        value={shopRepairMonth}
-                        onChange={(e) => {
-                          setShopRepairMonth(e.target.value);
-                          setSelectedShopRepairIds([]);
-                        }}
-                        className="h-8 rounded border border-emerald-200 bg-white px-2 text-sm font-semibold text-emerald-800"
-                      />
-                    </div>
-                    <strong className="text-3xl text-emerald-700">
+            <div className="grid gap-4">
+              <div className="rounded-lg bg-gradient-to-br from-emerald-800 via-brand to-teal-700 p-4 sm:p-5 text-white shadow relative overflow-hidden flex flex-col md:flex-row justify-between items-center md:text-left text-center gap-4 mb-4">
+                <div className="absolute top-0 right-0 -mt-16 -mr-16 h-64 w-64 rounded-full bg-white/10 blur-3xl mix-blend-overlay pointer-events-none"></div>
+                <div className="absolute bottom-0 left-0 -mb-16 -ml-16 h-48 w-48 rounded-full bg-white/10 blur-2xl pointer-events-none"></div>
+                <div className="relative z-10 md:w-1/2">
+                  <h1 className="text-lg sm:text-xl font-black uppercase tracking-tight text-white drop-shadow-sm">
+                    Trung Tâm Sửa Chữa Điện Thoại Kim Chi
+                  </h1>
+                </div>
+                <div className="relative z-10 md:w-1/2 flex flex-col md:items-end gap-1">
+                  <p className="flex items-center gap-2 text-xs font-bold text-white sm:text-sm">
+                    <span className="hidden h-1.5 w-1.5 shrink-0 rounded-full bg-white md:block"></span>
+                    Nhanh — Uy tín — Bảo hành rõ ràng
+                  </p>
+                  <p className="flex items-center gap-2 text-xs font-semibold text-white sm:text-sm">
+                    <span className="hidden h-1.5 w-1.5 shrink-0 rounded-full bg-white md:block"></span>
+                    Nơi Trao trọn niềm tin số 1 của khách hàng Tại Phường Nam Sách, TP. Hải Phòng
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-lg border border-brand bg-emerald-50 p-4">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="block text-sm font-bold text-emerald-800">Lợi nhuận Tháng</span>
+                    <input
+                      type="month"
+                      value={shopRepairMonth}
+                      onChange={(e) => {
+                        setShopRepairMonth(e.target.value);
+                        setSelectedShopRepairIds([]);
+                      }}
+                      className="h-8 rounded border border-emerald-200 bg-white px-2 text-sm font-semibold text-emerald-800"
+                    />
+                  </div>
+                  <strong className="text-3xl text-emerald-700">
+                    {isShopRepairSensitiveHidden
+                      ? "*** ₫"
+                      : formatMoney(monthlyRepairs.reduce((sum, r) => sum + (r.quote - r.deposit), 0))}
+                  </strong>
+                  <div className="mt-2 flex items-center justify-between border-t border-emerald-200/50 pt-2 text-sm font-semibold text-emerald-700/80">
+                    <span>Dư nợ tháng:</span>
+                    <span>
                       {isShopRepairSensitiveHidden
-                        ? "*** ₫"
-                        : formatMoney(monthlyRepairs.reduce((sum, r) => sum + (r.quote - r.deposit), 0))}
-                    </strong>
-                    <div className="mt-2 flex items-center justify-between border-t border-emerald-200/50 pt-2 text-sm font-semibold text-emerald-700/80">
-                      <span>Dư nợ tháng:</span>
-                      <span>
-                        {isShopRepairSensitiveHidden
-                          ? "***"
-                          : formatMoney(
+                        ? "***"
+                        : formatMoney(
                             monthlyRepairs
                               .filter((r) => r.paymentStatus === "NỢ DAI")
                               .reduce((sum, r) => sum + r.quote, 0)
                           )}
-                      </span>
-                    </div>
+                    </span>
                   </div>
-                  <div className="rounded-lg border border-line bg-white p-4 shadow-sm">
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <span className="block text-sm font-bold text-slate-500">Lợi nhuận Ngày</span>
-                      <input
-                        type="date"
-                        value={displayDate}
-                        onChange={(e) => setShopRepairDate(e.target.value)}
-                        className="h-8 rounded border border-line bg-slate-50 px-2 text-sm font-semibold text-slate-700"
-                      />
-                    </div>
-                    <strong className="text-3xl text-red-600">
+                </div>
+                <div className="rounded-lg border border-line bg-white p-4 shadow-sm">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="block text-sm font-bold text-slate-500">Lợi nhuận Ngày</span>
+                    <input
+                      type="date"
+                      value={displayDate}
+                      onChange={(e) => setShopRepairDate(e.target.value)}
+                      className="h-8 rounded border border-line bg-slate-50 px-2 text-sm font-semibold text-slate-700"
+                    />
+                  </div>
+                  <strong className="text-3xl text-red-600">
+                    {isShopRepairSensitiveHidden
+                      ? "*** ₫"
+                      : formatMoney(dailyRepairs.reduce((sum, r) => sum + (r.quote - r.deposit), 0))}
+                  </strong>
+                  <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 text-sm font-semibold text-slate-500">
+                    <span>Dư nợ ngày:</span>
+                    <span>
                       {isShopRepairSensitiveHidden
-                        ? "*** ₫"
-                        : formatMoney(dailyRepairs.reduce((sum, r) => sum + (r.quote - r.deposit), 0))}
-                    </strong>
-                    <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 text-sm font-semibold text-slate-500">
-                      <span>Dư nợ ngày:</span>
-                      <span>
-                        {isShopRepairSensitiveHidden
-                          ? "***"
-                          : formatMoney(
+                        ? "***"
+                        : formatMoney(
                             dailyRepairs
                               .filter((r) => r.paymentStatus === "NỢ DAI")
                               .reduce((sum, r) => sum + r.quote, 0)
                           )}
-                      </span>
-                    </div>
+                    </span>
                   </div>
                 </div>
+              </div>
 
-                <Panel title="Danh sách Sửa chữa">
-                  <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <select
-                        value={shopRepairFilter}
+              <Panel title="Danh sách Sửa chữa">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={shopRepairFilter}
+                      onChange={(e) => {
+                        setShopRepairFilter(e.target.value);
+                        setSelectedShopRepairIds([]);
+                      }}
+                      className="h-10 rounded-lg border border-line px-3 text-sm font-bold"
+                    >
+                      <option value="all">Tất cả trạng thái</option>
+                      <option value="paid">Đã thanh toán</option>
+                      <option value="unpaid">NỢ DAI</option>
+                    </select>
+                    <div className="flex items-center gap-2 rounded-lg border border-line bg-slate-50 px-2">
+                      <span className="text-sm font-semibold text-slate-500">Lọc ngày:</span>
+                      <input
+                        type="date"
+                        value={shopRepairDate}
                         onChange={(e) => {
-                          setShopRepairFilter(e.target.value);
+                          setShopRepairDate(e.target.value);
                           setSelectedShopRepairIds([]);
                         }}
-                        className="h-10 rounded-lg border border-line px-3 text-sm font-bold"
-                      >
-                        <option value="all">Tất cả trạng thái</option>
-                        <option value="paid">Đã thanh toán</option>
-                        <option value="unpaid">NỢ DAI</option>
-                      </select>
-                      <div className="flex items-center gap-2 rounded-lg border border-line bg-slate-50 px-2">
-                        <span className="text-sm font-semibold text-slate-500">Lọc ngày:</span>
-                        <input
-                          type="date"
-                          value={shopRepairDate}
-                          onChange={(e) => {
-                            setShopRepairDate(e.target.value);
-                            setSelectedShopRepairIds([]);
-                          }}
-                          className="h-8 rounded border border-line px-2 text-sm"
-                        />
-                        {shopRepairDate ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShopRepairDate("");
-                              setSelectedShopRepairIds([]);
-                            }}
-                            className="text-sm font-bold text-brand hover:underline"
-                          >
-                            Tất cả tháng
-                          </button>
-                        ) : null}
-                      </div>
-                      <div className="relative min-w-[14rem] flex-1 sm:max-w-md">
-                        <Search className="pointer-events-none absolute left-3 top-2.5 text-muted" size={16} />
-                        <input
-                          value={shopRepairSearch}
-                          onChange={(e) => {
-                            setShopRepairSearch(e.target.value);
-                            setSelectedShopRepairIds([]);
-                          }}
-                          placeholder="Tìm tên máy, khách hàng, bảo hành…"
-                          className="h-10 w-full rounded-lg border border-line bg-white py-2 pl-9 pr-3 text-sm font-semibold outline-none focus:border-brand"
-                          autoComplete="off"
-                        />
-                      </div>
-                      {shopRepairSearch.trim() ? (
+                        className="h-8 rounded border border-line px-2 text-sm"
+                      />
+                      {shopRepairDate ? (
                         <button
                           type="button"
                           onClick={() => {
-                            setShopRepairSearch("");
+                            setShopRepairDate("");
                             setSelectedShopRepairIds([]);
                           }}
-                          className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold text-muted hover:bg-slate-50"
+                          className="text-sm font-bold text-brand hover:underline"
                         >
-                          Xóa tìm
+                          Tất cả tháng
                         </button>
                       ) : null}
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative min-w-[14rem] flex-1 sm:max-w-md">
+                      <Search className="pointer-events-none absolute left-3 top-2.5 text-muted" size={16} />
+                      <input
+                        value={shopRepairSearch}
+                        onChange={(e) => {
+                          setShopRepairSearch(e.target.value);
+                          setSelectedShopRepairIds([]);
+                        }}
+                        placeholder="Tìm tên máy, khách hàng, bảo hành…"
+                        className="h-10 w-full rounded-lg border border-line bg-white py-2 pl-9 pr-3 text-sm font-semibold outline-none focus:border-brand"
+                        autoComplete="off"
+                      />
+                    </div>
+                    {shopRepairSearch.trim() ? (
                       <button
                         type="button"
-                        disabled={shopRepairPaying || selectedDebtCount === 0}
-                        onClick={() => void markSelectedShopRepairsPaid(debtVisibleRepairs)}
-                        className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-                        title="Đánh dấu các đơn NỢ DAI đã chọn → Đã thanh toán"
+                        onClick={() => {
+                          setShopRepairSearch("");
+                          setSelectedShopRepairIds([]);
+                        }}
+                        className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold text-muted hover:bg-slate-50"
                       >
-                        {shopRepairPaying ? (
-                          <Loader2 size={18} className="animate-spin" />
-                        ) : (
-                          <CheckCircle2 size={18} />
-                        )}
-                        {shopRepairPaying
-                          ? "Đang thanh toán…"
-                          : selectedDebtCount > 0
-                            ? `Thanh toán (${selectedDebtCount})`
-                            : "Thanh toán"}
+                        Xóa tìm
                       </button>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={shopRepairPaying || selectedDebtCount === 0}
+                      onClick={() => void markSelectedShopRepairsPaid(debtVisibleRepairs)}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      title="Đánh dấu các đơn NỢ DAI đã chọn → Đã thanh toán"
+                    >
+                      {shopRepairPaying ? (
+                        <Loader2 size={18} className="animate-spin" />
+                      ) : (
+                        <CheckCircle2 size={18} />
+                      )}
+                      {shopRepairPaying
+                        ? "Đang thanh toán…"
+                        : selectedDebtCount > 0
+                          ? `Thanh toán (${selectedDebtCount})`
+                          : "Thanh toán"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsShopRepairSensitiveHidden((v) => !v)}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-line bg-white px-3 font-bold text-slate-600 shadow-sm transition hover:bg-slate-50"
+                    >
+                      {isShopRepairSensitiveHidden ? <EyeOff size={18} /> : <Eye size={18} />}
+                      {isShopRepairSensitiveHidden ? "Hiện" : "Ẩn"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingShopRepairId(null);
+                        setCloneShopRepairDraft(null);
+                        setIsShopRepairModalOpen(true);
+                      }}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white shadow hover:bg-brand-dark"
+                    >
+                      <Plus size={18} /> Tạo đơn mới
+                    </button>
+                  </div>
+                </div>
+                <div className="overflow-x-auto pb-4">
+                  <DataTable
+                    compact
+                    headers={[
+                      "",
+                      "Khách hàng",
+                      "Tên máy",
+                      "Tình trạng",
+                      "Bảo hành",
+                      "Báo giá",
+                      "Phí dịch vụ",
+                      "Lãi",
+                      "Ngày & giờ",
+                      "Thanh toán",
+                      "Hình thức TT",
+                      "Thao tác",
+                    ]}
+                    rows={filteredRepairs.map((item) => {
+                      const isNợ = item.paymentStatus === "NỢ DAI";
+                      const isDaThanhToan = item.paymentStatus === "Đã thanh toán";
+                      const isChecked = selectedShopRepairIds.includes(item.id);
+                      const payMethod = item.paymentMethod?.trim() || "Tiền mặt";
+                      return [
+                        <div
+                          key={`chk-${item.id}`}
+                          className="flex items-center justify-center"
+                          onClick={(e) => e.stopPropagation()}
+                          onMouseDown={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 accent-brand"
+                            checked={isChecked}
+                            disabled={!isNợ}
+                            title={isNợ ? "Chọn để thanh toán" : "Chỉ chọn được đơn NỢ DAI"}
+                            onChange={(e) => {
+                              const on = e.target.checked;
+                              setSelectedShopRepairIds((prev) => {
+                                if (on) return prev.includes(item.id) ? prev : [...prev, item.id];
+                                return prev.filter((x) => x !== item.id);
+                              });
+                            }}
+                          />
+                        </div>,
+                        <span key={`c-${item.id}`} className="font-bold text-brand whitespace-nowrap">
+                          {item.customerName}
+                        </span>,
+                        <span key={`d-${item.id}`} className="font-semibold text-slate-700 whitespace-nowrap">
+                          {item.deviceName}
+                        </span>,
+                        <span key={`cond-${item.id}`} className="font-semibold text-slate-600 whitespace-nowrap">
+                          {item.condition?.trim() || "—"}
+                        </span>,
+                        <span key={`war-${item.id}`} className="font-semibold text-slate-600 whitespace-nowrap">
+                          {item.warranty?.trim() || "—"}
+                        </span>,
+                        formatMoney(item.quote),
+                        isShopRepairSensitiveHidden ? "***" : formatMoney(item.deposit),
+                        <span key={`p-${item.id}`} className="font-black text-amber-700">
+                          {isShopRepairSensitiveHidden
+                            ? "***"
+                            : formatMoney(item.quote - item.deposit)}
+                        </span>,
+                        <ColoredDateTime key={`dt-${item.id}`} value={item.receiveDate} />,
+                        <span
+                          key={`st-${item.id}`}
+                          className={`inline-flex h-8 items-center rounded text-xs font-bold px-2 shadow-sm border border-line ${
+                            isNợ
+                              ? "bg-red-50 text-red-600"
+                              : isDaThanhToan
+                                ? "bg-emerald-50 text-emerald-600"
+                                : "bg-slate-50 text-slate-600"
+                          }`}
+                        >
+                          {isDaThanhToan ? "✅ Đã thanh toán" : "❌ NỢ DAI"}
+                        </span>,
+                        <span
+                          key={`pm-${item.id}`}
+                          className="whitespace-nowrap text-sm font-bold text-slate-700"
+                        >
+                          {payMethod}
+                        </span>,
+                        <div key={`act-${item.id}`} className="flex flex-nowrap items-center justify-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setViewingShopRepairId(item.id)}
+                            title="Chi tiết"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-900"
+                          >
+                            <Eye size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCloneShopRepairDraft(null);
+                              setEditingShopRepairId(item.id);
+                              setIsShopRepairModalOpen(true);
+                            }}
+                            title="Sửa"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20"
+                          >
+                            <Edit3 size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openShopRepairCloneModal(item.id)}
+                            title="Nhân bản thêm mới"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100"
+                          >
+                            <CopyPlus size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void deleteShopRepair(item.id)}
+                            title="Xóa đơn"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>,
+                      ];
+                    })}
+                  />
+                </div>
+                {debtVisibleIds.length > 0 ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-3 border-t border-line pt-3">
+                    <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-bold text-slate-700">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-brand"
+                        checked={allDebtSelected}
+                        onChange={(e) => {
+                          const on = e.target.checked;
+                          setSelectedShopRepairIds((prev) => {
+                            if (on) {
+                              const set = new Set(prev);
+                              debtVisibleIds.forEach((id) => set.add(id));
+                              return Array.from(set);
+                            }
+                            return prev.filter((id) => !debtVisibleIds.includes(id));
+                          });
+                        }}
+                      />
+                      Chọn tất cả NỢ DAI trên lưới ({debtVisibleIds.length})
+                    </label>
+                    {selectedDebtCount > 0 ? (
+                      <span className="text-sm font-semibold text-muted">
+                        Đã chọn {selectedDebtCount} đơn nợ
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {/* Tổng theo hình thức TT — giống bán hàng */}
+                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-lg border border-line bg-slate-50/80 px-3 py-2 text-xs font-semibold">
+                  <span className="font-black text-ink">Theo TT:</span>
+                  <span className="text-emerald-700">
+                    TM{" "}
+                    <strong className="tabular-nums">
+                      {isShopRepairSensitiveHidden
+                        ? "***"
+                        : formatMoney(repairPayTotals.cash.amount)}
+                    </strong>
+                    <span className="ml-1 text-muted">({repairPayTotals.cash.count})</span>
+                  </span>
+                  <span className="text-sky-700">
+                    CK{" "}
+                    <strong className="tabular-nums">
+                      {isShopRepairSensitiveHidden
+                        ? "***"
+                        : formatMoney(repairPayTotals.transfer.amount)}
+                    </strong>
+                    <span className="ml-1 text-muted">({repairPayTotals.transfer.count})</span>
+                  </span>
+                  <span className="text-red-700">
+                    Nợ{" "}
+                    <strong className="tabular-nums">
+                      {isShopRepairSensitiveHidden
+                        ? "***"
+                        : formatMoney(repairPayTotals.debt.amount)}
+                    </strong>
+                    <span className="ml-1 text-muted">({repairPayTotals.debt.count})</span>
+                  </span>
+                  <span className="ml-auto text-muted">
+                    Tổng{" "}
+                    <strong className="tabular-nums text-ink">
+                      {isShopRepairSensitiveHidden
+                        ? "***"
+                        : formatMoney(repairPayTotals.totalAmount)}
+                    </strong>
+                    <span className="ml-1">({repairPayTotals.totalCount})</span>
+                    <span className="mx-1.5 text-line">·</span>
+                    Lãi{" "}
+                    <strong className="tabular-nums text-emerald-700">
+                      {isShopRepairSensitiveHidden
+                        ? "***"
+                        : formatMoney(repairPayTotals.totalProfit)}
+                    </strong>
+                  </span>
+                </div>
+              </Panel>
+            </div>
+
+            {viewingShopRepair && (
+              <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-md">
+                <section className="max-h-[92vh] w-full max-w-[640px] overflow-auto rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
+                  <div className="flex items-center justify-between border-b border-slate-200/60 bg-gradient-to-r from-brand/10 to-transparent p-5">
+                    <h2 className="text-xl font-black text-brand">Chi tiết đơn sửa chữa</h2>
+                    <button
+                      type="button"
+                      onClick={() => setViewingShopRepairId(null)}
+                      className="h-9 rounded-xl border border-slate-200/60 bg-white/50 px-4 text-sm font-bold text-slate-600 backdrop-blur-md transition hover:bg-white hover:text-slate-900"
+                    >
+                      Đóng
+                    </button>
+                  </div>
+                  <div className="grid gap-4 p-5">
+                    <div className="flex items-center gap-3">
+                      <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-brand-soft text-brand">
+                        <Wrench size={24} />
+                      </div>
+                      <div>
+                        <strong className="block text-lg">{viewingShopRepair.customerName}</strong>
+                        <span className="text-sm font-semibold text-muted">{viewingShopRepair.deviceName}</span>
+                      </div>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label="Khách hàng">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-bold text-brand">
+                          {viewingShopRepair.customerName}
+                        </div>
+                      </Field>
+                      <Field label="Loại khách">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">
+                          {viewingShopRepair.customerType || "Vãng lai"}
+                        </div>
+                      </Field>
+                      <Field label="Tên máy">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-semibold text-slate-800">
+                          {viewingShopRepair.deviceName}
+                        </div>
+                      </Field>
+                      <Field label="Tình trạng">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-semibold text-slate-800">
+                          {viewingShopRepair.condition?.trim() || "—"}
+                        </div>
+                      </Field>
+                      <Field label="Bảo hành">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-semibold text-slate-800">
+                          {viewingShopRepair.warranty?.trim() || "—"}
+                        </div>
+                      </Field>
+                      <Field label="Trạng thái thanh toán">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3">
+                          <span
+                            className={`inline-flex h-8 items-center rounded px-2 text-xs font-bold ${
+                              viewingShopRepair.paymentStatus === "Đã thanh toán"
+                                ? "bg-emerald-50 text-emerald-600"
+                                : "bg-red-50 text-red-600"
+                            }`}
+                          >
+                            {viewingShopRepair.paymentStatus === "Đã thanh toán"
+                              ? "✅ Đã thanh toán"
+                              : "❌ NỢ DAI"}
+                          </span>
+                        </div>
+                      </Field>
+                      <Field label="Hình thức thanh toán">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-semibold text-slate-800">
+                          {viewingShopRepair.paymentMethod?.trim() || "Tiền mặt"}
+                        </div>
+                      </Field>
+                      <Field label="Báo giá">
+                        <div className="flex h-12 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-xl font-black text-slate-800">
+                          {formatMoney(viewingShopRepair.quote)}
+                        </div>
+                      </Field>
+                      <Field label="Phí dịch vụ">
+                        <div className="flex h-12 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-xl font-black text-slate-700">
+                          {formatMoney(viewingShopRepair.deposit)}
+                        </div>
+                      </Field>
+                      <Field label="Lãi">
+                        <div className="flex h-12 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-xl font-black text-amber-700">
+                          {formatMoney(viewingShopRepair.quote - viewingShopRepair.deposit)}
+                        </div>
+                      </Field>
+                      <Field label="Giờ nhận">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3">
+                          <ColoredDateTime value={viewingShopRepair.receiveDate} size="md" />
+                        </div>
+                      </Field>
+                      <Field label="Ghi chú / Lỗi">
+                        <div className="flex min-h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 py-2 text-slate-800 sm:col-span-2">
+                          {viewingShopRepair.issue?.trim() || "Không có"}
+                        </div>
+                      </Field>
+                      <Field label="Mã đơn">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-mono text-xs text-slate-600">
+                          {viewingShopRepair.id}
+                        </div>
+                      </Field>
+                    </div>
+                    <div className="flex justify-end gap-2 border-t border-line pt-4">
                       <button
                         type="button"
-                        onClick={() => setIsShopRepairSensitiveHidden((v) => !v)}
-                        className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-line bg-white px-3 font-bold text-slate-600 shadow-sm transition hover:bg-slate-50"
+                        onClick={() => setViewingShopRepairId(null)}
+                        className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted"
                       >
-                        {isShopRepairSensitiveHidden ? <EyeOff size={18} /> : <Eye size={18} />}
-                        {isShopRepairSensitiveHidden ? "Hiện" : "Ẩn"}
+                        Đóng
                       </button>
                       <button
                         type="button"
                         onClick={() => {
-                          setEditingShopRepairId(null);
+                          setViewingShopRepairId(null);
                           setCloneShopRepairDraft(null);
+                          setEditingShopRepairId(viewingShopRepair.id);
                           setIsShopRepairModalOpen(true);
                         }}
-                        className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white shadow hover:bg-brand-dark"
+                        className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark"
                       >
-                        <Plus size={18} /> Tạo đơn mới
+                        <Edit3 size={16} /> Sửa đơn
                       </button>
                     </div>
                   </div>
-                  <div className="overflow-x-auto pb-4">
-                    <DataTable
-                      compact
-                      headers={[
-                        "",
-                        "Khách hàng",
-                        "Tên máy",
-                        "Tình trạng",
-                        "Bảo hành",
-                        "Báo giá",
-                        "Phí dịch vụ",
-                        "Lãi",
-                        "Ngày & giờ",
-                        "Thanh toán",
-                        "Hình thức TT",
-                        "Thao tác",
-                      ]}
-                      rows={filteredRepairs.map((item) => {
-                        const isNợ = item.paymentStatus === "NỢ DAI";
-                        const isDaThanhToan = item.paymentStatus === "Đã thanh toán";
-                        const isChecked = selectedShopRepairIds.includes(item.id);
-                        const payMethod = item.paymentMethod?.trim() || "Tiền mặt";
-                        return [
-                          <div
-                            key={`chk-${item.id}`}
-                            className="flex items-center justify-center"
-                            onClick={(e) => e.stopPropagation()}
-                            onMouseDown={(e) => e.stopPropagation()}
-                          >
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4 accent-brand"
-                              checked={isChecked}
-                              disabled={!isNợ}
-                              title={isNợ ? "Chọn để thanh toán" : "Chỉ chọn được đơn NỢ DAI"}
-                              onChange={(e) => {
-                                const on = e.target.checked;
-                                setSelectedShopRepairIds((prev) => {
-                                  if (on) return prev.includes(item.id) ? prev : [...prev, item.id];
-                                  return prev.filter((x) => x !== item.id);
-                                });
-                              }}
-                            />
-                          </div>,
-                          <span key={`c-${item.id}`} className="font-bold text-brand whitespace-nowrap">
-                            {item.customerName}
-                          </span>,
-                          <span key={`d-${item.id}`} className="font-semibold text-slate-700 whitespace-nowrap">
-                            {item.deviceName}
-                          </span>,
-                          <span key={`cond-${item.id}`} className="font-semibold text-slate-600 whitespace-nowrap">
-                            {item.condition?.trim() || "—"}
-                          </span>,
-                          <span key={`war-${item.id}`} className="font-semibold text-slate-600 whitespace-nowrap">
-                            {item.warranty?.trim() || "—"}
-                          </span>,
-                          formatMoney(item.quote),
-                          isShopRepairSensitiveHidden ? "***" : formatMoney(item.deposit),
-                          <span key={`p-${item.id}`} className="font-black text-amber-700">
-                            {isShopRepairSensitiveHidden
-                              ? "***"
-                              : formatMoney(item.quote - item.deposit)}
-                          </span>,
-                          <ColoredDateTime key={`dt-${item.id}`} value={item.receiveDate} />,
-                          <span
-                            key={`st-${item.id}`}
-                            className={`inline-flex h-8 items-center rounded text-xs font-bold px-2 shadow-sm border border-line ${isNợ
-                                ? "bg-red-50 text-red-600"
-                                : isDaThanhToan
-                                  ? "bg-emerald-50 text-emerald-600"
-                                  : "bg-slate-50 text-slate-600"
-                              }`}
-                          >
-                            {isDaThanhToan ? "✅ Đã thanh toán" : "❌ NỢ DAI"}
-                          </span>,
-                          <span
-                            key={`pm-${item.id}`}
-                            className="whitespace-nowrap text-sm font-bold text-slate-700"
-                          >
-                            {payMethod}
-                          </span>,
-                          <div key={`act-${item.id}`} className="flex flex-nowrap items-center justify-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => setViewingShopRepairId(item.id)}
-                              title="Chi tiết"
-                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-900"
-                            >
-                              <Eye size={16} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setCloneShopRepairDraft(null);
-                                setEditingShopRepairId(item.id);
-                                setIsShopRepairModalOpen(true);
-                              }}
-                              title="Sửa"
-                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20"
-                            >
-                              <Edit3 size={16} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => openShopRepairCloneModal(item.id)}
-                              title="Nhân bản thêm mới"
-                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100"
-                            >
-                              <CopyPlus size={16} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void deleteShopRepair(item.id)}
-                              title="Xóa đơn"
-                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>,
-                        ];
-                      })}
-                    />
-                  </div>
-                  {debtVisibleIds.length > 0 ? (
-                    <div className="mt-2 flex flex-wrap items-center gap-3 border-t border-line pt-3">
-                      <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-bold text-slate-700">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 accent-brand"
-                          checked={allDebtSelected}
-                          onChange={(e) => {
-                            const on = e.target.checked;
-                            setSelectedShopRepairIds((prev) => {
-                              if (on) {
-                                const set = new Set(prev);
-                                debtVisibleIds.forEach((id) => set.add(id));
-                                return Array.from(set);
-                              }
-                              return prev.filter((id) => !debtVisibleIds.includes(id));
-                            });
-                          }}
-                        />
-                        Chọn tất cả NỢ DAI trên lưới ({debtVisibleIds.length})
-                      </label>
-                      {selectedDebtCount > 0 ? (
-                        <span className="text-sm font-semibold text-muted">
-                          Đã chọn {selectedDebtCount} đơn nợ
-                        </span>
-                      ) : null}
-                    </div>
-                  ) : null}
-
-                  {/* Tổng theo hình thức TT — giống bán hàng */}
-                  <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-lg border border-line bg-slate-50/80 px-3 py-2 text-xs font-semibold">
-                    <span className="font-black text-ink">Theo TT:</span>
-                    <span className="text-emerald-700">
-                      TM{" "}
-                      <strong className="tabular-nums">
-                        {isShopRepairSensitiveHidden
-                          ? "***"
-                          : formatMoney(repairPayTotals.cash.amount)}
-                      </strong>
-                      <span className="ml-1 text-muted">({repairPayTotals.cash.count})</span>
-                    </span>
-                    <span className="text-sky-700">
-                      CK{" "}
-                      <strong className="tabular-nums">
-                        {isShopRepairSensitiveHidden
-                          ? "***"
-                          : formatMoney(repairPayTotals.transfer.amount)}
-                      </strong>
-                      <span className="ml-1 text-muted">({repairPayTotals.transfer.count})</span>
-                    </span>
-                    <span className="text-red-700">
-                      Nợ{" "}
-                      <strong className="tabular-nums">
-                        {isShopRepairSensitiveHidden
-                          ? "***"
-                          : formatMoney(repairPayTotals.debt.amount)}
-                      </strong>
-                      <span className="ml-1 text-muted">({repairPayTotals.debt.count})</span>
-                    </span>
-                    <span className="ml-auto text-muted">
-                      Tổng{" "}
-                      <strong className="tabular-nums text-ink">
-                        {isShopRepairSensitiveHidden
-                          ? "***"
-                          : formatMoney(repairPayTotals.totalAmount)}
-                      </strong>
-                      <span className="ml-1">({repairPayTotals.totalCount})</span>
-                      <span className="mx-1.5 text-line">·</span>
-                      Lãi{" "}
-                      <strong className="tabular-nums text-emerald-700">
-                        {isShopRepairSensitiveHidden
-                          ? "***"
-                          : formatMoney(repairPayTotals.totalProfit)}
-                      </strong>
-                    </span>
-                  </div>
-                </Panel>
+                </section>
               </div>
-
-              {viewingShopRepair && (
-                <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-md">
-                  <section className="max-h-[92vh] w-full max-w-[640px] overflow-auto rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
-                    <div className="flex items-center justify-between border-b border-slate-200/60 bg-gradient-to-r from-brand/10 to-transparent p-5">
-                      <h2 className="text-xl font-black text-brand">Chi tiết đơn sửa chữa</h2>
-                      <button
-                        type="button"
-                        onClick={() => setViewingShopRepairId(null)}
-                        className="h-9 rounded-xl border border-slate-200/60 bg-white/50 px-4 text-sm font-bold text-slate-600 backdrop-blur-md transition hover:bg-white hover:text-slate-900"
-                      >
-                        Đóng
-                      </button>
-                    </div>
-                    <div className="grid gap-4 p-5">
-                      <div className="flex items-center gap-3">
-                        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-brand-soft text-brand">
-                          <Wrench size={24} />
-                        </div>
-                        <div>
-                          <strong className="block text-lg">{viewingShopRepair.customerName}</strong>
-                          <span className="text-sm font-semibold text-muted">{viewingShopRepair.deviceName}</span>
-                        </div>
-                      </div>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <Field label="Khách hàng">
-                          <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-bold text-brand">
-                            {viewingShopRepair.customerName}
-                          </div>
-                        </Field>
-                        <Field label="Loại khách">
-                          <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">
-                            {viewingShopRepair.customerType || "Vãng lai"}
-                          </div>
-                        </Field>
-                        <Field label="Tên máy">
-                          <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-semibold text-slate-800">
-                            {viewingShopRepair.deviceName}
-                          </div>
-                        </Field>
-                        <Field label="Tình trạng">
-                          <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-semibold text-slate-800">
-                            {viewingShopRepair.condition?.trim() || "—"}
-                          </div>
-                        </Field>
-                        <Field label="Bảo hành">
-                          <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-semibold text-slate-800">
-                            {viewingShopRepair.warranty?.trim() || "—"}
-                          </div>
-                        </Field>
-                        <Field label="Trạng thái thanh toán">
-                          <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3">
-                            <span
-                              className={`inline-flex h-8 items-center rounded px-2 text-xs font-bold ${viewingShopRepair.paymentStatus === "Đã thanh toán"
-                                  ? "bg-emerald-50 text-emerald-600"
-                                  : "bg-red-50 text-red-600"
-                                }`}
-                            >
-                              {viewingShopRepair.paymentStatus === "Đã thanh toán"
-                                ? "✅ Đã thanh toán"
-                                : "❌ NỢ DAI"}
-                            </span>
-                          </div>
-                        </Field>
-                        <Field label="Hình thức thanh toán">
-                          <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-semibold text-slate-800">
-                            {viewingShopRepair.paymentMethod?.trim() || "Tiền mặt"}
-                          </div>
-                        </Field>
-                        <Field label="Báo giá">
-                          <div className="flex h-12 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-xl font-black text-slate-800">
-                            {formatMoney(viewingShopRepair.quote)}
-                          </div>
-                        </Field>
-                        <Field label="Phí dịch vụ">
-                          <div className="flex h-12 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-xl font-black text-slate-700">
-                            {formatMoney(viewingShopRepair.deposit)}
-                          </div>
-                        </Field>
-                        <Field label="Lãi">
-                          <div className="flex h-12 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-xl font-black text-amber-700">
-                            {formatMoney(viewingShopRepair.quote - viewingShopRepair.deposit)}
-                          </div>
-                        </Field>
-                        <Field label="Giờ nhận">
-                          <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3">
-                            <ColoredDateTime value={viewingShopRepair.receiveDate} size="md" />
-                          </div>
-                        </Field>
-                        <Field label="Ghi chú / Lỗi">
-                          <div className="flex min-h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 py-2 text-slate-800 sm:col-span-2">
-                            {viewingShopRepair.issue?.trim() || "Không có"}
-                          </div>
-                        </Field>
-                        <Field label="Mã đơn">
-                          <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-mono text-xs text-slate-600">
-                            {viewingShopRepair.id}
-                          </div>
-                        </Field>
-                      </div>
-                      <div className="flex justify-end gap-2 border-t border-line pt-4">
-                        <button
-                          type="button"
-                          onClick={() => setViewingShopRepairId(null)}
-                          className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted"
-                        >
-                          Đóng
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setViewingShopRepairId(null);
-                            setCloneShopRepairDraft(null);
-                            setEditingShopRepairId(viewingShopRepair.id);
-                            setIsShopRepairModalOpen(true);
-                          }}
-                          className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark"
-                        >
-                          <Edit3 size={16} /> Sửa đơn
-                        </button>
-                      </div>
-                    </div>
-                  </section>
-                </div>
-              )}
-            </section>
+            )}
+          </section>
           );
         })()}
 
@@ -14960,711 +15016,713 @@ export default function Home() {
           );
 
           return (
-            <section className="grid gap-4">
-              {(softwareBackendError || softwareLoading) && (
-                <div
-                  className={`rounded-lg border p-3 text-sm font-semibold ${softwareBackendError
-                      ? "border-red-200 bg-red-50 text-danger"
-                      : "border-line bg-white text-muted"
-                    }`}
-                >
-                  {softwareBackendError || "Đang tải đơn phần mềm từ Supabase…"}
-                  {!softwareLoading && softwareBackendError ? (
+          <section className="grid gap-4">
+            {(softwareBackendError || softwareLoading) && (
+              <div
+                className={`rounded-lg border p-3 text-sm font-semibold ${
+                  softwareBackendError
+                    ? "border-red-200 bg-red-50 text-danger"
+                    : "border-line bg-white text-muted"
+                }`}
+              >
+                {softwareBackendError || "Đang tải đơn phần mềm từ Supabase…"}
+                {!softwareLoading && softwareBackendError ? (
+                  <button
+                    type="button"
+                    onClick={() => void reloadSoftwareFromDb()}
+                    className="ml-3 font-black text-brand underline"
+                  >
+                    Thử lại
+                  </button>
+                ) : null}
+              </div>
+            )}
+            {isOnlineRepairModalOpen && (() => {
+              const onlineRepairFormDefaults = editingOnlineRepairId
+                ? onlineRepairs.find((r) => r.id === editingOnlineRepairId) ?? null
+                : cloneOnlineRepairDraft;
+              const isCloneMode = !editingOnlineRepairId && Boolean(cloneOnlineRepairDraft);
+              return (
+              <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/60 p-4 backdrop-blur-md">
+                <div className="relative my-auto w-full max-w-4xl rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
+                  {softwareSaving ? (
+                    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 rounded-2xl bg-white/55 backdrop-blur-sm">
+                      <Loader2 size={40} className="animate-spin text-brand" />
+                      <p className="text-base font-black text-ink">Đang lưu…</p>
+                    </div>
+                  ) : null}
+                  <div className="flex items-center justify-between border-b border-slate-200/60 bg-white/80 p-4 backdrop-blur-md">
+                    <h2 className="text-xl font-black text-brand">
+                      {editingOnlineRepairId
+                        ? "Sửa đơn Phần mềm"
+                        : isCloneMode
+                          ? "Tạo đơn (nhân bản)"
+                          : "Tạo đơn Phần mềm"}
+                    </h2>
                     <button
                       type="button"
-                      onClick={() => void reloadSoftwareFromDb()}
-                      className="ml-3 font-black text-brand underline"
+                      onClick={closeOnlineRepairModal}
+                      disabled={softwareSaving}
+                      className="grid h-8 w-8 place-items-center rounded-full bg-slate-200 text-slate-500 hover:bg-slate-300 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      Thử lại
+                      <X size={18} />
                     </button>
-                  ) : null}
-                </div>
-              )}
-              {isOnlineRepairModalOpen && (() => {
-                const onlineRepairFormDefaults = editingOnlineRepairId
-                  ? onlineRepairs.find((r) => r.id === editingOnlineRepairId) ?? null
-                  : cloneOnlineRepairDraft;
-                const isCloneMode = !editingOnlineRepairId && Boolean(cloneOnlineRepairDraft);
-                return (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/60 p-4 backdrop-blur-md">
-                    <div className="relative my-auto w-full max-w-4xl rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
-                      {softwareSaving ? (
-                        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 rounded-2xl bg-white/55 backdrop-blur-sm">
-                          <Loader2 size={40} className="animate-spin text-brand" />
-                          <p className="text-base font-black text-ink">Đang lưu…</p>
-                        </div>
-                      ) : null}
-                      <div className="flex items-center justify-between border-b border-slate-200/60 bg-white/80 p-4 backdrop-blur-md">
-                        <h2 className="text-xl font-black text-brand">
-                          {editingOnlineRepairId
-                            ? "Sửa đơn Phần mềm"
-                            : isCloneMode
-                              ? "Tạo đơn (nhân bản)"
-                              : "Tạo đơn Phần mềm"}
-                        </h2>
-                        <button
-                          type="button"
-                          onClick={closeOnlineRepairModal}
-                          disabled={softwareSaving}
-                          className="grid h-8 w-8 place-items-center rounded-full bg-slate-200 text-slate-500 hover:bg-slate-300 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <X size={18} />
-                        </button>
+                  </div>
+                  <div className={`p-4 ${softwareSaving ? "pointer-events-none select-none" : ""}`}>
+                    {softwareBackendError ? (
+                      <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-danger">
+                        {softwareBackendError}
                       </div>
-                      <div className={`p-4 ${softwareSaving ? "pointer-events-none select-none" : ""}`}>
-                        {softwareBackendError ? (
-                          <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-danger">
-                            {softwareBackendError}
-                          </div>
-                        ) : null}
-                        {isCloneMode ? (
-                          <div className="mb-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800">
-                            Đã copy thông tin đơn mẫu — sửa nếu cần, rồi lưu thành đơn mới.
-                          </div>
-                        ) : null}
-                        <form
-                          key={
-                            editingOnlineRepairId ??
-                            (isCloneMode ? `clone-${cloneOnlineRepairFormKey}` : "new")
-                          }
-                          onSubmit={async (e) => {
-                            e.preventDefault();
-                            if (softwareSaving) return;
-                            const form = new FormData(e.currentTarget);
-                            const quote = parseInputMoney(form.get("quote"));
-                            const deposit = parseInputMoney(form.get("deposit"));
-                            const pStatus = String(
-                              form.get("paymentStatus")
-                            ) as OnlineRepair["paymentStatus"];
-                            const isEdit = Boolean(editingOnlineRepairId);
-                            const isClone = !isEdit && Boolean(cloneOnlineRepairDraft);
-                            const existing = editingOnlineRepairId
-                              ? onlineRepairs.find((r) => r.id === editingOnlineRepairId)
-                              : null;
-                            const draft = isClone ? cloneOnlineRepairDraft : null;
-
-                            const payload = {
-                              id: editingOnlineRepairId ?? undefined,
-                              customerName: String(form.get("customerName")),
-                              customerType: (form.get("customerType")
-                                ? String(form.get("customerType"))
-                                : existing?.customerType ||
-                                draft?.customerType ||
-                                "Vãng lai") as OnlineRepair["customerType"],
-                              deviceName: String(form.get("deviceName")),
-                              issue: existing?.issue ?? draft?.issue ?? "",
-                              quote,
-                              deposit,
-                              receiveDate: (() => {
-                                const d = String(form.get("receiveDatePart") || "").trim();
-                                const h = String(form.get("receiveHour") || "").trim().padStart(2, "0");
-                                const m = String(form.get("receiveMinute") || "").trim().padStart(2, "0");
-                                // Fallback: ô time gộp (nếu còn)
-                                const t =
-                                  h && m && /^\d{2}$/.test(h) && /^\d{2}$/.test(m)
-                                    ? `${h}:${m}`
-                                    : String(form.get("receiveTimePart") || "").trim();
-                                if (d && t) return `${d}T${t}`;
-                                if (d) return d;
-                                return String(form.get("receiveDate") || "");
-                              })(),
-                              completeDate: existing?.completeDate ?? "",
-                              paymentDate: existing?.paymentDate ?? "",
-                              paymentStatus: pStatus,
-                              rewardPoints: existing?.rewardPoints ?? 0,
-                              isPaid: pStatus === "Đã thanh toán",
-                              actorUsername: currentUser.username,
-                              storeId:
-                                currentUser.role === "staff"
-                                  ? currentUser.storeId
-                                  : dataScopeStore !== "all"
-                                    ? dataScopeStore
-                                    : currentUser.storeId,
-                            };
-
-                            setSoftwareSaving(true);
-                            setSoftwareBackendError("");
-                            try {
-                              const saved = await apiUpsertSoftwareOrder(payload);
-                              // Droplist chỉ cập nhật khi bấm nút + (ManageableSelect), không auto-ensure khi lưu đơn.
-                              pushLog(
-                                isEdit
-                                  ? "Sửa đơn phần mềm"
-                                  : isClone
-                                    ? "Nhân bản đơn phần mềm"
-                                    : "Tạo đơn phần mềm",
-                                `${saved.customerName} — ${saved.deviceName}`,
-                                softwareLookupStoreId
-                              );
-                              // Reload grid từ DB để danh sách đơn khớp server.
-                              await reloadSoftwareFromDb();
-                              showUiToast(
-                                "success",
-                                isEdit
-                                  ? `Đã sửa đơn ${saved.customerName} — ${saved.deviceName} thành công.`
-                                  : isClone
-                                    ? `Đã nhân bản đơn ${saved.customerName} — ${saved.deviceName} thành công.`
-                                    : `Đã tạo đơn ${saved.customerName} — ${saved.deviceName} thành công.`
-                              );
-                              setSoftwareSaving(false);
-                              setEditingOnlineRepairId(null);
-                              setCloneOnlineRepairDraft(null);
-                              setIsOnlineRepairModalOpen(false);
-                            } catch (err) {
-                              const msg = toUiError(err);
-                              setSoftwareBackendError(msg);
-                              showUiToast("error", `Lưu đơn phần mềm thất bại: ${msg}`);
-                              setSoftwareSaving(false);
-                            }
-                          }}
-                          className="grid gap-3"
-                          autoComplete="off"
-                          spellCheck={false}
-                        >
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <ManageableSelect
-                              label="Khách hàng / Thợ"
-                              name="customerName"
-                              options={softwareCustomerOptions}
-                              setOptions={setFormLookupOptions(SOFTWARE_LOOKUP_CATEGORIES.customer, softwareLookupStoreId)}
-                              defaultValue={onlineRepairFormDefaults?.customerName}
-                              categoryCode={SOFTWARE_LOOKUP_CATEGORIES.customer}
-                              storeId={softwareLookupStoreId}
-                              onRenameCascade={reloadSoftwareFromDb}
-                              allowManage
-                              allowFreeText
-                              actorUsername={currentUser.username}
-                            />
-                            <ManageableSelect
-                              label="Tên máy"
-                              name="deviceName"
-                              options={softwareDeviceOptions}
-                              setOptions={setFormLookupOptions(SOFTWARE_LOOKUP_CATEGORIES.device, softwareLookupStoreId)}
-                              defaultValue={onlineRepairFormDefaults?.deviceName}
-                              categoryCode={SOFTWARE_LOOKUP_CATEGORIES.device}
-                              storeId={softwareLookupStoreId}
-                              onRenameCascade={reloadSoftwareFromDb}
-                              allowManage
-                              allowFreeText
-                              actorUsername={currentUser.username}
-                            />
-                          </div>
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <ManageableSelect
-                              label="Báo giá"
-                              name="quote"
-                              options={softwareQuoteOptions}
-                              setOptions={setFormLookupOptions(SOFTWARE_LOOKUP_CATEGORIES.quote, softwareLookupStoreId)}
-                              defaultValue={formatInputMoney(onlineRepairFormDefaults?.quote ?? "")}
-                              categoryCode={SOFTWARE_LOOKUP_CATEGORIES.quote}
-                              storeId={softwareLookupStoreId}
-                              onRenameCascade={reloadSoftwareFromDb}
-                              allowManage
-                              allowFreeText
-                              actorUsername={currentUser.username}
-                            />
-                            <ManageableSelect
-                              label="Phí dịch vụ"
-                              name="deposit"
-                              options={softwareFeeOptions}
-                              setOptions={setFormLookupOptions(SOFTWARE_LOOKUP_CATEGORIES.fee, softwareLookupStoreId)}
-                              defaultValue={formatInputMoney(
-                                onlineRepairFormDefaults != null ? onlineRepairFormDefaults.deposit ?? 0 : 0
-                              )}
-                              categoryCode={SOFTWARE_LOOKUP_CATEGORIES.fee}
-                              storeId={softwareLookupStoreId}
-                              onRenameCascade={reloadSoftwareFromDb}
-                              allowManage
-                              allowFreeText
-                              actorUsername={currentUser.username}
-                            />
-                          </div>
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            {(() => {
-                              const raw =
-                                onlineRepairFormDefaults?.receiveDate || vnNowDateTimeLocal();
-                              const local = String(raw).slice(0, 16).replace(" ", "T");
-                              const [datePart = "", timePart = ""] = local.includes("T")
-                                ? local.split("T")
-                                : [local.slice(0, 10), "00:00"];
-                              const [hourPart = "00", minutePart = "00"] = (timePart || "00:00")
-                                .slice(0, 5)
-                                .split(":");
-                              const hours = Array.from({ length: 24 }, (_, i) =>
-                                String(i).padStart(2, "0")
-                              );
-                              const minutes = Array.from({ length: 60 }, (_, i) =>
-                                String(i).padStart(2, "0")
-                              );
-                              return (
-                                <div className="grid min-w-0 gap-1.5 sm:col-span-1">
-                                  <span className="text-base font-black text-slate-950">
-                                    Ngày & giờ <span className="ml-1 text-red-500">*</span>
-                                  </span>
-                                  <div className="grid min-w-0 grid-cols-[minmax(0,1.4fr)_minmax(0,0.7fr)_minmax(0,0.7fr)] gap-2">
-                                    <label className="grid min-w-0 gap-1">
-                                      <span className="text-xs font-bold text-brand">Ngày</span>
-                                      <input
-                                        name="receiveDatePart"
-                                        type="date"
-                                        required
-                                        defaultValue={datePart}
-                                        title="Ngày tháng năm"
-                                        className="h-10 w-full min-w-0 rounded-lg border border-line bg-brand-soft/40 px-2 text-sm font-black text-brand outline-none focus:border-brand"
-                                      />
-                                    </label>
-                                    <label className="grid min-w-0 gap-1">
-                                      <span className="text-xs font-bold text-amber-800">Giờ</span>
-                                      <select
-                                        name="receiveHour"
-                                        required
-                                        defaultValue={hourPart.padStart(2, "0")}
-                                        title="Giờ (0–23)"
-                                        className="h-10 w-full min-w-0 rounded-lg border border-line bg-amber-50 px-1.5 text-sm font-black text-amber-900 outline-none focus:border-amber-500"
-                                      >
-                                        {hours.map((h) => (
-                                          <option key={`h-${h}`} value={h}>
-                                            {h}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    </label>
-                                    <label className="grid min-w-0 gap-1">
-                                      <span className="text-xs font-bold text-amber-800">Phút</span>
-                                      <select
-                                        name="receiveMinute"
-                                        required
-                                        defaultValue={minutePart.padStart(2, "0")}
-                                        title="Phút (0–59)"
-                                        className="h-10 w-full min-w-0 rounded-lg border border-line bg-amber-50 px-1.5 text-sm font-black text-amber-900 outline-none focus:border-amber-500"
-                                      >
-                                        {minutes.map((m) => (
-                                          <option key={`m-${m}`} value={m}>
-                                            {m}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    </label>
-                                  </div>
-                                </div>
-                              );
-                            })()}
-                            <Field label="Thanh toán" required>
-                              <select
-                                name="paymentStatus"
-                                required
-                                defaultValue={onlineRepairFormDefaults?.paymentStatus ?? "NỢ DAI"}
-                                className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
-                              >
-                                <option value="NỢ DAI">NỢ DAI</option>
-                                <option value="Đã thanh toán">Đã thanh toán</option>
-                              </select>
-                            </Field>
-                          </div>
-                          <div className="flex justify-end gap-2 border-t border-line pt-4">
-                            <button
-                              type="button"
-                              onClick={closeOnlineRepairModal}
-                              disabled={softwareSaving}
-                              className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted disabled:opacity-50"
-                            >
-                              Hủy
-                            </button>
-                            <button
-                              type="submit"
-                              disabled={softwareSaving}
-                              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-70"
-                            >
-                              {softwareSaving ? (
-                                <Loader2 size={18} className="animate-spin" />
-                              ) : editingOnlineRepairId ? (
-                                <Edit3 size={18} />
-                              ) : isCloneMode ? (
-                                <CopyPlus size={18} />
-                              ) : (
-                                <Plus size={18} />
-                              )}
-                              {softwareSaving
-                                ? "Đang lưu…"
-                                : editingOnlineRepairId
-                                  ? "Lưu thay đổi"
-                                  : isCloneMode
-                                    ? "Lưu đơn mới"
-                                    : "Tạo đơn"}
-                            </button>
-                          </div>
-                        </form>
+                    ) : null}
+                    {isCloneMode ? (
+                      <div className="mb-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800">
+                        Đã copy thông tin đơn mẫu — sửa nếu cần, rồi lưu thành đơn mới.
                       </div>
-                    </div>
-                  </div>
-                );
-              })()}
+                    ) : null}
+                    <form
+                      key={
+                        editingOnlineRepairId ??
+                        (isCloneMode ? `clone-${cloneOnlineRepairFormKey}` : "new")
+                      }
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        if (softwareSaving) return;
+                        const form = new FormData(e.currentTarget);
+                        const quote = parseInputMoney(form.get("quote"));
+                        const deposit = parseInputMoney(form.get("deposit"));
+                        const pStatus = String(
+                          form.get("paymentStatus")
+                        ) as OnlineRepair["paymentStatus"];
+                        const isEdit = Boolean(editingOnlineRepairId);
+                        const isClone = !isEdit && Boolean(cloneOnlineRepairDraft);
+                        const existing = editingOnlineRepairId
+                          ? onlineRepairs.find((r) => r.id === editingOnlineRepairId)
+                          : null;
+                        const draft = isClone ? cloneOnlineRepairDraft : null;
 
-              <div className="grid gap-4">
-                <div className="rounded-lg bg-gradient-to-br from-pink-600 via-rose-500 to-fuchsia-600 p-4 sm:p-5 text-white shadow relative overflow-hidden flex flex-col md:flex-row justify-between items-center md:text-left text-center gap-4 mb-4">
-                  <div className="absolute top-0 right-0 -mt-16 -mr-16 h-64 w-64 rounded-full bg-white/10 blur-3xl mix-blend-overlay pointer-events-none"></div>
-                  <div className="absolute bottom-0 left-0 -mb-16 -ml-16 h-48 w-48 rounded-full bg-white/10 blur-2xl pointer-events-none"></div>
-                  <div className="relative z-10 md:w-1/2">
-                    <h1 className="text-lg sm:text-xl font-black uppercase tracking-tight text-white drop-shadow-sm">
-                      Trung Tâm Giải Mã Phần Mềm Điện Thoại Nam Sách
-                    </h1>
-                  </div>
-                  <div className="relative z-10 md:w-1/2 flex flex-col md:items-end gap-1">
-                    <p className="flex items-center gap-2 text-xs font-bold text-white sm:text-sm">
-                      <span className="hidden h-1.5 w-1.5 shrink-0 rounded-full bg-white md:block"></span>
-                      Chuyên Nghiệp - Nhanh Chóng - Giá Thành Hợp Lý
-                    </p>
-                    <p className="flex items-center gap-2 text-xs font-semibold text-white sm:text-sm">
-                      <span className="hidden h-1.5 w-1.5 shrink-0 rounded-full bg-white md:block"></span>
-                      Địa chỉ tin cậy và uy tín tại số 1 TP. Hải Phòng
-                    </p>
-                  </div>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="rounded-lg border border-brand bg-emerald-50 p-4">
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <span className="block text-sm font-bold text-emerald-800">Lợi nhuận Tháng</span>
-                      <input
-                        type="month"
-                        value={onlineRepairMonth}
-                        onChange={(e) => {
-                          setOnlineRepairMonth(e.target.value);
-                          setSelectedSoftwareIds([]);
-                        }}
-                        className="h-8 rounded border border-emerald-200 bg-white px-2 text-sm font-semibold text-emerald-800"
-                      />
-                    </div>
-                    <strong className="text-3xl text-emerald-700">{isOnlineRepairSensitiveHidden ? "*** ₫" : formatMoney(monthlyRepairs.reduce((sum, r) => sum + (r.quote - r.deposit), 0))}</strong>
-                    <div className="mt-2 flex items-center justify-between border-t border-emerald-200/50 pt-2 text-sm font-semibold text-emerald-700/80">
-                      <span>Dư nợ tháng:</span>
-                      <span>{isOnlineRepairSensitiveHidden ? "***" : formatMoney(monthlyRepairs.filter(r => r.paymentStatus === "NỢ DAI").reduce((sum, r) => sum + r.quote, 0))}</span>
-                    </div>
-                  </div>
-                  <div className="rounded-lg border border-line bg-white p-4 shadow-sm">
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <span className="block text-sm font-bold text-slate-500">Lợi nhuận Ngày</span>
-                      <input type="date" value={displayDate} onChange={e => setOnlineRepairDate(e.target.value)} className="h-8 rounded border border-line bg-slate-50 px-2 text-sm font-semibold text-slate-700" />
-                    </div>
-                    <strong className="text-3xl text-red-600">{isOnlineRepairSensitiveHidden ? "*** ₫" : formatMoney(dailyRepairs.reduce((sum, r) => sum + (r.quote - r.deposit), 0))}</strong>
-                    <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 text-sm font-semibold text-slate-500">
-                      <span>Dư nợ ngày:</span>
-                      <span>{isOnlineRepairSensitiveHidden ? "***" : formatMoney(dailyRepairs.filter(r => r.paymentStatus === "NỢ DAI").reduce((sum, r) => sum + r.quote, 0))}</span>
-                    </div>
-                  </div>
-                </div>
+                        const payload = {
+                          id: editingOnlineRepairId ?? undefined,
+                          customerName: String(form.get("customerName")),
+                          customerType: (form.get("customerType")
+                            ? String(form.get("customerType"))
+                            : existing?.customerType ||
+                              draft?.customerType ||
+                              "Vãng lai") as OnlineRepair["customerType"],
+                          deviceName: String(form.get("deviceName")),
+                          issue: existing?.issue ?? draft?.issue ?? "",
+                          quote,
+                          deposit,
+                          receiveDate: (() => {
+                            const d = String(form.get("receiveDatePart") || "").trim();
+                            const h = String(form.get("receiveHour") || "").trim().padStart(2, "0");
+                            const m = String(form.get("receiveMinute") || "").trim().padStart(2, "0");
+                            // Fallback: ô time gộp (nếu còn)
+                            const t =
+                              h && m && /^\d{2}$/.test(h) && /^\d{2}$/.test(m)
+                                ? `${h}:${m}`
+                                : String(form.get("receiveTimePart") || "").trim();
+                            if (d && t) return `${d}T${t}`;
+                            if (d) return d;
+                            return String(form.get("receiveDate") || "");
+                          })(),
+                          completeDate: existing?.completeDate ?? "",
+                          paymentDate: existing?.paymentDate ?? "",
+                          paymentStatus: pStatus,
+                          rewardPoints: existing?.rewardPoints ?? 0,
+                          isPaid: pStatus === "Đã thanh toán",
+                          actorUsername: currentUser.username,
+                          storeId:
+                            currentUser.role === "staff"
+                              ? currentUser.storeId
+                              : dataScopeStore !== "all"
+                                ? dataScopeStore
+                                : currentUser.storeId,
+                        };
 
-                <Panel title="Danh sách Phần mềm">
-                  <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <select
-                        value={onlineRepairFilter}
-                        onChange={(e) => {
-                          setOnlineRepairFilter(e.target.value);
-                          setSelectedSoftwareIds([]);
-                        }}
-                        className="h-10 rounded-lg border border-line px-3 text-sm font-bold"
-                      >
-                        <option value="all">Tất cả trạng thái</option>
-                        <option value="paid">Đã thanh toán</option>
-                        <option value="unpaid">NỢ DAI</option>
-                      </select>
-
-                      <div className="flex items-center gap-2 rounded-lg border border-line bg-slate-50 px-2">
-                        <span className="text-sm font-semibold text-slate-500">Lọc ngày:</span>
-                        <input
-                          type="date"
-                          value={onlineRepairDate}
-                          onChange={(e) => {
-                            setOnlineRepairDate(e.target.value);
-                            setSelectedSoftwareIds([]);
-                          }}
-                          className="h-8 rounded border border-line px-2 text-sm"
-                        />
-                        {onlineRepairDate && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setOnlineRepairDate("");
-                              setSelectedSoftwareIds([]);
-                            }}
-                            className="text-sm font-bold text-brand hover:underline"
-                          >
-                            Tất cả tháng
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        disabled={softwarePaying || selectedDebtCount === 0}
-                        onClick={() => void markSelectedSoftwarePaid(debtVisibleRepairs)}
-                        className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-                        title="Đánh dấu các đơn NỢ DAI đã chọn → Đã thanh toán"
-                      >
-                        {softwarePaying ? (
-                          <Loader2 size={18} className="animate-spin" />
-                        ) : (
-                          <CheckCircle2 size={18} />
-                        )}
-                        {softwarePaying
-                          ? "Đang thanh toán…"
-                          : selectedDebtCount > 0
-                            ? `Thanh toán (${selectedDebtCount})`
-                            : "Thanh toán"}
-                      </button>
-                      <button onClick={() => setIsOnlineRepairSensitiveHidden(!isOnlineRepairSensitiveHidden)} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-line bg-white px-3 font-bold text-slate-600 shadow-sm transition hover:bg-slate-50">
-                        {isOnlineRepairSensitiveHidden ? <EyeOff size={18} /> : <Eye size={18} />}
-                        {isOnlineRepairSensitiveHidden ? "Hiện" : "Ẩn"}
-                      </button>
-                      <button
-                        onClick={() => {
+                        setSoftwareSaving(true);
+                        setSoftwareBackendError("");
+                        try {
+                          const saved = await apiUpsertSoftwareOrder(payload);
+                          // Droplist chỉ cập nhật khi bấm nút + (ManageableSelect), không auto-ensure khi lưu đơn.
+                          pushLog(
+                            isEdit
+                              ? "Sửa đơn phần mềm"
+                              : isClone
+                                ? "Nhân bản đơn phần mềm"
+                                : "Tạo đơn phần mềm",
+                            `${saved.customerName} — ${saved.deviceName}`,
+                            softwareLookupStoreId
+                          );
+                          // Reload grid từ DB để danh sách đơn khớp server.
+                          await reloadSoftwareFromDb();
+                          showUiToast(
+                            "success",
+                            isEdit
+                              ? `Đã sửa đơn ${saved.customerName} — ${saved.deviceName} thành công.`
+                              : isClone
+                                ? `Đã nhân bản đơn ${saved.customerName} — ${saved.deviceName} thành công.`
+                                : `Đã tạo đơn ${saved.customerName} — ${saved.deviceName} thành công.`
+                          );
+                          setSoftwareSaving(false);
                           setEditingOnlineRepairId(null);
                           setCloneOnlineRepairDraft(null);
-                          setIsOnlineRepairModalOpen(true);
-                        }}
-                        className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white shadow hover:bg-brand-dark"
-                      >
-                        <Plus size={18} /> Tạo đơn mới
-                      </button>
-                    </div>
-                  </div>
-                  <div className="overflow-x-auto pb-4">
-                    <DataTable
-                      headers={[
-                        "",
-                        "Khách hàng",
-                        "Tên máy",
-                        "Báo giá",
-                        "Phí dịch vụ",
-                        "Lãi",
-                        "Giờ",
-                        "Trạng thái TT",
-                        "Thao tác",
-                      ]}
-                      rows={filteredRepairs.map((item) => {
-                        const isNợ = item.paymentStatus === "NỢ DAI";
-                        const isDaThanhToan = item.paymentStatus === "Đã thanh toán";
-                        const isChecked = selectedSoftwareIds.includes(item.id);
-
-                        return [
-                          <div
-                            key={`chk-${item.id}`}
-                            className="flex items-center justify-center"
-                            onClick={(e) => e.stopPropagation()}
-                            onMouseDown={(e) => e.stopPropagation()}
-                          >
+                          setIsOnlineRepairModalOpen(false);
+                        } catch (err) {
+                          const msg = toUiError(err);
+                          setSoftwareBackendError(msg);
+                          showUiToast("error", `Lưu đơn phần mềm thất bại: ${msg}`);
+                          setSoftwareSaving(false);
+                        }
+                      }}
+                      className="grid gap-3"
+                      autoComplete="off"
+                      spellCheck={false}
+                    >
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <ManageableSelect
+                    label="Khách hàng / Thợ"
+                    name="customerName"
+                    options={softwareCustomerOptions}
+                    setOptions={setFormLookupOptions(SOFTWARE_LOOKUP_CATEGORIES.customer, softwareLookupStoreId)}
+                    defaultValue={onlineRepairFormDefaults?.customerName}
+                    categoryCode={SOFTWARE_LOOKUP_CATEGORIES.customer}
+                    storeId={softwareLookupStoreId}
+                    onRenameCascade={reloadSoftwareFromDb}
+                    allowManage
+                    allowFreeText
+                    actorUsername={currentUser.username}
+                  />
+                  <ManageableSelect
+                    label="Tên máy"
+                    name="deviceName"
+                    options={softwareDeviceOptions}
+                    setOptions={setFormLookupOptions(SOFTWARE_LOOKUP_CATEGORIES.device, softwareLookupStoreId)}
+                    defaultValue={onlineRepairFormDefaults?.deviceName}
+                    categoryCode={SOFTWARE_LOOKUP_CATEGORIES.device}
+                    storeId={softwareLookupStoreId}
+                    onRenameCascade={reloadSoftwareFromDb}
+                    allowManage
+                    allowFreeText
+                    actorUsername={currentUser.username}
+                  />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <ManageableSelect
+                    label="Báo giá"
+                    name="quote"
+                    options={softwareQuoteOptions}
+                    setOptions={setFormLookupOptions(SOFTWARE_LOOKUP_CATEGORIES.quote, softwareLookupStoreId)}
+                    defaultValue={formatInputMoney(onlineRepairFormDefaults?.quote ?? "")}
+                    categoryCode={SOFTWARE_LOOKUP_CATEGORIES.quote}
+                    storeId={softwareLookupStoreId}
+                    onRenameCascade={reloadSoftwareFromDb}
+                    allowManage
+                    allowFreeText
+                    actorUsername={currentUser.username}
+                  />
+                  <ManageableSelect
+                    label="Phí dịch vụ"
+                    name="deposit"
+                    options={softwareFeeOptions}
+                    setOptions={setFormLookupOptions(SOFTWARE_LOOKUP_CATEGORIES.fee, softwareLookupStoreId)}
+                    defaultValue={formatInputMoney(
+                      onlineRepairFormDefaults != null ? onlineRepairFormDefaults.deposit ?? 0 : 0
+                    )}
+                    categoryCode={SOFTWARE_LOOKUP_CATEGORIES.fee}
+                    storeId={softwareLookupStoreId}
+                    onRenameCascade={reloadSoftwareFromDb}
+                    allowManage
+                    allowFreeText
+                    actorUsername={currentUser.username}
+                  />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {(() => {
+                    const raw =
+                      onlineRepairFormDefaults?.receiveDate || vnNowDateTimeLocal();
+                    const local = String(raw).slice(0, 16).replace(" ", "T");
+                    const [datePart = "", timePart = ""] = local.includes("T")
+                      ? local.split("T")
+                      : [local.slice(0, 10), "00:00"];
+                    const [hourPart = "00", minutePart = "00"] = (timePart || "00:00")
+                      .slice(0, 5)
+                      .split(":");
+                    const hours = Array.from({ length: 24 }, (_, i) =>
+                      String(i).padStart(2, "0")
+                    );
+                    const minutes = Array.from({ length: 60 }, (_, i) =>
+                      String(i).padStart(2, "0")
+                    );
+                    return (
+                      <div className="grid min-w-0 gap-1.5 sm:col-span-1">
+                        <span className="text-base font-black text-slate-950">
+                          Ngày & giờ <span className="ml-1 text-red-500">*</span>
+                        </span>
+                        <div className="grid min-w-0 grid-cols-[minmax(0,1.4fr)_minmax(0,0.7fr)_minmax(0,0.7fr)] gap-2">
+                          <label className="grid min-w-0 gap-1">
+                            <span className="text-xs font-bold text-brand">Ngày</span>
                             <input
-                              type="checkbox"
-                              className="h-4 w-4 accent-brand"
-                              checked={isChecked}
-                              disabled={!isNợ || softwarePaying}
-                              title={isNợ ? "Chọn để thanh toán" : "Chỉ chọn được đơn NỢ DAI"}
-                              onChange={(e) => {
-                                const on = e.target.checked;
-                                setSelectedSoftwareIds((prev) => {
-                                  if (on) return prev.includes(item.id) ? prev : [...prev, item.id];
-                                  return prev.filter((x) => x !== item.id);
-                                });
-                              }}
+                              name="receiveDatePart"
+                              type="date"
+                              required
+                              defaultValue={datePart}
+                              title="Ngày tháng năm"
+                              className="h-10 w-full min-w-0 rounded-lg border border-line bg-brand-soft/40 px-2 text-sm font-black text-brand outline-none focus:border-brand"
                             />
-                          </div>,
-                          <span key={`c-${item.id}`} className="font-bold text-brand whitespace-nowrap">{item.customerName}</span>,
-                          <span key={`d-${item.id}`} className="font-semibold text-slate-700 whitespace-nowrap">{item.deviceName}</span>,
-                          formatMoney(item.quote),
-                          isOnlineRepairSensitiveHidden ? "***" : formatMoney(item.deposit),
-                          <span key={`p-${item.id}`} className="font-black text-amber-700">{isOnlineRepairSensitiveHidden ? "***" : formatMoney(item.quote - item.deposit)}</span>,
-                          <ColoredDateTime key={`dt-${item.id}`} value={item.receiveDate} />,
-                          <span
-                            key={`st-${item.id}`}
-                            className={`inline-flex h-8 items-center rounded text-xs font-bold px-2 shadow-sm border border-line ${isNợ ? "bg-red-50 text-red-600" : isDaThanhToan ? "bg-emerald-50 text-emerald-600" : "bg-slate-50 text-slate-600"}`}
-                          >
-                            {isDaThanhToan ? "✅ Đã thanh toán" : "❌ NỢ DAI"}
-                          </span>,
-                          <div key={`act-${item.id}`} className="flex flex-nowrap items-center justify-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => setViewingOnlineRepairId(item.id)}
-                              title="Chi tiết"
-                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-900"
+                          </label>
+                          <label className="grid min-w-0 gap-1">
+                            <span className="text-xs font-bold text-amber-800">Giờ</span>
+                            <select
+                              name="receiveHour"
+                              required
+                              defaultValue={hourPart.padStart(2, "0")}
+                              title="Giờ (0–23)"
+                              className="h-10 w-full min-w-0 rounded-lg border border-line bg-amber-50 px-1.5 text-sm font-black text-amber-900 outline-none focus:border-amber-500"
                             >
-                              <Eye size={16} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setCloneOnlineRepairDraft(null);
-                                setEditingOnlineRepairId(item.id);
-                                setIsOnlineRepairModalOpen(true);
-                              }}
-                              title="Sửa"
-                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20"
+                              {hours.map((h) => (
+                                <option key={`h-${h}`} value={h}>
+                                  {h}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="grid min-w-0 gap-1">
+                            <span className="text-xs font-bold text-amber-800">Phút</span>
+                            <select
+                              name="receiveMinute"
+                              required
+                              defaultValue={minutePart.padStart(2, "0")}
+                              title="Phút (0–59)"
+                              className="h-10 w-full min-w-0 rounded-lg border border-line bg-amber-50 px-1.5 text-sm font-black text-amber-900 outline-none focus:border-amber-500"
                             >
-                              <Edit3 size={16} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => openOnlineRepairCloneModal(item.id)}
-                              title="Nhân bản thêm mới"
-                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100"
-                            >
-                              <CopyPlus size={16} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void deleteOnlineRepair(item.id)}
-                              title="Xóa đơn"
-                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        ];
-                      })}
+                              {minutes.map((m) => (
+                                <option key={`m-${m}`} value={m}>
+                                  {m}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  <Field label="Thanh toán" required>
+                    <select
+                      name="paymentStatus"
+                      required
+                      defaultValue={onlineRepairFormDefaults?.paymentStatus ?? "NỢ DAI"}
+                      className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
+                    >
+                      <option value="NỢ DAI">NỢ DAI</option>
+                      <option value="Đã thanh toán">Đã thanh toán</option>
+                    </select>
+                  </Field>
+                </div>
+                <div className="flex justify-end gap-2 border-t border-line pt-4">
+                  <button
+                    type="button"
+                    onClick={closeOnlineRepairModal}
+                    disabled={softwareSaving}
+                    className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted disabled:opacity-50"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={softwareSaving}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {softwareSaving ? (
+                      <Loader2 size={18} className="animate-spin" />
+                    ) : editingOnlineRepairId ? (
+                      <Edit3 size={18} />
+                    ) : isCloneMode ? (
+                      <CopyPlus size={18} />
+                    ) : (
+                      <Plus size={18} />
+                    )}
+                    {softwareSaving
+                      ? "Đang lưu…"
+                      : editingOnlineRepairId
+                        ? "Lưu thay đổi"
+                        : isCloneMode
+                          ? "Lưu đơn mới"
+                          : "Tạo đơn"}
+                  </button>
+                </div>
+              </form>
+                  </div>
+                </div>
+              </div>
+              );
+            })()}
+
+            <div className="grid gap-4">
+              <div className="rounded-lg bg-gradient-to-br from-pink-600 via-rose-500 to-fuchsia-600 p-4 sm:p-5 text-white shadow relative overflow-hidden flex flex-col md:flex-row justify-between items-center md:text-left text-center gap-4 mb-4">
+                <div className="absolute top-0 right-0 -mt-16 -mr-16 h-64 w-64 rounded-full bg-white/10 blur-3xl mix-blend-overlay pointer-events-none"></div>
+                <div className="absolute bottom-0 left-0 -mb-16 -ml-16 h-48 w-48 rounded-full bg-white/10 blur-2xl pointer-events-none"></div>
+                <div className="relative z-10 md:w-1/2">
+                  <h1 className="text-lg sm:text-xl font-black uppercase tracking-tight text-white drop-shadow-sm">
+                    Trung Tâm Giải Mã Phần Mềm Điện Thoại Nam Sách
+                  </h1>
+                </div>
+                <div className="relative z-10 md:w-1/2 flex flex-col md:items-end gap-1">
+                  <p className="flex items-center gap-2 text-xs font-bold text-white sm:text-sm">
+                    <span className="hidden h-1.5 w-1.5 shrink-0 rounded-full bg-white md:block"></span>
+                    Chuyên Nghiệp - Nhanh Chóng - Giá Thành Hợp Lý
+                  </p>
+                  <p className="flex items-center gap-2 text-xs font-semibold text-white sm:text-sm">
+                    <span className="hidden h-1.5 w-1.5 shrink-0 rounded-full bg-white md:block"></span>
+                    Địa chỉ tin cậy và uy tín tại số 1 TP. Hải Phòng
+                  </p>
+                </div>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-lg border border-brand bg-emerald-50 p-4">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="block text-sm font-bold text-emerald-800">Lợi nhuận Tháng</span>
+                    <input
+                      type="month"
+                      value={onlineRepairMonth}
+                      onChange={(e) => {
+                        setOnlineRepairMonth(e.target.value);
+                        setSelectedSoftwareIds([]);
+                      }}
+                      className="h-8 rounded border border-emerald-200 bg-white px-2 text-sm font-semibold text-emerald-800"
                     />
                   </div>
-                  {debtVisibleIds.length > 0 ? (
-                    <div className="mt-2 flex flex-wrap items-center gap-3 border-t border-line pt-3">
-                      <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-bold text-slate-700">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 accent-brand"
-                          checked={allDebtSelected}
-                          disabled={softwarePaying}
-                          onChange={(e) => {
-                            const on = e.target.checked;
-                            setSelectedSoftwareIds((prev) => {
-                              if (on) {
-                                const set = new Set(prev);
-                                debtVisibleIds.forEach((id) => set.add(id));
-                                return Array.from(set);
-                              }
-                              return prev.filter((id) => !debtVisibleIds.includes(id));
-                            });
-                          }}
-                        />
-                        Chọn tất cả NỢ DAI trên lưới ({debtVisibleIds.length})
-                      </label>
-                      {selectedDebtCount > 0 ? (
-                        <span className="text-sm font-semibold text-muted">
-                          Đã chọn {selectedDebtCount} đơn nợ
-                        </span>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </Panel>
+                  <strong className="text-3xl text-emerald-700">{isOnlineRepairSensitiveHidden ? "*** ₫" : formatMoney(monthlyRepairs.reduce((sum, r) => sum + (r.quote - r.deposit), 0))}</strong>
+                  <div className="mt-2 flex items-center justify-between border-t border-emerald-200/50 pt-2 text-sm font-semibold text-emerald-700/80">
+                    <span>Dư nợ tháng:</span>
+                    <span>{isOnlineRepairSensitiveHidden ? "***" : formatMoney(monthlyRepairs.filter(r => r.paymentStatus === "NỢ DAI").reduce((sum, r) => sum + r.quote, 0))}</span>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-line bg-white p-4 shadow-sm">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="block text-sm font-bold text-slate-500">Lợi nhuận Ngày</span>
+                    <input type="date" value={displayDate} onChange={e => setOnlineRepairDate(e.target.value)} className="h-8 rounded border border-line bg-slate-50 px-2 text-sm font-semibold text-slate-700" />
+                  </div>
+                  <strong className="text-3xl text-red-600">{isOnlineRepairSensitiveHidden ? "*** ₫" : formatMoney(dailyRepairs.reduce((sum, r) => sum + (r.quote - r.deposit), 0))}</strong>
+                  <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 text-sm font-semibold text-slate-500">
+                    <span>Dư nợ ngày:</span>
+                    <span>{isOnlineRepairSensitiveHidden ? "***" : formatMoney(dailyRepairs.filter(r => r.paymentStatus === "NỢ DAI").reduce((sum, r) => sum + r.quote, 0))}</span>
+                  </div>
+                </div>
               </div>
 
-              {viewingOnlineRepair && (
-                <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-md">
-                  <section className="max-h-[92vh] w-full max-w-[640px] overflow-auto rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
-                    <div className="flex items-center justify-between border-b border-slate-200/60 bg-gradient-to-r from-brand/10 to-transparent p-5">
-                      <h2 className="text-xl font-black text-brand">Chi tiết đơn phần mềm</h2>
-                      <button
-                        type="button"
-                        onClick={() => setViewingOnlineRepairId(null)}
-                        className="h-9 rounded-xl border border-slate-200/60 bg-white/50 px-4 text-sm font-bold text-slate-600 backdrop-blur-md transition hover:bg-white hover:text-slate-900"
-                      >
-                        Đóng
-                      </button>
-                    </div>
-                    <div className="grid gap-4 p-5">
-                      <div className="flex items-center gap-3">
-                        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-brand-soft text-brand">
-                          <Terminal size={24} />
-                        </div>
-                        <div>
-                          <strong className="block text-lg">{viewingOnlineRepair.customerName}</strong>
-                          <span className="text-sm font-semibold text-muted">{viewingOnlineRepair.deviceName}</span>
-                        </div>
-                      </div>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <Field label="Khách hàng / Thợ">
-                          <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-bold text-brand">
-                            {viewingOnlineRepair.customerName}
-                          </div>
-                        </Field>
-                        <Field label="Loại khách">
-                          <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">
-                            {viewingOnlineRepair.customerType || "Vãng lai"}
-                          </div>
-                        </Field>
-                        <Field label="Tên máy">
-                          <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-semibold text-slate-800">
-                            {viewingOnlineRepair.deviceName}
-                          </div>
-                        </Field>
-                        <Field label="Trạng thái thanh toán">
-                          <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3">
-                            <span
-                              className={`inline-flex h-8 items-center rounded px-2 text-xs font-bold ${viewingOnlineRepair.paymentStatus === "Đã thanh toán"
-                                  ? "bg-emerald-50 text-emerald-600"
-                                  : "bg-red-50 text-red-600"
-                                }`}
-                            >
-                              {viewingOnlineRepair.paymentStatus === "Đã thanh toán"
-                                ? "✅ Đã thanh toán"
-                                : "❌ NỢ DAI"}
-                            </span>
-                          </div>
-                        </Field>
-                        <Field label="Báo giá">
-                          <div className="flex h-12 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-xl font-black text-slate-800">
-                            {formatMoney(viewingOnlineRepair.quote)}
-                          </div>
-                        </Field>
-                        <Field label="Phí dịch vụ">
-                          <div className="flex h-12 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-xl font-black text-slate-700">
-                            {formatMoney(viewingOnlineRepair.deposit)}
-                          </div>
-                        </Field>
-                        <Field label="Lãi">
-                          <div className="flex h-12 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-xl font-black text-amber-700">
-                            {formatMoney(viewingOnlineRepair.quote - viewingOnlineRepair.deposit)}
-                          </div>
-                        </Field>
-                        <Field label="Giờ nhận">
-                          <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3">
-                            <ColoredDateTime value={viewingOnlineRepair.receiveDate} size="md" />
-                          </div>
-                        </Field>
-                        <Field label="Ghi chú / Lỗi">
-                          <div className="flex min-h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 py-2 text-slate-800 sm:col-span-2">
-                            {viewingOnlineRepair.issue?.trim() || "Không có"}
-                          </div>
-                        </Field>
-                        <Field label="Mã đơn">
-                          <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-mono text-xs text-slate-600">
-                            {viewingOnlineRepair.id}
-                          </div>
-                        </Field>
-                      </div>
-                      <div className="flex justify-end gap-2 border-t border-line pt-4">
-                        <button
-                          type="button"
-                          onClick={() => setViewingOnlineRepairId(null)}
-                          className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted"
-                        >
-                          Đóng
-                        </button>
+              <Panel title="Danh sách Phần mềm">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={onlineRepairFilter}
+                      onChange={(e) => {
+                        setOnlineRepairFilter(e.target.value);
+                        setSelectedSoftwareIds([]);
+                      }}
+                      className="h-10 rounded-lg border border-line px-3 text-sm font-bold"
+                    >
+                      <option value="all">Tất cả trạng thái</option>
+                      <option value="paid">Đã thanh toán</option>
+                      <option value="unpaid">NỢ DAI</option>
+                    </select>
+                    
+                    <div className="flex items-center gap-2 rounded-lg border border-line bg-slate-50 px-2">
+                      <span className="text-sm font-semibold text-slate-500">Lọc ngày:</span>
+                      <input
+                        type="date"
+                        value={onlineRepairDate}
+                        onChange={(e) => {
+                          setOnlineRepairDate(e.target.value);
+                          setSelectedSoftwareIds([]);
+                        }}
+                        className="h-8 rounded border border-line px-2 text-sm"
+                      />
+                      {onlineRepairDate && (
                         <button
                           type="button"
                           onClick={() => {
-                            setViewingOnlineRepairId(null);
-                            setCloneOnlineRepairDraft(null);
-                            setEditingOnlineRepairId(viewingOnlineRepair.id);
-                            setIsOnlineRepairModalOpen(true);
+                            setOnlineRepairDate("");
+                            setSelectedSoftwareIds([]);
                           }}
-                          className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark"
+                          className="text-sm font-bold text-brand hover:underline"
                         >
-                          <Edit3 size={16} /> Sửa đơn
+                          Tất cả tháng
                         </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={softwarePaying || selectedDebtCount === 0}
+                      onClick={() => void markSelectedSoftwarePaid(debtVisibleRepairs)}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      title="Đánh dấu các đơn NỢ DAI đã chọn → Đã thanh toán"
+                    >
+                      {softwarePaying ? (
+                        <Loader2 size={18} className="animate-spin" />
+                      ) : (
+                        <CheckCircle2 size={18} />
+                      )}
+                      {softwarePaying
+                        ? "Đang thanh toán…"
+                        : selectedDebtCount > 0
+                          ? `Thanh toán (${selectedDebtCount})`
+                          : "Thanh toán"}
+                    </button>
+                    <button onClick={() => setIsOnlineRepairSensitiveHidden(!isOnlineRepairSensitiveHidden)} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-line bg-white px-3 font-bold text-slate-600 shadow-sm transition hover:bg-slate-50">
+                      {isOnlineRepairSensitiveHidden ? <EyeOff size={18} /> : <Eye size={18} />}
+                      {isOnlineRepairSensitiveHidden ? "Hiện" : "Ẩn"}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditingOnlineRepairId(null);
+                        setCloneOnlineRepairDraft(null);
+                        setIsOnlineRepairModalOpen(true);
+                      }}
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-brand px-4 font-bold text-white shadow hover:bg-brand-dark"
+                    >
+                      <Plus size={18} /> Tạo đơn mới
+                    </button>
+                  </div>
+                </div>
+                <div className="overflow-x-auto pb-4">
+                  <DataTable
+                    headers={[
+                      "",
+                      "Khách hàng",
+                      "Tên máy",
+                      "Báo giá",
+                      "Phí dịch vụ",
+                      "Lãi",
+                      "Giờ",
+                      "Trạng thái TT",
+                      "Thao tác",
+                    ]}
+                    rows={filteredRepairs.map((item) => {
+                      const isNợ = item.paymentStatus === "NỢ DAI";
+                      const isDaThanhToan = item.paymentStatus === "Đã thanh toán";
+                      const isChecked = selectedSoftwareIds.includes(item.id);
+
+                      return [
+                        <div
+                          key={`chk-${item.id}`}
+                          className="flex items-center justify-center"
+                          onClick={(e) => e.stopPropagation()}
+                          onMouseDown={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 accent-brand"
+                            checked={isChecked}
+                            disabled={!isNợ || softwarePaying}
+                            title={isNợ ? "Chọn để thanh toán" : "Chỉ chọn được đơn NỢ DAI"}
+                            onChange={(e) => {
+                              const on = e.target.checked;
+                              setSelectedSoftwareIds((prev) => {
+                                if (on) return prev.includes(item.id) ? prev : [...prev, item.id];
+                                return prev.filter((x) => x !== item.id);
+                              });
+                            }}
+                          />
+                        </div>,
+                        <span key={`c-${item.id}`} className="font-bold text-brand whitespace-nowrap">{item.customerName}</span>,
+                        <span key={`d-${item.id}`} className="font-semibold text-slate-700 whitespace-nowrap">{item.deviceName}</span>,
+                        formatMoney(item.quote),
+                        isOnlineRepairSensitiveHidden ? "***" : formatMoney(item.deposit),
+                        <span key={`p-${item.id}`} className="font-black text-amber-700">{isOnlineRepairSensitiveHidden ? "***" : formatMoney(item.quote - item.deposit)}</span>,
+                        <ColoredDateTime key={`dt-${item.id}`} value={item.receiveDate} />,
+                        <span
+                          key={`st-${item.id}`}
+                          className={`inline-flex h-8 items-center rounded text-xs font-bold px-2 shadow-sm border border-line ${isNợ ? "bg-red-50 text-red-600" : isDaThanhToan ? "bg-emerald-50 text-emerald-600" : "bg-slate-50 text-slate-600"}`}
+                        >
+                          {isDaThanhToan ? "✅ Đã thanh toán" : "❌ NỢ DAI"}
+                        </span>,
+                        <div key={`act-${item.id}`} className="flex flex-nowrap items-center justify-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setViewingOnlineRepairId(item.id)}
+                            title="Chi tiết"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-900"
+                          >
+                            <Eye size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCloneOnlineRepairDraft(null);
+                              setEditingOnlineRepairId(item.id);
+                              setIsOnlineRepairModalOpen(true);
+                            }}
+                            title="Sửa"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand transition hover:bg-brand/20"
+                          >
+                            <Edit3 size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openOnlineRepairCloneModal(item.id)}
+                            title="Nhân bản thêm mới"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-700 transition hover:bg-sky-100"
+                          >
+                            <CopyPlus size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void deleteOnlineRepair(item.id)}
+                            title="Xóa đơn"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-danger transition hover:bg-red-100"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      ];
+                    })}
+                  />
+                </div>
+                {debtVisibleIds.length > 0 ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-3 border-t border-line pt-3">
+                    <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-bold text-slate-700">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-brand"
+                        checked={allDebtSelected}
+                        disabled={softwarePaying}
+                        onChange={(e) => {
+                          const on = e.target.checked;
+                          setSelectedSoftwareIds((prev) => {
+                            if (on) {
+                              const set = new Set(prev);
+                              debtVisibleIds.forEach((id) => set.add(id));
+                              return Array.from(set);
+                            }
+                            return prev.filter((id) => !debtVisibleIds.includes(id));
+                          });
+                        }}
+                      />
+                      Chọn tất cả NỢ DAI trên lưới ({debtVisibleIds.length})
+                    </label>
+                    {selectedDebtCount > 0 ? (
+                      <span className="text-sm font-semibold text-muted">
+                        Đã chọn {selectedDebtCount} đơn nợ
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+              </Panel>
+            </div>
+
+            {viewingOnlineRepair && (
+              <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-md">
+                <section className="max-h-[92vh] w-full max-w-[640px] overflow-auto rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
+                  <div className="flex items-center justify-between border-b border-slate-200/60 bg-gradient-to-r from-brand/10 to-transparent p-5">
+                    <h2 className="text-xl font-black text-brand">Chi tiết đơn phần mềm</h2>
+                    <button
+                      type="button"
+                      onClick={() => setViewingOnlineRepairId(null)}
+                      className="h-9 rounded-xl border border-slate-200/60 bg-white/50 px-4 text-sm font-bold text-slate-600 backdrop-blur-md transition hover:bg-white hover:text-slate-900"
+                    >
+                      Đóng
+                    </button>
+                  </div>
+                  <div className="grid gap-4 p-5">
+                    <div className="flex items-center gap-3">
+                      <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-brand-soft text-brand">
+                        <Terminal size={24} />
+                      </div>
+                      <div>
+                        <strong className="block text-lg">{viewingOnlineRepair.customerName}</strong>
+                        <span className="text-sm font-semibold text-muted">{viewingOnlineRepair.deviceName}</span>
                       </div>
                     </div>
-                  </section>
-                </div>
-              )}
-            </section>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label="Khách hàng / Thợ">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-bold text-brand">
+                          {viewingOnlineRepair.customerName}
+                        </div>
+                      </Field>
+                      <Field label="Loại khách">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-slate-800">
+                          {viewingOnlineRepair.customerType || "Vãng lai"}
+                        </div>
+                      </Field>
+                      <Field label="Tên máy">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-semibold text-slate-800">
+                          {viewingOnlineRepair.deviceName}
+                        </div>
+                      </Field>
+                      <Field label="Trạng thái thanh toán">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3">
+                          <span
+                            className={`inline-flex h-8 items-center rounded px-2 text-xs font-bold ${
+                              viewingOnlineRepair.paymentStatus === "Đã thanh toán"
+                                ? "bg-emerald-50 text-emerald-600"
+                                : "bg-red-50 text-red-600"
+                            }`}
+                          >
+                            {viewingOnlineRepair.paymentStatus === "Đã thanh toán"
+                              ? "✅ Đã thanh toán"
+                              : "❌ NỢ DAI"}
+                          </span>
+                        </div>
+                      </Field>
+                      <Field label="Báo giá">
+                        <div className="flex h-12 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-xl font-black text-slate-800">
+                          {formatMoney(viewingOnlineRepair.quote)}
+                        </div>
+                      </Field>
+                      <Field label="Phí dịch vụ">
+                        <div className="flex h-12 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-xl font-black text-slate-700">
+                          {formatMoney(viewingOnlineRepair.deposit)}
+                        </div>
+                      </Field>
+                      <Field label="Lãi">
+                        <div className="flex h-12 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-xl font-black text-amber-700">
+                          {formatMoney(viewingOnlineRepair.quote - viewingOnlineRepair.deposit)}
+                        </div>
+                      </Field>
+                      <Field label="Giờ nhận">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3">
+                          <ColoredDateTime value={viewingOnlineRepair.receiveDate} size="md" />
+                        </div>
+                      </Field>
+                      <Field label="Ghi chú / Lỗi">
+                        <div className="flex min-h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 py-2 text-slate-800 sm:col-span-2">
+                          {viewingOnlineRepair.issue?.trim() || "Không có"}
+                        </div>
+                      </Field>
+                      <Field label="Mã đơn">
+                        <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-mono text-xs text-slate-600">
+                          {viewingOnlineRepair.id}
+                        </div>
+                      </Field>
+                    </div>
+                    <div className="flex justify-end gap-2 border-t border-line pt-4">
+                      <button
+                        type="button"
+                        onClick={() => setViewingOnlineRepairId(null)}
+                        className="h-10 rounded-lg border border-line bg-white px-4 font-bold text-muted"
+                      >
+                        Đóng
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setViewingOnlineRepairId(null);
+                          setCloneOnlineRepairDraft(null);
+                          setEditingOnlineRepairId(viewingOnlineRepair.id);
+                          setIsOnlineRepairModalOpen(true);
+                        }}
+                        className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 font-bold text-white hover:bg-brand-dark"
+                      >
+                        <Edit3 size={16} /> Sửa đơn
+                      </button>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            )}
+          </section>
           );
         })()}
       </section>
@@ -15885,8 +15943,9 @@ function ScrollableSelect({
                       onChange(o.value);
                       setOpen(false);
                     }}
-                    className={`flex h-11 w-full items-center gap-2 px-3 text-left text-sm font-semibold transition hover:bg-brand-soft ${active ? "bg-brand-soft text-brand" : "text-ink"
-                      }`}
+                    className={`flex h-11 w-full items-center gap-2 px-3 text-left text-sm font-semibold transition hover:bg-brand-soft ${
+                      active ? "bg-brand-soft text-brand" : "text-ink"
+                    }`}
                   >
                     {colorPreview ? <ColorDot color={o.label} size="sm" /> : null}
                     <span className="truncate">{o.label}</span>
@@ -15902,57 +15961,59 @@ function ScrollableSelect({
   const panel =
     open && mounted && !mobilePanel
       ? createPortal(
-        <>
-          {mobilePanel ? (
+          <>
+            {mobilePanel ? (
+              <div
+                className="fixed inset-0 z-[210] bg-slate-950/25 sm:hidden"
+                onMouseDown={() => setOpen(false)}
+              />
+            ) : null}
             <div
-              className="fixed inset-0 z-[210] bg-slate-950/25 sm:hidden"
-              onMouseDown={() => setOpen(false)}
-            />
-          ) : null}
-          <div
-            ref={panelRef}
-            style={panelStyle}
-            className={`overflow-hidden border border-line bg-white shadow-panel ${mobilePanel ? "rounded-xl" : "rounded-lg"
+              ref={panelRef}
+              style={panelStyle}
+              className={`overflow-hidden border border-line bg-white shadow-panel ${
+                mobilePanel ? "rounded-xl" : "rounded-lg"
               }`}
-          >
-            <ul
-              role="listbox"
-              className="max-h-[inherit] overflow-y-auto py-1 overscroll-contain"
             >
-              {visibleOptions.length === 0 ? (
-                <li className="px-3 py-2 text-sm font-semibold text-muted">
-                  {allowFreeText && value.trim()
-                    ? "Không khớp — có thể dùng text vừa nhập"
-                    : "Chưa có option"}
-                </li>
-              ) : (
-                visibleOptions.map((o) => {
-                  const active = o.value === value;
-                  return (
-                    <li key={`${name}-opt-${o.value}`}>
-                      <button
-                        type="button"
-                        role="option"
-                        aria-selected={active}
-                        onClick={() => {
-                          onChange(o.value);
-                          setOpen(false);
-                        }}
-                        className={`flex h-11 w-full items-center gap-2 px-3 text-left text-sm font-semibold transition hover:bg-brand-soft sm:h-10 ${active ? "bg-brand-soft text-brand" : "text-ink"
-                          }`}
-                      >
-                        {colorPreview ? <ColorDot color={o.label} size="sm" /> : null}
-                        <span className="truncate">{o.label}</span>
-                      </button>
-                    </li>
-                  );
-                })
-              )}
-            </ul>
-          </div>
-        </>,
-        document.body
-      )
+          <ul
+            role="listbox"
+            className="max-h-[inherit] overflow-y-auto py-1 overscroll-contain"
+          >
+            {visibleOptions.length === 0 ? (
+              <li className="px-3 py-2 text-sm font-semibold text-muted">
+                {allowFreeText && value.trim()
+                  ? "Không khớp — có thể dùng text vừa nhập"
+                  : "Chưa có option"}
+              </li>
+            ) : (
+              visibleOptions.map((o) => {
+                const active = o.value === value;
+                return (
+                  <li key={`${name}-opt-${o.value}`}>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={active}
+                      onClick={() => {
+                        onChange(o.value);
+                        setOpen(false);
+                      }}
+                      className={`flex h-11 w-full items-center gap-2 px-3 text-left text-sm font-semibold transition hover:bg-brand-soft sm:h-10 ${
+                        active ? "bg-brand-soft text-brand" : "text-ink"
+                      }`}
+                    >
+                      {colorPreview ? <ColorDot color={o.label} size="sm" /> : null}
+                      <span className="truncate">{o.label}</span>
+                    </button>
+                  </li>
+                );
+              })
+            )}
+          </ul>
+            </div>
+          </>,
+          document.body
+        )
       : null;
 
   return (
