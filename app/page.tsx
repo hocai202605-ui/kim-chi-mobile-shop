@@ -8021,7 +8021,7 @@ export default function Home() {
 
         {(activePage === "parts" || activePage === "inbound") && (() => {
           const isLinhKienPage = activePage === "inbound";
-          const pageHeaderTitle = isLinhKienPage ? "Linh kiện" : "Nhập hàng";
+          const pageHeaderTitle = isLinhKienPage ? "Báo giá" : "Nhập hàng";
           const PageHeaderIcon = isLinhKienPage ? Cpu : PackagePlus;
           const storeIdForForm = resolvePartsStoreId();
           const q = partSearch.trim().toLowerCase();
