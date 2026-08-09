@@ -27,6 +27,7 @@ export const ALL_MENU_IDS = [
   "inventoryReports",
   "customers",
   "ledger",
+  "draft-notes",
   "debt-notes",
   "logs",
   "accounts",
