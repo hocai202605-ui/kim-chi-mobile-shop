@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
     const data = await repoListDraftNotes({
       storeId: parseStoreId(sp.get("storeId")),
       query: sp.get("query") || undefined,
+      username: sp.get("username") || undefined,
     });
     return NextResponse.json({ data });
   } catch (err) {

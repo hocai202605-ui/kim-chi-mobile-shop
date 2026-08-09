@@ -19,6 +19,7 @@ function toQuery(filters: DraftNoteListFilters = {}): string {
   const p = new URLSearchParams();
   if (filters.storeId && filters.storeId !== "all") p.set("storeId", filters.storeId);
   if (filters.query) p.set("query", filters.query);
+  if (filters.username) p.set("username", filters.username);
   const s = p.toString();
   return s ? `?${s}` : "";
 }

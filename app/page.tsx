@@ -1415,6 +1415,7 @@ export default function Home() {
 
   const [draftNotes, setDraftNotes] = useState<DraftNote[]>([]);
   const [draftNoteQuery, setDraftNoteQuery] = useState("");
+  const [draftNoteUserFilter, setDraftNoteUserFilter] = useState("");
   const [draftNoteContent, setDraftNoteContent] = useState("");
   const [editingDraftNoteId, setEditingDraftNoteId] = useState<string | null>(null);
   const [draftNoteLoading, setDraftNoteLoading] = useState(false);
@@ -3932,7 +3933,7 @@ export default function Home() {
 
   /** Load droplist tài khoản cho màn login (public API). */
   useEffect(() => {
-    if (!sessionReady || currentUser) return;
+    if (!sessionReady) return;
     let cancelled = false;
     setLoginUsersLoading(true);
     void (async () => {
@@ -3960,7 +3961,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [sessionReady, currentUser]);
+  }, [sessionReady]);
 
   // Staff luôn bị khóa filter = cửa hàng gán; owner giữ lựa chọn.
   useEffect(() => {
@@ -5732,6 +5733,12 @@ export default function Home() {
       const rows = await apiListDraftNotes({
         storeId,
         query: draftNoteQuery.trim() || undefined,
+        username:
+          currentUser.role === "staff"
+            ? currentUser.username
+            : draftNoteUserFilter === "all"
+              ? undefined
+              : draftNoteUserFilter || currentUser.username,
       });
       setDraftNotes(rows);
     } catch (err) {
@@ -5740,7 +5747,11 @@ export default function Home() {
     } finally {
       setDraftNoteLoading(false);
     }
-  }, [currentUser, storeFilter, draftNoteQuery]);
+  }, [currentUser, storeFilter, draftNoteQuery, draftNoteUserFilter]);
+
+  useEffect(() => {
+    setDraftNoteUserFilter(currentUser?.username ?? "");
+  }, [currentUser?.id, currentUser?.username]);
 
   useEffect(() => {
     if (activePage !== "draft-notes" || !currentUser) return;
@@ -12761,15 +12772,36 @@ export default function Home() {
                       {draftNoteLoading ? "Đang tải..." : `${draftNotes.length.toLocaleString("vi-VN")} ghi nháp`}
                     </p>
                   </div>
-                  <label className="relative w-full lg:max-w-sm">
-                    <Search size={16} className="absolute left-3 top-3 text-muted" />
-                    <input
-                      value={draftNoteQuery}
-                      onChange={(e) => setDraftNoteQuery(e.target.value)}
-                      placeholder="Tìm nội dung ghi nháp..."
-                      className="h-10 w-full rounded-lg border border-line bg-slate-50 pl-9 pr-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand/30"
-                    />
-                  </label>
+                  <div className="grid w-full gap-2 sm:grid-cols-2 lg:max-w-2xl">
+                    {currentUser.role === "owner" ? (
+                      <select
+                        value={draftNoteUserFilter || currentUser.username}
+                        onChange={(e) => setDraftNoteUserFilter(e.target.value)}
+                        aria-label="Lọc ghi nháp theo người dùng"
+                        className="h-10 w-full rounded-lg border border-line bg-slate-50 px-3 text-sm font-bold text-ink outline-none focus:ring-2 focus:ring-brand/30"
+                      >
+                        <option value="all">Tất cả người dùng</option>
+                        {sortLoginUsers(loginUsers).map((user) => (
+                          <option key={user.username} value={user.username}>
+                            {user.displayName} ({user.username})
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="flex h-10 items-center rounded-lg border border-line bg-slate-50 px-3 text-sm font-bold text-muted">
+                        Người dùng: {currentUser.username}
+                      </div>
+                    )}
+                    <label className="relative w-full">
+                      <Search size={16} className="absolute left-3 top-3 text-muted" />
+                      <input
+                        value={draftNoteQuery}
+                        onChange={(e) => setDraftNoteQuery(e.target.value)}
+                        placeholder="Tìm nội dung ghi nháp..."
+                        className="h-10 w-full rounded-lg border border-line bg-slate-50 pl-9 pr-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand/30"
+                      />
+                    </label>
+                  </div>
                 </div>
 
                 {draftNoteError ? (

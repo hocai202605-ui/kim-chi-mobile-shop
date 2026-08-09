@@ -22,6 +22,7 @@ export type DraftNoteInput = {
 export type DraftNoteListFilters = {
   storeId?: StoreId;
   query?: string;
+  username?: string;
 };
 
 type DraftNoteRow = {
@@ -92,6 +93,12 @@ export async function repoListDraftNotes(
   if (q) {
     where.push(`content ilike $${i++}`);
     params.push(`%${q}%`);
+  }
+
+  const username = String(filters.username ?? "").trim();
+  if (username) {
+    where.push(`lower(created_by) = lower($${i++})`);
+    params.push(username);
   }
 
   const { rows } = await getPool().query<DraftNoteRow>(
