@@ -9031,7 +9031,7 @@ export default function Home() {
                         <span
                           className={`text-sm font-black ${
                             ["Full Chức Năng", "Mới 100%"].includes(item.condition.trim())
-                              ? "rounded-md border border-brand/20 bg-brand-soft px-2 py-0.5 text-brand"
+                              ? "rounded-md border border-gold/30 bg-gold/15 px-2 py-0.5 text-amber-700"
                               : "text-slate-500"
                           }`}
                         >
