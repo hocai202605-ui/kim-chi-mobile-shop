@@ -9029,10 +9029,10 @@ export default function Home() {
                       <span className="inline-flex flex-wrap items-center justify-center gap-1.5 text-[17px] font-semibold leading-tight text-slate-500">
                         {item.brand} •{" "}
                         <span
-                          className={`rounded-md border px-2 py-0.5 text-sm font-black ${
+                          className={`text-sm font-black ${
                             ["Full Chức Năng", "Mới 100%"].includes(item.condition.trim())
-                              ? "border-brand/20 bg-brand-soft text-brand"
-                              : "border-slate-200 bg-slate-50 text-slate-600"
+                              ? "rounded-md border border-brand/20 bg-brand-soft px-2 py-0.5 text-brand"
+                              : "text-slate-500"
                           }`}
                         >
                           {item.condition}
