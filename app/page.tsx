@@ -7052,36 +7052,22 @@ export default function Home() {
                           />
                           <Tooltip
                             cursor={{ fill: "#f6f7f3" }}
-                            contentStyle={{
-                              borderRadius: "8px",
-                              border: "1px solid #dce2dc",
-                              boxShadow: "0 14px 32px rgba(24, 35, 30, 0.09)",
-                              fontWeight: "bold",
-                            }}
-                            labelFormatter={(_, payload) => {
-                              const row = payload?.[0]?.payload as { label?: string } | undefined;
-                              return row?.label ? `Ngày ${row.label}` : "";
-                            }}
-                            formatter={(value: any, name: any, item: any) => {
-                              const row = item?.payload as {
-                                revenue?: number;
-                                cashPercent?: number;
-                                transferPercent?: number;
-                                otherPercent?: number;
-                                saleCount?: number;
-                                sold?: number;
-                              } | undefined;
-                              const rawName = String(name || "");
-                              const percent =
-                                rawName === "Tiền mặt"
-                                  ? row?.cashPercent
-                                  : rawName === "Chuyển khoản"
-                                    ? row?.transferPercent
-                                    : row?.otherPercent;
-                              return [
-                                `${formatMoney(Number(value) || 0)} (${percent ?? 0}%) · Tổng ${formatMoney(row?.revenue ?? 0)} · ${row?.saleCount ?? 0} phiếu · ${row?.sold ?? 0} máy`,
-                                name,
-                              ];
+                            content={({ active, payload }) => {
+                              const row = payload?.[0]?.payload as
+                                | {
+                                    revenue?: number;
+                                    cashRevenue?: number;
+                                    transferRevenue?: number;
+                                  }
+                                | undefined;
+                              if (!active || !row) return null;
+                              return (
+                                <div className="rounded-lg border border-line bg-white px-3 py-2 text-sm font-black text-ink shadow-panel">
+                                  <p>Tổng: {formatMoney(row.revenue ?? 0)}</p>
+                                  <p>Tiền mặt: {formatMoney(row.cashRevenue ?? 0)}</p>
+                                  <p>Chuyển khoản: {formatMoney(row.transferRevenue ?? 0)}</p>
+                                </div>
+                              );
                             }}
                           />
                           <Bar
