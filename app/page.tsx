@@ -9030,7 +9030,7 @@ export default function Home() {
                         {item.brand} •{" "}
                         <span
                           className={`text-sm font-black ${
-                            ["Full Chức Năng", "Mới 100%", "E Sim", "lắp sim"].includes(item.condition.trim())
+                            ["full chức năng", "mới 100%", "e sim", "lắp sim"].includes(item.condition.trim().toLocaleLowerCase("vi-VN"))
                               ? "rounded-md border border-gold/30 bg-gold/15 px-2 py-0.5 text-amber-700"
                               : "text-slate-500"
                           }`}
