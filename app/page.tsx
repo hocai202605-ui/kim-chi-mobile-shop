@@ -9025,20 +9025,31 @@ export default function Home() {
                   headers={["Tên máy", "Dung lượng", "IMEI", "Giá bán", "Màu sắc", "Dung lượng pin", "Pin", "Giá nhập", "Thao tác"]}
                   rows={paginatedPhones.map((item) => [
                     <div key={`name-${item.id}`} className="flex flex-col items-center gap-1.5">
-                      <div className="flex items-center justify-center gap-2 text-lg font-black text-brand">{item.name}</div>
-                      <span className="text-sm font-semibold text-slate-500">{item.brand} • <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-xs font-bold text-slate-600">{item.condition}</span></span>
+                      <div className="flex items-center justify-center gap-2 text-[22px] font-black text-brand">{item.name}</div>
+                      <span className="inline-flex flex-wrap items-center justify-center gap-1.5 text-[17px] font-semibold leading-tight text-slate-500">
+                        {item.brand} •{" "}
+                        <span
+                          className={`rounded-md border px-2 py-0.5 text-sm font-black ${
+                            ["Full Chức Năng", "Mới 100%"].includes(item.condition.trim())
+                              ? "border-brand/20 bg-brand-soft text-brand"
+                              : "border-slate-200 bg-slate-50 text-slate-600"
+                          }`}
+                        >
+                          {item.condition}
+                        </span>
+                      </span>
                     </div>,
-                    <span className="text-base font-bold text-slate-800" key={`storage-${item.id}`}>{item.storage}</span>,
-                    <span className="font-mono text-xl font-black tracking-wide text-red-600" key={`imei-${item.id}`}>{item.imei.slice(-5)}</span>,
-                    <span className="text-lg font-black text-emerald-600" key={`price-${item.id}`}>{formatMoney(item.expectedPrice)}</span>,
+                    <span className="text-[19px] font-bold text-slate-800" key={`storage-${item.id}`}>{item.storage}</span>,
+                    <span className="font-mono text-2xl font-black tracking-wide text-red-600" key={`imei-${item.id}`}>{item.imei.slice(-5)}</span>,
+                    <span className="text-[29px] font-black text-emerald-600" key={`price-${item.id}`}>{formatMoney(item.expectedPrice)}</span>,
                     <div key={`color-${item.id}`} className="flex items-center justify-center gap-2">
                       <ColorDot color={item.color} />
-                      <span className="text-base font-medium text-slate-700">{item.color}</span>
+                      <span className="text-[19px] font-medium text-slate-700">{item.color}</span>
                     </div>,
-                    <span className="text-base font-bold text-slate-700" key={`batcap-${item.id}`}>{item.batteryCapacity || "—"}</span>,
-                    <div className="flex items-center justify-center gap-1.5 text-base font-bold text-amber-600" key={`bat-${item.id}`}>{item.batteryCondition}</div>,
+                    <span className="text-[19px] font-bold text-slate-700" key={`batcap-${item.id}`}>{item.batteryCapacity || "—"}</span>,
+                    <div className="flex items-center justify-center gap-1.5 text-[19px] font-bold text-amber-600" key={`bat-${item.id}`}>{item.batteryCondition}</div>,
                     <span
-                      className="text-[11px] font-semibold leading-tight text-slate-500"
+                      className="text-[13px] font-semibold leading-tight text-slate-500"
                       key={`cost-${item.id}`}
                       title="Giá nhập"
                     >
@@ -9099,23 +9110,23 @@ export default function Home() {
                     "Thao tác",
                   ]}
                   rows={paginatedAccessories.map((item) => [
-                    <span className="font-mono text-sm font-medium text-slate-500" key={`code-${item.id}`}>{item.code}</span>,
-                    <span className="text-sm font-semibold text-slate-700" key={`cat-${item.id}`}>{item.category || "—"}</span>,
-                    <span className="text-sm font-semibold text-slate-700" key={`brand-${item.id}`}>{item.brand || "—"}</span>,
+                    <span className="font-mono text-[17px] font-medium text-slate-500" key={`code-${item.id}`}>{item.code}</span>,
+                    <span className="text-[17px] font-semibold text-slate-700" key={`cat-${item.id}`}>{item.category || "—"}</span>,
+                    <span className="text-[17px] font-semibold text-slate-700" key={`brand-${item.id}`}>{item.brand || "—"}</span>,
                     <div key={`name-${item.id}`} className="flex flex-col items-center gap-0.5">
-                      <span className="text-lg font-black text-brand">{item.name}</span>
+                      <span className="text-[22px] font-black text-brand">{item.name}</span>
                       {item.note ? (
-                        <span className="max-w-[12rem] truncate text-xs font-semibold text-muted" title={item.note}>
+                        <span className="max-w-[12rem] truncate text-sm font-semibold text-muted" title={item.note}>
                           {item.note}
                         </span>
                       ) : null}
                     </div>,
-                    <span className="text-base font-bold text-slate-800" key={`qty-${item.id}`}>{item.quantity}</span>,
-                    <span className="text-lg font-black text-emerald-600" key={`price-${item.id}`}>{formatMoney(item.price)}</span>,
-                    <span className="text-base font-medium text-slate-600" key={`cost-${item.id}`}>
+                    <span className="text-[19px] font-bold text-slate-800" key={`qty-${item.id}`}>{item.quantity}</span>,
+                    <span className="text-[29px] font-black text-emerald-600" key={`price-${item.id}`}>{formatMoney(item.price)}</span>,
+                    <span className="text-[19px] font-medium text-slate-600" key={`cost-${item.id}`}>
                       {isAccessorySensitiveHidden ? "***" : formatMoney(item.cost)}
                     </span>,
-                    <span className="text-base font-bold text-amber-600" key={`profit-${item.id}`}>
+                    <span className="text-[19px] font-bold text-amber-600" key={`profit-${item.id}`}>
                       {isAccessorySensitiveHidden ? "***" : formatMoney(item.price - item.cost)}
                     </span>,
                     <div key={item.id} className="flex flex-nowrap justify-center gap-1.5">
