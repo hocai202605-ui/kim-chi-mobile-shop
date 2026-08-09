@@ -2752,6 +2752,75 @@ export default function Home() {
     chartYearlyData,
   ]);
 
+  /** Bán hàng: doanh thu từng ngày trong tháng đang chọn (short shop). */
+  const monthlyDailySalesChart = useMemo(() => {
+    const [yearRaw, monthRaw] = inventoryReportMonth.split("-");
+    const year = Number(yearRaw);
+    const month = Number(monthRaw);
+    if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return [];
+
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const rows = Array.from({ length: daysInMonth }, (_, index) => {
+      const day = index + 1;
+      return {
+        date: `${inventoryReportMonth}-${String(day).padStart(2, "0")}`,
+        day: String(day),
+        label: `${day}/${month}`,
+        revenue: 0,
+        cashRevenue: 0,
+        transferRevenue: 0,
+        otherRevenue: 0,
+        profit: 0,
+        sold: 0,
+        saleCount: 0,
+        cashPercentLabel: "",
+        transferPercentLabel: "",
+        otherPercentLabel: "",
+      };
+    });
+
+    salesRetail.forEach((sale) => {
+      if (sale.status !== "Hoàn tất") return;
+      if (storeFilter !== "all" && sale.storeId !== storeFilter) return;
+      const date = String(sale.createdAt || "").slice(0, 10);
+      if (!date.startsWith(inventoryReportMonth)) return;
+      const day = Number(date.slice(8, 10));
+      const row = rows[day - 1];
+      if (!row) return;
+      const amount = Number(sale.amount) || 0;
+      const payment = String(sale.payment || "").trim().toLocaleLowerCase("vi-VN");
+      row.revenue += amount;
+      if (payment.includes("chuyển") || payment.includes("ck")) {
+        row.transferRevenue += amount;
+      } else if (payment.includes("tiền mặt") || payment.includes("tm")) {
+        row.cashRevenue += amount;
+      } else {
+        row.otherRevenue += amount;
+      }
+      row.profit += Number(sale.profit) || 0;
+      row.saleCount += 1;
+      if (sale.itemType === "Máy") {
+        row.sold += Math.max(1, Number(sale.quantity) || 0);
+      }
+    });
+
+    return rows.map((row) => {
+      const total = Math.max(0, row.revenue);
+      const cashPercent = total > 0 ? Math.round((row.cashRevenue / total) * 100) : 0;
+      const transferPercent = total > 0 ? Math.round((row.transferRevenue / total) * 100) : 0;
+      const otherPercent = total > 0 ? Math.max(0, 100 - cashPercent - transferPercent) : 0;
+      return {
+        ...row,
+        cashPercent,
+        transferPercent,
+        otherPercent,
+        cashPercentLabel: cashPercent > 0 ? `${cashPercent}% TM` : "",
+        transferPercentLabel: transferPercent > 0 ? `${transferPercent}% CK` : "",
+        otherPercentLabel: otherPercent > 0 ? `${otherPercent}% khác` : "",
+      };
+    });
+  }, [inventoryReportMonth, salesRetail, storeFilter]);
+
   /** KPI 4 module Tổng quan. */
   const overviewModules = useMemo(() => {
     const softwareInPeriod = onlineRepairs.filter((r) =>
@@ -6940,6 +7009,105 @@ export default function Home() {
                       </div>
                     </section>
                   </div>
+                </section>
+
+                <section className="rounded-lg border border-line bg-white p-5 shadow-panel">
+                  <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h2 className="text-xl font-black">Biểu đồ tháng {inventoryReportMonth}</h2>
+                      <p className="text-sm font-semibold text-muted">
+                        Doanh thu từng ngày từ phiếu bán hoàn tất
+                      </p>
+                    </div>
+                  </div>
+                  {isStatsHidden || hideReportRevenue ? (
+                    <div className="grid h-[320px] place-items-center rounded-lg border border-dashed border-line bg-slate-50 text-sm font-bold text-muted">
+                      Doanh thu đang ẩn
+                    </div>
+                  ) : (
+                    <div className="h-[360px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={monthlyDailySalesChart}
+                          margin={{ top: 20, right: 24, left: 12, bottom: 10 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                          <XAxis
+                            dataKey="day"
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fill: "#66736d", fontSize: 12, fontWeight: 700 }}
+                            interval={0}
+                          />
+                          <YAxis
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fill: "#66736d", fontSize: 12, fontWeight: 700 }}
+                            tickFormatter={(val) => Number(val).toLocaleString("vi-VN")}
+                            width={64}
+                          />
+                          <Legend
+                            iconType="circle"
+                            wrapperStyle={{ paddingTop: "16px", fontWeight: "bold" }}
+                          />
+                          <Tooltip
+                            cursor={{ fill: "#f6f7f3" }}
+                            contentStyle={{
+                              borderRadius: "8px",
+                              border: "1px solid #dce2dc",
+                              boxShadow: "0 14px 32px rgba(24, 35, 30, 0.09)",
+                              fontWeight: "bold",
+                            }}
+                            labelFormatter={(_, payload) => {
+                              const row = payload?.[0]?.payload as { label?: string } | undefined;
+                              return row?.label ? `Ngày ${row.label}` : "";
+                            }}
+                            formatter={(value: any, name: any, item: any) => {
+                              const row = item?.payload as {
+                                revenue?: number;
+                                cashPercent?: number;
+                                transferPercent?: number;
+                                otherPercent?: number;
+                                saleCount?: number;
+                                sold?: number;
+                              } | undefined;
+                              const rawName = String(name || "");
+                              const percent =
+                                rawName === "Tiền mặt"
+                                  ? row?.cashPercent
+                                  : rawName === "Chuyển khoản"
+                                    ? row?.transferPercent
+                                    : row?.otherPercent;
+                              return [
+                                `${formatMoney(Number(value) || 0)} (${percent ?? 0}%) · Tổng ${formatMoney(row?.revenue ?? 0)} · ${row?.saleCount ?? 0} phiếu · ${row?.sold ?? 0} máy`,
+                                name,
+                              ];
+                            }}
+                          />
+                          <Bar
+                            dataKey="cashRevenue"
+                            name="Tiền mặt"
+                            stackId="dailyRevenue"
+                            fill="#e2b33c"
+                            radius={[0, 0, 4, 4]}
+                          />
+                          <Bar
+                            dataKey="transferRevenue"
+                            name="Chuyển khoản"
+                            stackId="dailyRevenue"
+                            fill="#0f8b62"
+                          />
+                          <Bar
+                            dataKey="otherRevenue"
+                            name="Khác/Nợ"
+                            stackId="dailyRevenue"
+                            fill="#94a3b8"
+                            radius={[4, 4, 0, 0]}
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
                 </section>
 
                 <section className="rounded-lg border border-line bg-white p-5 shadow-panel">
