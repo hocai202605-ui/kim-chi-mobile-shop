@@ -12825,7 +12825,7 @@ export default function Home() {
                         key={note.id}
                         className="rounded-lg border border-line bg-slate-50 p-4 transition hover:border-brand/30 hover:bg-white"
                       >
-                        <div className="whitespace-pre-wrap break-words text-base font-semibold leading-relaxed text-ink">
+                        <div className="whitespace-pre-wrap break-words text-base font-semibold leading-relaxed text-brand-dark">
                           {note.content}
                         </div>
                         <div className="mt-4 flex flex-col gap-3 border-t border-line pt-3 lg:flex-row lg:items-center lg:justify-between">
