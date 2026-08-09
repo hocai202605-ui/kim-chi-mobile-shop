@@ -12783,7 +12783,7 @@ export default function Home() {
                         <option value="all">Tất cả người dùng</option>
                         {sortLoginUsers(loginUsers).map((user) => (
                           <option key={user.username} value={user.username}>
-                            {user.displayName} ({user.username})
+                            {user.name} ({user.username})
                           </option>
                         ))}
                       </select>
