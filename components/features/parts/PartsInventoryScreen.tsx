@@ -308,7 +308,7 @@ export function PartsInventoryScreen(props: Props) {
 
       <section className="overflow-hidden rounded-xl border border-line bg-white shadow-panel">
         <div className="grid gap-2 border-b border-line p-4 md:grid-cols-3 xl:grid-cols-[minmax(18rem,2fr)_repeat(5,minmax(0,1fr))]">
-          <label className="relative md:col-span-2 xl:col-span-1"><Search size={16} className="absolute left-3 top-3 text-muted"/><input value={query} onChange={(e)=>{setQuery(e.target.value);setPage(1);}} placeholder="Tìm chính xác thuộc loại máy…" className="h-10 w-full rounded-lg border border-line bg-slate-50 pl-9 pr-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand/30"/></label>
+          <label className="relative md:col-span-2 xl:col-span-1"><Search size={16} className="absolute left-3 top-3 text-muted"/><input list="parts-device-search-options" value={query} onChange={(e)=>{setQuery(e.target.value);setPage(1);}} placeholder="Tìm chính xác thuộc loại máy…" className="h-10 w-full rounded-lg border border-line bg-slate-50 pl-9 pr-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand/30"/><datalist id="parts-device-search-options">{filterOptions.devices.map((device)=><option key={device} value={device}/>)}</datalist></label>
           <Filter value={brandFilter} onChange={setBrandFilter} label="Tất cả hãng" options={filterOptions.brands}/>
           <Filter value={deviceFilter} onChange={setDeviceFilter} label="Tất cả loại máy" options={filterOptions.devices}/>
           <Filter value={typeFilter} onChange={setTypeFilter} label="Tất cả loại LK" options={filterOptions.types}/>
