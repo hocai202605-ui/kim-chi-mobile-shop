@@ -185,6 +185,7 @@ export function PartsInventoryScreen(props: Props) {
   const [editing, setEditing] = useState<PartCatalogItemDto | null>(null);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [query, setQuery] = useState("");
+  const [querySuggestionsOpen, setQuerySuggestionsOpen] = useState(false);
   const [brandFilter, setBrandFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [deviceFilter, setDeviceFilter] = useState("all");
@@ -294,6 +295,10 @@ export function PartsInventoryScreen(props: Props) {
     brands: unique(rows.map((r) => r.brand)), types: unique(rows.map((r) => r.partType)),
     devices: unique(rows.map((r) => r.deviceType)),
   };
+  const deviceSearchSuggestions = filterOptions.devices.filter((device) => {
+    const q = query.trim().toLocaleLowerCase("vi");
+    return !q || device.toLocaleLowerCase("vi").includes(q);
+  });
   const resetFilters = () => { setQuery(""); setBrandFilter("all"); setTypeFilter("all"); setDeviceFilter("all"); setStatusFilter("all"); setPage(1); };
   const setLookup = (code: string) => (values: string[]) => setLookups((old) => ({ ...old, [code]: values }));
 
@@ -308,7 +313,7 @@ export function PartsInventoryScreen(props: Props) {
 
       <section className="overflow-hidden rounded-xl border border-line bg-white shadow-panel">
         <div className="grid gap-2 border-b border-line p-4 md:grid-cols-3 xl:grid-cols-[minmax(18rem,2fr)_repeat(5,minmax(0,1fr))]">
-          <label className="relative md:col-span-2 xl:col-span-1"><Search size={16} className="absolute left-3 top-3 text-muted"/><input list="parts-device-search-options" value={query} onChange={(e)=>{setQuery(e.target.value);setPage(1);}} placeholder="Tìm chính xác thuộc loại máy…" className="h-10 w-full rounded-lg border border-line bg-slate-50 pl-9 pr-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand/30"/><datalist id="parts-device-search-options">{filterOptions.devices.map((device)=><option key={device} value={device}/>)}</datalist></label>
+          <label className="relative md:col-span-2 xl:col-span-1"><Search size={16} className="absolute left-3 top-3 text-muted"/><input value={query} onFocus={()=>setQuerySuggestionsOpen(true)} onBlur={()=>window.setTimeout(()=>setQuerySuggestionsOpen(false),120)} onChange={(e)=>{setQuery(e.target.value);setQuerySuggestionsOpen(true);setPage(1);}} placeholder="Tìm chính xác thuộc loại máy…" className="h-10 w-full rounded-lg border border-line bg-slate-50 pl-9 pr-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand/30"/>{querySuggestionsOpen && deviceSearchSuggestions.length > 0 ? <div className="absolute left-0 right-0 top-[calc(100%+0.25rem)] z-30 max-h-[12.5rem] overflow-y-auto rounded-lg border border-line bg-white py-1 text-left shadow-panel">{deviceSearchSuggestions.map((device)=><button key={device} type="button" onMouseDown={(e)=>{e.preventDefault();setQuery(device);setQuerySuggestionsOpen(false);setPage(1);}} className="block h-10 w-full truncate px-3 text-left text-sm font-bold text-ink hover:bg-brand-soft hover:text-brand-dark">{device}</button>)}</div> : null}</label>
           <Filter value={brandFilter} onChange={setBrandFilter} label="Tất cả hãng" options={filterOptions.brands}/>
           <Filter value={deviceFilter} onChange={setDeviceFilter} label="Tất cả loại máy" options={filterOptions.devices}/>
           <Filter value={typeFilter} onChange={setTypeFilter} label="Tất cả loại LK" options={filterOptions.types}/>
