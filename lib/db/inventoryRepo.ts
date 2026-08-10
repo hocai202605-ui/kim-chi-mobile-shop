@@ -153,6 +153,7 @@ function mapPhone(
     note: row.note ? String(row.note) : undefined,
     importDate: toDateOnly(row.import_date),
     saleDate: toDateOnly(row.sale_date),
+    saleId: row.sale_id ? String(row.sale_id) : undefined,
     storeId: idToCode.get(String(row.store_id)) ?? "store-1",
     cost: toShopMoney(Number(row.cost)),
     expectedPrice: toShopMoney(Number(row.expected_price)),
@@ -182,7 +183,17 @@ function mapAccessory(
 export async function repoListPhones(): Promise<PhoneItem[]> {
   const { idToCode } = await loadStoreMaps();
   const { rows } = await getPool().query(
-    `select * from public.phones order by expected_price desc`
+    `select p.*, sale_link.sale_id
+     from public.phones p
+     left join lateral (
+       select si.sale_id
+       from public.sale_items si
+       inner join public.sales s on s.id = si.sale_id
+       where si.phone_id = p.id
+       order by s.sold_at_ts desc nulls last, s.created_at desc nulls last
+       limit 1
+     ) sale_link on true
+     order by p.expected_price desc`
   );
   return rows.map((r) => mapPhone(r, idToCode));
 }

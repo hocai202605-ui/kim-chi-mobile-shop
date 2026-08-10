@@ -465,6 +465,7 @@ type PhoneItem = {
   note?: string;
   importDate?: string;
   saleDate?: string;
+  saleId?: string;
   storeId: Exclude<StoreId, "all">;
   cost: number;
   expectedPrice: number;
@@ -5139,6 +5140,16 @@ export default function Home() {
 
   function openSaleView(id: string) {
     void loadSaleIntoForm(id, "view");
+  }
+
+  function openSaleFromPhoneDetail(phone: PhoneItem) {
+    if (!phone.saleId) {
+      showUiToast("error", "Máy đã bán này chưa có phiếu bán liên kết.");
+      return;
+    }
+    setViewingPhoneId(null);
+    setActivePage("sales");
+    void loadSaleIntoForm(phone.saleId, "view");
   }
 
   async function openSaleEditModal(id: string) {
@@ -9898,9 +9909,23 @@ export default function Home() {
             {viewingPhone && (
               <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-md">
                 <section className="max-h-[92vh] w-full max-w-[860px] overflow-auto rounded-2xl border border-white/20 bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,0.4)] backdrop-blur-xl">
-                  <div className="flex items-center justify-between border-b border-slate-200/60 bg-gradient-to-r from-brand/10 to-transparent p-5">
+                  <div className="flex items-center justify-between gap-3 border-b border-slate-200/60 bg-gradient-to-r from-brand/10 to-transparent p-5">
                     <h2 className="text-xl font-black text-brand">Chi tiết máy</h2>
-                    <button onClick={() => setViewingPhoneId(null)} className="h-9 rounded-xl border border-slate-200/60 bg-white/50 px-4 text-sm font-bold text-slate-600 backdrop-blur-md transition hover:bg-white hover:text-slate-900">Đóng</button>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {viewingPhone.status === "Đã bán" ? (
+                        <button
+                          type="button"
+                          onClick={() => openSaleFromPhoneDetail(viewingPhone)}
+                          disabled={!viewingPhone.saleId || saleSaving}
+                          title={viewingPhone.saleId ? "Mở phiếu bán" : "Chưa có phiếu bán liên kết"}
+                          className="inline-flex h-9 items-center gap-2 rounded-xl bg-brand px-3 text-sm font-bold text-white transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {saleSaving ? <Loader2 size={16} className="animate-spin" /> : <ReceiptText size={16} />}
+                          Mở phiếu bán
+                        </button>
+                      ) : null}
+                      <button onClick={() => setViewingPhoneId(null)} className="h-9 rounded-xl border border-slate-200/60 bg-white/50 px-4 text-sm font-bold text-slate-600 backdrop-blur-md transition hover:bg-white hover:text-slate-900">Đóng</button>
+                    </div>
                   </div>
                   <div className="grid gap-4 p-5">
                     <div className="flex items-center gap-3">

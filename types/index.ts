@@ -63,6 +63,8 @@ export type PhoneItem = {
   note?: string;
   importDate?: string;
   saleDate?: string;
+  /** Phiếu bán gắn với máy đã bán; undefined nếu máy chưa bán hoặc dữ liệu cũ không có phiếu. */
+  saleId?: string;
   storeId: Exclude<StoreId, "all">;
   cost: number;
   expectedPrice: number;

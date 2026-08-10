@@ -218,7 +218,7 @@ export function PartsInventoryScreen(props: Props) {
   useEffect(() => { void reloadLookups(); }, [reloadLookups]);
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = query.trim().toLocaleLowerCase("vi");
     return rows.filter((row) => {
       if (brandFilter !== "all" && row.brand !== brandFilter) return false;
       if (typeFilter !== "all" && row.partType !== typeFilter) return false;
@@ -227,7 +227,7 @@ export function PartsInventoryScreen(props: Props) {
       if (statusFilter === "in_stock" && (row.status !== "active" || row.quantity <= 0)) return false;
       if (statusFilter === "out_of_stock" && (row.status !== "active" || row.quantity > 0)) return false;
       if (statusFilter === "hidden" && row.status !== "hidden") return false;
-      if (q && ![row.brand, row.partType, row.deviceType, row.color].join(" ").toLowerCase().includes(q)) return false;
+      if (q && row.deviceType.trim().toLocaleLowerCase("vi") !== q) return false;
       return true;
     });
   }, [rows, query, brandFilter, typeFilter, deviceFilter, statusFilter]);
@@ -308,7 +308,7 @@ export function PartsInventoryScreen(props: Props) {
 
       <section className="overflow-hidden rounded-xl border border-line bg-white shadow-panel">
         <div className="grid gap-2 border-b border-line p-4 md:grid-cols-3 xl:grid-cols-[minmax(18rem,2fr)_repeat(5,minmax(0,1fr))]">
-          <label className="relative md:col-span-2 xl:col-span-1"><Search size={16} className="absolute left-3 top-3 text-muted"/><input value={query} onChange={(e)=>{setQuery(e.target.value);setPage(1);}} placeholder="Tìm hãng, loại, máy, màu…" className="h-10 w-full rounded-lg border border-line bg-slate-50 pl-9 pr-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand/30"/></label>
+          <label className="relative md:col-span-2 xl:col-span-1"><Search size={16} className="absolute left-3 top-3 text-muted"/><input value={query} onChange={(e)=>{setQuery(e.target.value);setPage(1);}} placeholder="Tìm chính xác thuộc loại máy…" className="h-10 w-full rounded-lg border border-line bg-slate-50 pl-9 pr-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand/30"/></label>
           <Filter value={brandFilter} onChange={setBrandFilter} label="Tất cả hãng" options={filterOptions.brands}/>
           <Filter value={deviceFilter} onChange={setDeviceFilter} label="Tất cả loại máy" options={filterOptions.devices}/>
           <Filter value={typeFilter} onChange={setTypeFilter} label="Tất cả loại LK" options={filterOptions.types}/>
@@ -329,7 +329,7 @@ export function PartsInventoryScreen(props: Props) {
         <CatalogSelect label="Giá nhập" value={draft.costPrice} options={lookups[PART_CATALOG_LOOKUP_CATEGORIES.costPrice]||[]} categoryCode={PART_CATALOG_LOOKUP_CATEGORIES.costPrice} storeId={writeStoreId} actorUsername={actorUsername} moneyField onChange={(costPrice)=>setDraft(d=>({...d,costPrice}))} onOptionsChange={setLookup(PART_CATALOG_LOOKUP_CATEGORIES.costPrice)} onNotify={onNotify}/>
         <CatalogSelect label="Thuộc loại máy" value={draft.deviceType} options={lookups[PART_CATALOG_LOOKUP_CATEGORIES.deviceType]||[]} categoryCode={PART_CATALOG_LOOKUP_CATEGORIES.deviceType} storeId={writeStoreId} actorUsername={actorUsername} required onChange={(deviceType)=>setDraft(d=>({...d,deviceType}))} onOptionsChange={setLookup(PART_CATALOG_LOOKUP_CATEGORIES.deviceType)} onNotify={onNotify}/>
         <div className="grid grid-cols-2 gap-3">
-          <label className="grid min-w-0 gap-1"><span className="text-sm font-black text-ink">Số lượng</span><div className="flex h-11 min-w-0 overflow-hidden rounded-lg border border-line"><button type="button" onClick={()=>setDraft(d=>({...d,quantity:Math.max(1,d.quantity-1)}))} className="grid w-9 shrink-0 place-items-center bg-slate-50"><Minus size={16}/></button><input value={draft.quantity} onChange={(e)=>setDraft(d=>({...d,quantity:Math.max(1,Number(e.target.value.replace(/\D/g,""))||1)}))} inputMode="numeric" className="min-w-0 flex-1 text-center font-black outline-none"/><button type="button" onClick={()=>setDraft(d=>({...d,quantity:d.quantity+1}))} className="grid w-9 shrink-0 place-items-center bg-brand-soft text-brand"><Plus size={16}/></button></div></label>
+          <label className="grid min-w-0 gap-1"><span className="text-sm font-black text-ink">Số lượng</span><div className="flex h-11 min-w-0 overflow-hidden rounded-lg border border-line"><button type="button" onClick={()=>setDraft(d=>({...d,quantity:Math.max(0,d.quantity-1)}))} className="grid w-9 shrink-0 place-items-center bg-slate-50"><Minus size={16}/></button><input value={draft.quantity} onChange={(e)=>setDraft(d=>({...d,quantity:Math.max(0,Number(e.target.value.replace(/\D/g,""))||0)}))} inputMode="numeric" className="min-w-0 flex-1 text-center font-black outline-none"/><button type="button" onClick={()=>setDraft(d=>({...d,quantity:d.quantity+1}))} className="grid w-9 shrink-0 place-items-center bg-brand-soft text-brand"><Plus size={16}/></button></div></label>
           <label className="grid min-w-0 gap-1"><span className="text-sm font-black text-ink">Màu sắc</span><input value={draft.color} onChange={(e)=>setDraft(d=>({...d,color:e.target.value}))} className="h-11 min-w-0 rounded-lg border border-line px-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand/30" placeholder="Nhập tự do"/></label>
         </div>
       </div><div className="flex justify-end gap-2 border-t border-line p-5"><button type="button" disabled={saving} onClick={()=>setModalOpen(false)} className="h-11 rounded-lg border border-line px-4 font-bold">Hủy</button><button type="submit" disabled={saving} className="inline-flex h-11 items-center gap-2 rounded-lg bg-brand px-5 font-bold text-white disabled:opacity-50">{saving?<Loader2 size={17} className="animate-spin"/>:<Plus size={17}/>} {editing?"Cập nhật":"Lưu báo giá"}</button></div></form></div> : null}
