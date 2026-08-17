@@ -9312,7 +9312,7 @@ export default function Home() {
               {inventoryTab === "phones" ? (
                 <DataTable
                   compact
-                  headers={["Tên máy", "Dung lượng", "IMEI", "Giá bán", "Màu sắc", "Dung lượng pin", "Pin", "Giá nhập", "Thao tác"]}
+                  headers={["Tên máy", "Dung lượng", "IMEI", "Giá bán", "Màu sắc", "Dung lượng pin", "Pin", "Giá nhập", "Lãi", "Thao tác"]}
                   rows={paginatedPhones.map((item) => [
                     <div key={`name-${item.id}`} className="flex flex-col items-center gap-1.5">
                       <div className="flex items-center justify-center gap-2 text-[22px] font-black text-brand">{item.name}</div>
@@ -9344,6 +9344,13 @@ export default function Home() {
                       title="Giá nhập"
                     >
                       {formatMoney(item.cost)}
+                    </span>,
+                    <span
+                      className="text-[13px] font-semibold leading-tight text-amber-700/80"
+                      key={`profit-${item.id}`}
+                      title="Lãi"
+                    >
+                      {formatMoney(item.expectedPrice - item.cost)}
                     </span>,
                     <div key={item.id} className="flex flex-nowrap justify-center gap-1.5">
                       <button
@@ -9396,7 +9403,7 @@ export default function Home() {
                     "SL",
                     "Giá bán",
                     "Giá nhập",
-                    "Lợi nhuận",
+                    "Lãi",
                     "Thao tác",
                   ]}
                   rows={paginatedAccessories.map((item) => [
@@ -9416,7 +9423,7 @@ export default function Home() {
                     <span className="text-[19px] font-medium text-slate-600" key={`cost-${item.id}`}>
                       {isAccessorySensitiveHidden ? "***" : formatMoney(item.cost)}
                     </span>,
-                    <span className="text-[19px] font-bold text-amber-600" key={`profit-${item.id}`}>
+                    <span className="text-[19px] font-semibold text-amber-700/80" key={`profit-${item.id}`}>
                       {isAccessorySensitiveHidden ? "***" : formatMoney(item.price - item.cost)}
                     </span>,
                     <div key={item.id} className="flex flex-nowrap justify-center gap-1.5">
@@ -10353,11 +10360,11 @@ export default function Home() {
                       <span key={`c-${item.id}`} className="font-bold text-brand whitespace-nowrap">
                         {custName}
                       </span>,
-                      <span key={`i-${item.id}`} className="text-lg font-black text-slate-800">
+                      <span key={`i-${item.id}`} className="text-[22px] font-black text-slate-800">
                         {item.itemName}
                         {item.quantity > 1 ? ` (${item.quantity})` : ""}
                       </span>,
-                      <span key={`a-${item.id}`} className="whitespace-nowrap text-xl font-black text-danger">
+                      <span key={`a-${item.id}`} className="whitespace-nowrap text-[29px] font-black text-danger">
                         {isSaleSensitiveHidden ? "***" : formatMoney(item.amount)}
                       </span>,
                       <span key={`cost-${item.id}`} className="font-semibold text-slate-600">
@@ -16003,8 +16010,8 @@ export default function Home() {
                           />
                         </div>,
                         <span key={`c-${item.id}`} className="font-bold text-brand whitespace-nowrap">{item.customerName}</span>,
-                        <span key={`d-${item.id}`} className="whitespace-nowrap text-lg font-black text-slate-800">{item.deviceName}</span>,
-                        <span key={`q-${item.id}`} className="whitespace-nowrap text-xl font-black text-danger">{formatMoney(item.quote)}</span>,
+                        <span key={`d-${item.id}`} className="whitespace-nowrap text-[23px] font-black text-slate-800">{item.deviceName}</span>,
+                        <span key={`q-${item.id}`} className="whitespace-nowrap text-[26px] font-black text-danger">{formatMoney(item.quote)}</span>,
                         isOnlineRepairSensitiveHidden ? "***" : formatMoney(item.deposit),
                         <span key={`p-${item.id}`} className="font-black text-amber-700">{isOnlineRepairSensitiveHidden ? "***" : formatMoney(item.quote - item.deposit)}</span>,
                         <ColoredDateTime key={`dt-${item.id}`} value={item.receiveDate} />,
