@@ -90,6 +90,19 @@ export function toVnDateTimeLocal(value: Date | string | null | undefined): stri
   return `${p.year}-${pad2(p.month)}-${pad2(p.day)}T${pad2(p.hour)}:${pad2(p.minute)}`;
 }
 
+export function toVnDateTimeLocalWithSeconds(value: Date | string | null | undefined): string {
+  if (value == null || value === "") return "";
+  if (typeof value === "string") {
+    const s = value.trim();
+    if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}/.test(s) && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(s)) {
+      return s.slice(0, 19).replace(" ", "T");
+    }
+  }
+  const p = toVnParts(value);
+  if (!p) return "";
+  return `${p.year}-${pad2(p.month)}-${pad2(p.day)}T${pad2(p.hour)}:${pad2(p.minute)}:${pad2(p.second)}`;
+}
+
 /** UTC → YYYY-MM-DD (calendar day in Vietnam). */
 export function toVnDate(value: Date | string | null | undefined): string {
   if (value == null || value === "") return "";
@@ -124,5 +137,11 @@ export function vnDateTimeLocalToIso(value: string | null | undefined): string |
 /** Display helper: "YYYY-MM-DD HH:mm" in VN. */
 export function formatVnDateTime(value: Date | string | null | undefined): string {
   const local = toVnDateTimeLocal(value);
+  return local ? local.replace("T", " ") : "";
+}
+
+/** Display helper: "YYYY-MM-DD HH:mm:ss" in VN. */
+export function formatVnDateTimeWithSeconds(value: Date | string | null | undefined): string {
+  const local = toVnDateTimeLocalWithSeconds(value);
   return local ? local.replace("T", " ") : "";
 }
