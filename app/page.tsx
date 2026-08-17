@@ -10360,11 +10360,11 @@ export default function Home() {
                       <span key={`c-${item.id}`} className="font-bold text-brand whitespace-nowrap">
                         {custName}
                       </span>,
-                      <span key={`i-${item.id}`} className="text-[22px] font-black text-slate-800">
+                      <span key={`i-${item.id}`} className="text-[29px] font-black text-slate-800">
                         {item.itemName}
                         {item.quantity > 1 ? ` (${item.quantity})` : ""}
                       </span>,
-                      <span key={`a-${item.id}`} className="whitespace-nowrap text-[29px] font-black text-danger">
+                      <span key={`a-${item.id}`} className="whitespace-nowrap text-[38px] font-black text-danger">
                         {isSaleSensitiveHidden ? "***" : formatMoney(item.amount)}
                       </span>,
                       <span key={`cost-${item.id}`} className="font-semibold text-slate-600">
@@ -16010,8 +16010,8 @@ export default function Home() {
                           />
                         </div>,
                         <span key={`c-${item.id}`} className="font-bold text-brand whitespace-nowrap">{item.customerName}</span>,
-                        <span key={`d-${item.id}`} className="whitespace-nowrap text-[23px] font-black text-slate-800">{item.deviceName}</span>,
-                        <span key={`q-${item.id}`} className="whitespace-nowrap text-[26px] font-black text-danger">{formatMoney(item.quote)}</span>,
+                        <span key={`d-${item.id}`} className="whitespace-nowrap text-[30px] font-black text-slate-800">{item.deviceName}</span>,
+                        <span key={`q-${item.id}`} className="whitespace-nowrap text-[34px] font-black text-danger">{formatMoney(item.quote)}</span>,
                         isOnlineRepairSensitiveHidden ? "***" : formatMoney(item.deposit),
                         <span key={`p-${item.id}`} className="font-black text-amber-700">{isOnlineRepairSensitiveHidden ? "***" : formatMoney(item.quote - item.deposit)}</span>,
                         <ColoredDateTime key={`dt-${item.id}`} value={item.receiveDate} />,
