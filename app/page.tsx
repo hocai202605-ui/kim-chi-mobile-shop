@@ -10360,7 +10360,7 @@ export default function Home() {
                       <span key={`c-${item.id}`} className="font-bold text-brand whitespace-nowrap">
                         {custName}
                       </span>,
-                      <span key={`i-${item.id}`} className="text-[29px] font-black text-slate-800">
+                      <span key={`i-${item.id}`} className="text-[23px] font-black text-slate-800">
                         {item.itemName}
                         {item.quantity > 1 ? ` (${item.quantity})` : ""}
                       </span>,
@@ -16010,8 +16010,8 @@ export default function Home() {
                           />
                         </div>,
                         <span key={`c-${item.id}`} className="font-bold text-brand whitespace-nowrap">{item.customerName}</span>,
-                        <span key={`d-${item.id}`} className="whitespace-nowrap text-[30px] font-black text-slate-800">{item.deviceName}</span>,
-                        <span key={`q-${item.id}`} className="whitespace-nowrap text-[34px] font-black text-danger">{formatMoney(item.quote)}</span>,
+                        <span key={`d-${item.id}`} className="whitespace-nowrap text-[24px] font-black text-slate-800">{item.deviceName}</span>,
+                        <span key={`q-${item.id}`} className="whitespace-nowrap text-[27px] font-black text-danger">{formatMoney(item.quote)}</span>,
                         isOnlineRepairSensitiveHidden ? "***" : formatMoney(item.deposit),
                         <span key={`p-${item.id}`} className="font-black text-amber-700">{isOnlineRepairSensitiveHidden ? "***" : formatMoney(item.quote - item.deposit)}</span>,
                         <ColoredDateTime key={`dt-${item.id}`} value={item.receiveDate} />,
