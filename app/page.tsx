@@ -3976,7 +3976,7 @@ export default function Home() {
   useEffect(() => {
     if (!currentUser) return;
     setSaleStoreId(currentUser.storeId);
-  }, [currentUser?.id, currentUser?.storeId]);
+  }, [currentUser]);
 
   useEffect(() => {
     if (!currentUser) return;
