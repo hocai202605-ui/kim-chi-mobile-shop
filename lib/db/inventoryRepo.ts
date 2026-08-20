@@ -190,6 +190,8 @@ export async function repoListPhones(): Promise<PhoneItem[]> {
        from public.sale_items si
        inner join public.sales s on s.id = si.sale_id
        where si.phone_id = p.id
+        and si.sale_status = 'completed'
+        and s.status = 'completed'
        order by s.sold_at_ts desc nulls last, s.created_at desc nulls last
        limit 1
      ) sale_link on true
@@ -1610,7 +1612,7 @@ export async function repoGetSale(saleId: string): Promise<SaleDetail> {
 export async function repoListRecentSales(limit = 2000, channel: SaleChannel = "retail"): Promise<CreatedSale[]> {
   const { idToCode } = await loadStoreMaps();
   const { rows } = await getPool().query(
-    `select s.id, s.sold_at, s.sold_at_ts, s.store_id, s.customer_id, s.total_amount, s.total_cost, s.total_profit, s.payment_method, s.status, s.channel,
+    `select s.id, s.sold_at, s.sold_at_ts, s.store_id, s.customer_id, s.total_amount, s.total_cost, s.total_profit, s.payment_method, s.status, s.channel, s.note,
             coalesce(c.name, 'Khách lẻ') as customer_name,
             coalesce(c.phone, '') as customer_phone,
             coalesce(c.address, '') as customer_address,
@@ -1677,6 +1679,7 @@ export async function repoListRecentSales(limit = 2000, channel: SaleChannel = "
     customerName: String(row.customer_name || "Khách lẻ"),
     customerPhone: String(row.customer_phone || ""),
     customerAddress: String(row.customer_address || ""),
+    note: row.note ? String(row.note) : "",
     lineCount: Number(row.line_count) || 1,
     channel: normalizeSaleChannel(row.channel ?? channel),
   }));
