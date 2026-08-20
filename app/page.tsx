@@ -1467,6 +1467,7 @@ export default function Home() {
   const [salePayStatus, setSalePayStatus] = useState<SalePayStatus>("Đã thanh toán");
   /** Ngày giờ bán — mặc định VN now (datetime-local). */
   const [saleSoldAt, setSaleSoldAt] = useState(() => vnNowDateTimeLocal());
+  const [saleMetaOpen, setSaleMetaOpen] = useState(false);
   const [saleCustomerId, setSaleCustomerId] = useState<string | null>(null);
   const [saleCustomerName, setSaleCustomerName] = useState("Khách lẻ");
   const [saleCustomerPhone, setSaleCustomerPhone] = useState("");
@@ -4927,6 +4928,7 @@ export default function Home() {
     setSalePayMethod("Tiền mặt");
     setSalePayStatus("Đã thanh toán");
     setSaleSoldAt(vnNowDateTimeLocal());
+    setSaleMetaOpen(false);
     setEditingSaleId(null);
     setIsSaleReadOnly(false);
     setViewingSaleId(null);
@@ -4981,6 +4983,7 @@ export default function Home() {
       setIsSaleReadOnly(mode === "view");
       setEditingSaleId(mode === "edit" ? sale.id : null);
       setViewingSaleId(mode === "view" ? sale.id : null);
+      setSaleMetaOpen(true);
       setSaleCustomerId(
         detail?.customerId ||
           (local?.customerId && !local.customerId.startsWith("db") ? local.customerId : null)
@@ -10601,12 +10604,32 @@ export default function Home() {
                       </button>
                     ) : null}
 
-                    {/* Thông tin bán: luôn hiện ở tab PK; tab Máy chỉ khi bấm mở (hoặc xem/sửa readonly). */}
+                    {/* Thông tin phiếu: mặc định thu gọn để form bán nhanh hơn. */}
                     {(isSaleReadOnly ||
                       saleModalTab === "accessory" ||
                       salePhoneDetailsOpen) && (
-                    <div className="grid gap-2">
-                      <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="grid gap-2 rounded-lg border border-line bg-slate-50/70 p-2">
+                      <button
+                        type="button"
+                        onClick={() => setSaleMetaOpen((v) => !v)}
+                        className="flex min-h-10 w-full items-center justify-between gap-2 rounded-lg bg-white px-2.5 text-left ring-1 ring-line transition hover:bg-slate-50"
+                      >
+                        <span className="inline-flex min-w-0 items-center gap-2">
+                          {saleMetaOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                          <span className="shrink-0 text-sm font-black text-ink">Thông tin phiếu</span>
+                          <span className="min-w-0 truncate text-xs font-semibold text-muted">
+                            {storeName(saleStoreId)} · {formatDateVi(saleSoldAt)}
+                            {saleSoldAt?.slice(11, 16) ? ` ${saleSoldAt.slice(11, 16)}` : ""} · {salePayStatus}
+                          </span>
+                        </span>
+                        <span className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md bg-brand-soft px-2 text-xs font-bold text-brand-dark">
+                          {saleMetaOpen ? <EyeOff size={13} /> : <Eye size={13} />}
+                          {saleMetaOpen ? "Ẩn" : "Hiện"}
+                        </span>
+                      </button>
+
+                      {saleMetaOpen ? (
+                      <div className="grid gap-2 sm:grid-cols-3">
                         <label className="grid gap-0.5">
                           <span className="text-xs font-bold text-slate-700">Cửa hàng</span>
                           {currentUser?.role === "staff" || isSaleReadOnly ? (
@@ -10662,49 +10685,45 @@ export default function Home() {
                             }`}
                           />
                         </label>
-                      </div>
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        <label className="grid gap-0.5">
-                          <span className="text-xs font-bold text-slate-700">
-                            Hình thức thanh toán {!isSaleReadOnly ? <span className="text-red-500">*</span> : null}
-                          </span>
-                          <select
-                            required={!isSaleReadOnly && (saleModalTab === "accessory" || salePhoneDetailsOpen)}
-                            value={salePayMethod}
-                            onChange={(e) => setSalePayMethod(e.target.value as SalePayMethod)}
-                            disabled={isSaleReadOnly}
-                            className={`h-9 rounded-md border border-line px-2.5 text-sm font-semibold ${
-                              isSaleReadOnly ? "cursor-default bg-slate-50 text-slate-700" : "bg-white"
-                            }`}
-                          >
-                            {SALE_PAY_METHOD_OPTIONS.map((p) => (
-                              <option key={p} value={p}>
-                                {p}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
                         <label className="grid gap-0.5">
                           <span className="text-xs font-bold text-slate-700">
                             Trạng thái thanh toán {!isSaleReadOnly ? <span className="text-red-500">*</span> : null}
                           </span>
-                          <select
-                            required={!isSaleReadOnly && (saleModalTab === "accessory" || salePhoneDetailsOpen)}
-                            value={salePayStatus}
-                            onChange={(e) => setSalePayStatus(e.target.value as SalePayStatus)}
-                            disabled={isSaleReadOnly}
-                            className={`h-9 rounded-md border border-line px-2.5 text-sm font-semibold ${
-                              isSaleReadOnly ? "cursor-default bg-slate-50 text-slate-700" : "bg-white"
-                            }`}
-                          >
-                            {SALE_PAY_STATUS_OPTIONS.map((p) => (
-                              <option key={p} value={p}>
-                                {p}
-                              </option>
-                            ))}
-                          </select>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <select
+                              required={!isSaleReadOnly && (saleModalTab === "accessory" || salePhoneDetailsOpen)}
+                              value={salePayStatus}
+                              onChange={(e) => setSalePayStatus(e.target.value as SalePayStatus)}
+                              disabled={isSaleReadOnly}
+                              className={`h-9 min-w-0 rounded-md border border-line px-2 text-sm font-semibold ${
+                                isSaleReadOnly ? "cursor-default bg-slate-50 text-slate-700" : "bg-white"
+                              }`}
+                            >
+                              {SALE_PAY_STATUS_OPTIONS.map((p) => (
+                                <option key={p} value={p}>
+                                  {p}
+                                </option>
+                              ))}
+                            </select>
+                            <select
+                              required={!isSaleReadOnly && (saleModalTab === "accessory" || salePhoneDetailsOpen)}
+                              value={salePayMethod}
+                              onChange={(e) => setSalePayMethod(e.target.value as SalePayMethod)}
+                              disabled={isSaleReadOnly}
+                              className={`h-9 min-w-0 rounded-md border border-line px-2 text-sm font-semibold ${
+                                isSaleReadOnly ? "cursor-default bg-slate-50 text-slate-700" : "bg-white"
+                              }`}
+                            >
+                              {SALE_PAY_METHOD_OPTIONS.map((p) => (
+                                <option key={p} value={p}>
+                                  {p}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
                         </label>
                       </div>
+                      ) : null}
                     </div>
                     )}
 
