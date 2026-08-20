@@ -10741,14 +10741,35 @@ export default function Home() {
                                 </div>
                                 <div className="grid gap-1.5">
                                   <span className="text-sm font-bold text-amber-950">Số lượng</span>
-                                  <input
-                                    type="number"
-                                    min={1}
-                                    value={saleAccQty}
-                                    onChange={(e) => setSaleAccQty(Math.max(1, Number(e.target.value) || 1))}
-                                    className="h-10 w-full rounded-lg border border-amber-200/70 bg-white px-2 text-center text-sm font-semibold outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
-                                    title="Số lượng"
-                                  />
+                                  <div className="flex h-10 w-full overflow-hidden rounded-lg border border-amber-200/70 bg-white focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-100">
+                                    <input
+                                      value={saleAccQty}
+                                      onChange={(e) => setSaleAccQty(Math.max(1, Number(e.target.value.replace(/[^\d]/g, "")) || 1))}
+                                      onBlur={() => { if (!saleAccQty || saleAccQty < 1) setSaleAccQty(1); }}
+                                      inputMode="numeric"
+                                      autoComplete="off"
+                                      className="h-full min-w-0 flex-1 border-0 bg-transparent px-2 text-center text-sm font-semibold outline-none"
+                                      title="Số lượng"
+                                    />
+                                    <div className="flex w-9 shrink-0 flex-col border-l border-amber-200/70">
+                                      <button
+                                        type="button"
+                                        onClick={() => setSaleAccQty((q) => q + 1)}
+                                        title="Tăng 1"
+                                        className="inline-flex h-1/2 w-full items-center justify-center border-b border-amber-200/70 bg-amber-50/60 text-amber-700 transition hover:bg-amber-100"
+                                      >
+                                        <Plus size={14} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setSaleAccQty((q) => Math.max(1, q - 1))}
+                                        title="Giảm 1"
+                                        className="inline-flex h-1/2 w-full items-center justify-center bg-amber-50/60 text-amber-700 transition hover:bg-amber-100"
+                                      >
+                                        <Minus size={14} />
+                                      </button>
+                                    </div>
+                                  </div>
                                 </div>
                                 <button
                                   type="button"
@@ -11053,16 +11074,37 @@ export default function Home() {
                                     </div>
                                     <div className="grid gap-1">
                                       <span className="text-xs font-bold text-amber-950">SL</span>
-                                      <input
-                                        type="number"
-                                        min={1}
-                                        value={saleAccQty}
-                                        onChange={(e) =>
-                                          setSaleAccQty(Math.max(1, Number(e.target.value) || 1))
-                                        }
-                                        className="h-10 w-full rounded-lg border border-amber-200/70 bg-white px-2 text-center text-sm font-semibold outline-none focus:border-amber-500"
-                                        title="Số lượng"
-                                      />
+                                      <div className="flex h-10 w-full overflow-hidden rounded-lg border border-amber-200/70 bg-white focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-100">
+                                        <input
+                                          value={saleAccQty}
+                                          onChange={(e) =>
+                                            setSaleAccQty(Math.max(1, Number(e.target.value.replace(/[^\d]/g, "")) || 1))
+                                          }
+                                          onBlur={() => { if (!saleAccQty || saleAccQty < 1) setSaleAccQty(1); }}
+                                          inputMode="numeric"
+                                          autoComplete="off"
+                                          className="h-full min-w-0 flex-1 border-0 bg-transparent px-2 text-center text-sm font-semibold outline-none"
+                                          title="Số lượng"
+                                        />
+                                        <div className="flex w-9 shrink-0 flex-col border-l border-amber-200/70">
+                                          <button
+                                            type="button"
+                                            onClick={() => setSaleAccQty((q) => q + 1)}
+                                            title="Tăng 1"
+                                            className="inline-flex h-1/2 w-full items-center justify-center border-b border-amber-200/70 bg-amber-50/60 text-amber-700 transition hover:bg-amber-100"
+                                          >
+                                            <Plus size={14} />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setSaleAccQty((q) => Math.max(1, q - 1))}
+                                            title="Giảm 1"
+                                            className="inline-flex h-1/2 w-full items-center justify-center bg-amber-50/60 text-amber-700 transition hover:bg-amber-100"
+                                          >
+                                            <Minus size={14} />
+                                          </button>
+                                        </div>
+                                      </div>
                                     </div>
                                     <button
                                       type="button"
