@@ -1253,11 +1253,11 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
          0, 0, 0, $4,
          $5::date, $6::timestamptz, $7,
          $8, $8
-       ) returning id, sold_at`,
+       ) returning id, sold_at_ts`,
       [storeUuid, customerId, input.payment, input.note ?? "", soldAtDate, soldAtIso, normalizeSaleChannel(input.channel), actor]
     );
     const saleId = String(saleRows[0].id);
-    const soldAt = toDateOnly(saleRows[0].sold_at) ?? soldAtDate;
+    const soldAt = toVnDateTimeLocal(saleRows[0].sold_at_ts) || toDateOnly(saleRows[0].sold_at_ts) || soldAtDate;
 
     let totalAmount = 0;
     let totalCost = 0;
@@ -1581,7 +1581,7 @@ export async function repoGetSale(saleId: string): Promise<SaleDetail> {
 
   return {
     id: String(sale.id),
-    soldAt: toDateOnly(sale.sold_at) ?? "",
+    soldAt: toVnDateTimeLocal(sale.sold_at_ts) || toDateOnly(sale.sold_at) || "",
     soldAtLocal,
     storeId: idToCode.get(String(sale.store_id)) ?? "store-1",
     itemName:
@@ -1610,7 +1610,7 @@ export async function repoGetSale(saleId: string): Promise<SaleDetail> {
 export async function repoListRecentSales(limit = 2000, channel: SaleChannel = "retail"): Promise<CreatedSale[]> {
   const { idToCode } = await loadStoreMaps();
   const { rows } = await getPool().query(
-    `select s.id, s.sold_at, s.store_id, s.customer_id, s.total_amount, s.total_cost, s.total_profit, s.payment_method, s.status, s.channel,
+    `select s.id, s.sold_at, s.sold_at_ts, s.store_id, s.customer_id, s.total_amount, s.total_cost, s.total_profit, s.payment_method, s.status, s.channel,
             coalesce(c.name, 'Khách lẻ') as customer_name,
             coalesce(c.phone, '') as customer_phone,
             coalesce(c.address, '') as customer_address,
@@ -1663,7 +1663,7 @@ export async function repoListRecentSales(limit = 2000, channel: SaleChannel = "
 
   return rows.map((row) => ({
     id: String(row.id),
-    soldAt: toDateOnly(row.sold_at) ?? "",
+    soldAt: toVnDateTimeLocal(row.sold_at_ts) || toDateOnly(row.sold_at) || "",
     storeId: idToCode.get(String(row.store_id)) ?? "store-1",
     itemName: String(row.item_name),
     itemType: row.item_type === "accessory" ? ("Phụ kiện" as const) : ("Máy" as const),
@@ -1755,7 +1755,7 @@ export async function repoCancelSale(
     const storeId = idToCode.get(String(sale.store_id)) ?? "store-1";
     return {
       id: saleId,
-      soldAt: toDateOnly(sale.sold_at) ?? "",
+      soldAt: toVnDateTimeLocal(sale.sold_at_ts) || toDateOnly(sale.sold_at) || "",
       storeId,
       itemName: "Hàng",
       itemType: "Máy" as const,

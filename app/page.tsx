@@ -10331,12 +10331,12 @@ export default function Home() {
               <div className="overflow-x-auto pb-2">
                 <DataTable
                   headers={[
-                    "Ngày",
-                    "Khách",
                     "Hàng",
                     "Tổng tiền",
                     "Giá nhập",
                     "Lãi",
+                    "Ngày",
+                    "Khách",
                     "Thanh toán",
                     "Hình thức",
                     "Thao tác",
@@ -10356,10 +10356,6 @@ export default function Home() {
                             Math.round((Number(item.amount) || 0) - (Number(item.profit) || 0))
                           );
                     return [
-                      <ColoredDateTime key={`dt-${item.id}`} value={item.createdAt} size="md" />,
-                      <span key={`c-${item.id}`} className="font-bold text-brand whitespace-nowrap">
-                        {custName}
-                      </span>,
                       <span key={`i-${item.id}`} className="text-[23px] font-black text-slate-800">
                         {item.itemName}
                         {item.quantity > 1 ? ` (${item.quantity})` : ""}
@@ -10372,6 +10368,10 @@ export default function Home() {
                       </span>,
                       <span key={`p-${item.id}`} className="font-black text-emerald-700">
                         {isSaleSensitiveHidden ? "***" : formatMoney(item.profit)}
+                      </span>,
+                      <ColoredDateTime key={`dt-${item.id}`} value={item.createdAt} size="md" />,
+                      <span key={`c-${item.id}`} className="font-bold text-brand whitespace-nowrap">
+                        {custName}
                       </span>,
                       <span
                         key={`st-${item.id}`}
