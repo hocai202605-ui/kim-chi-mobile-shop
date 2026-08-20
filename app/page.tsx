@@ -10335,11 +10335,11 @@ export default function Home() {
                     "Tổng tiền",
                     "Giá nhập",
                     "Lãi",
+                    "Hình thức",
+                    "Thao tác",
                     "Ngày",
                     "Khách",
                     "Thanh toán",
-                    "Hình thức",
-                    "Thao tác",
                   ]}
                   rows={filteredSales.map((item) => {
                     const custName =
@@ -10372,16 +10372,6 @@ export default function Home() {
                       </span>,
                       <span key={`p-${item.id}`} className="font-black text-emerald-700">
                         {isSaleSensitiveHidden ? "***" : formatMoney(item.profit)}
-                      </span>,
-                      <ColoredDateTime key={`dt-${item.id}`} value={item.createdAt} size="md" />,
-                      <span key={`c-${item.id}`} className="font-bold text-brand whitespace-nowrap">
-                        {custName}
-                      </span>,
-                      <span
-                        key={`st-${item.id}`}
-                        className={`inline-flex h-8 items-center rounded px-2 text-xs font-bold shadow-sm ${payUi.className}`}
-                      >
-                        {payUi.text}
                       </span>,
                       <span
                         key={`pm-${item.id}`}
@@ -10431,6 +10421,16 @@ export default function Home() {
                           </button>
                         ) : null}
                       </div>,
+                      <ColoredDateTime key={`dt-${item.id}`} value={item.createdAt} size="md" />,
+                      <span key={`c-${item.id}`} className="font-bold text-brand whitespace-nowrap">
+                        {custName}
+                      </span>,
+                      <span
+                        key={`st-${item.id}`}
+                        className={`inline-flex h-8 items-center rounded px-2 text-xs font-bold shadow-sm ${payUi.className}`}
+                      >
+                        {payUi.text}
+                      </span>,
                     ];
                   })}
                 />
