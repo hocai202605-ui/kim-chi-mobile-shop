@@ -10356,7 +10356,11 @@ export default function Home() {
                             Math.round((Number(item.amount) || 0) - (Number(item.profit) || 0))
                           );
                     return [
-                      <span key={`i-${item.id}`} className="text-[23px] font-black text-slate-800">
+                      <span 
+                        key={`i-${item.id}`} 
+                        className="inline-block max-w-[250px] truncate align-middle text-[23px] font-black text-slate-800 sm:max-w-[350px]"
+                        title={item.quantity > 1 ? `${item.itemName} (${item.quantity})` : item.itemName}
+                      >
                         {item.itemName}
                         {item.quantity > 1 ? ` (${item.quantity})` : ""}
                       </span>,
