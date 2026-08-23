@@ -2257,6 +2257,8 @@ export default function Home() {
     });
   }, [phones, saleCart, salePhoneSearch, saleStoreId, editingSalePhoneIds]);
 
+  const saleHasPhoneInCart = saleCart.some((l) => l.kind === "phone");
+
   /**
    * Droplist khách cũ:
    * - Mặc định "Khách lẻ" → ẩn list
@@ -11070,7 +11072,19 @@ export default function Home() {
                             ) : null}
 
                             {/* Tặng PK: Sạc/Ốp/CL khóa tên; Khác free text; giá 0 mờ; >0 → giỏ */}
-                            <div className="relative overflow-hidden rounded-xl border border-fuchsia-200/80 bg-gradient-to-br from-fuchsia-50 via-pink-50/40 to-white p-2.5 shadow-sm ring-1 ring-fuchsia-100/80">
+                            <div
+                              className={`relative order-2 overflow-hidden rounded-xl border border-fuchsia-200/80 bg-gradient-to-br from-fuchsia-50 via-pink-50/40 to-white p-2.5 shadow-sm ring-1 ring-fuchsia-100/80 ${
+                                saleHasPhoneInCart ? "" : "opacity-55"
+                              }`}
+                            >
+                              {!saleHasPhoneInCart ? (
+                                <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/45 backdrop-blur-[1px]">
+                                  <p className="rounded-lg bg-white/95 px-3 py-1.5 text-center text-xs font-bold text-muted shadow-sm ring-1 ring-line">
+                                    Chọn máy ở trên để tặng PK kèm máy
+                                  </p>
+                                </div>
+                              ) : null}
+                              <fieldset disabled={!saleHasPhoneInCart} className="min-w-0">
                               <div className="relative mb-1.5 flex flex-wrap items-center justify-between gap-2">
                                 <div className="flex items-center gap-1.5">
                                   <span className="grid h-7 w-7 place-items-center rounded-md bg-fuchsia-100 text-fuchsia-700 ring-1 ring-fuchsia-200/80">
@@ -11085,11 +11099,12 @@ export default function Home() {
                                 </div>
                                 <button
                                   type="button"
+                                  disabled={!saleHasPhoneInCart}
                                   onClick={() => {
                                     setSaleBuyMoreOpen((v) => !v);
                                     if (!saleBuyMoreOpen) setSaleAccFormKey((k) => k + 1);
                                   }}
-                                  className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-lg px-3 text-sm font-bold shadow-sm transition ${
+                                  className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-lg px-3 text-sm font-bold shadow-sm transition disabled:cursor-not-allowed ${
                                     saleBuyMoreOpen
                                       ? "bg-amber-600 text-white hover:bg-amber-700"
                                       : "bg-amber-500 text-white hover:bg-amber-600"
@@ -11264,9 +11279,10 @@ export default function Home() {
                                   </div>
                                 </div>
                               ) : null}
+                              </fieldset>
                             </div>
 
-                            <div className="space-y-2 rounded-xl border border-indigo-200/80 bg-gradient-to-br from-indigo-50 via-slate-50 to-white p-2.5 shadow-sm ring-1 ring-indigo-100/80">
+                            <div className="order-1 space-y-2 rounded-xl border border-indigo-200/80 bg-gradient-to-br from-indigo-50 via-slate-50 to-white p-2.5 shadow-sm ring-1 ring-indigo-100/80">
                               <button
                                 type="button"
                                 onClick={() => {
