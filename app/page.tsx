@@ -10748,7 +10748,7 @@ export default function Home() {
                               <p className="text-sm font-black text-amber-950">Thêm phụ kiện</p>
                             </div>
                             <div className="relative grid gap-3">
-                              <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_6.5rem] sm:items-end">
+                              <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_6.5rem] items-end gap-2">
                                 <div className="grid min-w-0 gap-1.5">
                                   <span className="text-sm font-bold text-amber-950">Tên phụ kiện</span>
                                   <div className="min-w-0 [&_label>span]:hidden">
@@ -10770,7 +10770,7 @@ export default function Home() {
                                     />
                                   </div>
                                 </div>
-                                <div className="grid gap-1.5">
+                                <div className="grid w-[6.5rem] shrink-0 gap-1.5">
                                   <span className="text-sm font-bold text-amber-950">Số lượng</span>
                                   <div className="flex h-10 w-full overflow-hidden rounded-lg border border-amber-200/70 bg-white focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-100">
                                     <input
