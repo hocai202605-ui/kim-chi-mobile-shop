@@ -10414,7 +10414,7 @@ export default function Home() {
                     return [
                       <span 
                         key={`i-${item.id}`} 
-                        className="inline-block max-w-[250px] truncate align-middle text-[23px] font-black text-slate-800 sm:max-w-[350px]"
+                        className="inline-block max-w-[250px] truncate align-middle text-[18.4px] font-black text-slate-800 sm:max-w-[350px]"
                         title={item.quantity > 1 ? `${item.itemName} (${item.quantity})` : item.itemName}
                       >
                         {item.itemName}
@@ -13911,7 +13911,7 @@ export default function Home() {
                               ({openSelected.length} khoản)
                             </span>
                           </span>
-                          <strong className="text-base font-black tabular-nums text-red-600">
+                          <strong className="text-2xl font-black tabular-nums leading-none text-red-600">
                             {isDebtSensitiveHidden ? "***" : formatMoney(openSelectedTotal)}
                           </strong>
                         </div>
