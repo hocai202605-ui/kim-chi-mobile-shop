@@ -1,20 +1,21 @@
 import type { Accessory, AccessoryStatus, PhoneItem, ProductStatus, StoreId } from "@/types";
 import { toShopMoney } from "@/lib/format";
-import type { DbAccessory, DbAccessoryStatus, DbPhone, DbPhoneStatus } from "@/lib/supabase/types";
+import type { DbAccessory, DbAccessoryStatus, DbPhone } from "@/lib/supabase/types";
 
-const PHONE_STATUS_TO_UI: Record<DbPhoneStatus, ProductStatus> = {
+/** Mã enum cũ → nhãn UI (cột phones.status đã chuyển text tiếng Việt). */
+const PHONE_STATUS_LEGACY_TO_UI: Record<string, ProductStatus> = {
   in_stock: "Còn hàng",
   sold: "Đã bán",
   pending: "Chưa xử lý",
   cancelled: "Đã hủy",
 };
 
-const PHONE_STATUS_TO_DB: Record<ProductStatus, DbPhoneStatus> = {
-  "Còn hàng": "in_stock",
-  "Đã bán": "sold",
-  "Chưa xử lý": "pending",
-  "Đã hủy": "cancelled",
-};
+const LOCKED_PHONE_STATUS_LABELS = new Set<string>([
+  "Còn hàng",
+  "Đã bán",
+  "Đã hủy",
+  "Chưa xử lý",
+]);
 
 const ACCESSORY_STATUS_TO_UI: Record<DbAccessoryStatus, AccessoryStatus> = {
   in_stock: "Còn hàng",
@@ -28,12 +29,38 @@ const ACCESSORY_STATUS_TO_DB: Record<AccessoryStatus, DbAccessoryStatus> = {
   "Đã hủy": "cancelled",
 };
 
-export function phoneStatusToUi(status: DbPhoneStatus): ProductStatus {
-  return PHONE_STATUS_TO_UI[status] ?? "Còn hàng";
+export function phoneStatusToUi(status: string): ProductStatus {
+  const t = String(status || "").trim();
+  if (!t) return "Còn hàng";
+  return (PHONE_STATUS_LEGACY_TO_UI[t] ?? t) as ProductStatus;
 }
 
-export function phoneStatusToDb(status: ProductStatus): DbPhoneStatus {
-  return PHONE_STATUS_TO_DB[status] ?? "in_stock";
+/** Lưu nhãn UI (kể cả status tự thêm). Mã enum cũ được chuẩn hóa. */
+export function phoneStatusToDb(status: string): string {
+  const t = String(status || "").trim();
+  if (!t) return "Còn hàng";
+  return PHONE_STATUS_LEGACY_TO_UI[t] ?? t;
+}
+
+export function isLockedPhoneStatusLabel(label: string): boolean {
+  return LOCKED_PHONE_STATUS_LABELS.has(String(label || "").trim());
+}
+
+export function isPhoneInStockStatus(status: string): boolean {
+  const ui = phoneStatusToUi(status);
+  return ui === "Còn hàng";
+}
+
+export function isPhoneSoldStatus(status: string): boolean {
+  return phoneStatusToUi(status) === "Đã bán";
+}
+
+export function isPhoneCancelledStatus(status: string): boolean {
+  return phoneStatusToUi(status) === "Đã hủy";
+}
+
+export function isPhonePendingStatus(status: string): boolean {
+  return phoneStatusToUi(status) === "Chưa xử lý";
 }
 
 export function accessoryStatusToUi(status: DbAccessoryStatus): AccessoryStatus {
@@ -69,6 +96,8 @@ export function mapPhoneFromDb(
     cost: toShopMoney(Number(row.cost)),
     expectedPrice: toShopMoney(Number(row.expected_price)),
     status: phoneStatusToUi(row.status),
+    createdAt: row.created_at || undefined,
+    updatedAt: row.updated_at || undefined,
   };
 }
 

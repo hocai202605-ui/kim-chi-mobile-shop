@@ -4,6 +4,11 @@ import { toVnDate, toVnDateTimeLocal, vnDateTimeLocalToIso } from "@/lib/datetim
 import {
   accessoryStatusToDb,
   accessoryStatusToUi,
+  isLockedPhoneStatusLabel,
+  isPhoneCancelledStatus,
+  isPhoneInStockStatus,
+  isPhonePendingStatus,
+  isPhoneSoldStatus,
   phoneStatusToDb,
   phoneStatusToUi,
 } from "@/lib/mappers/inventory";
@@ -134,6 +139,17 @@ function toDateOnly(value: unknown): string | undefined {
   return vn || undefined;
 }
 
+function toIsoTimestamp(value: unknown): string | undefined {
+  if (value == null || value === "") return undefined;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? undefined : value.toISOString();
+  }
+  const s = String(value).trim();
+  if (!s) return undefined;
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? new Date(t).toISOString() : s;
+}
+
 function mapPhone(
   row: Record<string, unknown>,
   idToCode: Map<string, Exclude<StoreId, "all">>
@@ -157,7 +173,9 @@ function mapPhone(
     storeId: idToCode.get(String(row.store_id)) ?? "store-1",
     cost: toShopMoney(Number(row.cost)),
     expectedPrice: toShopMoney(Number(row.expected_price)),
-    status: phoneStatusToUi(row.status as "in_stock" | "sold" | "pending" | "cancelled"),
+    status: phoneStatusToUi(String(row.status ?? "")),
+    createdAt: toIsoTimestamp(row.created_at),
+    updatedAt: toIsoTimestamp(row.updated_at),
   };
 }
 
@@ -195,7 +213,7 @@ export async function repoListPhones(): Promise<PhoneItem[]> {
        order by s.sold_at_ts desc nulls last, s.created_at desc nulls last
        limit 1
      ) sale_link on true
-     order by p.expected_price desc`
+     order by p.updated_at desc nulls last, p.created_at desc nulls last, p.id desc`
   );
   return rows.map((r) => mapPhone(r, idToCode));
 }
@@ -236,7 +254,7 @@ export async function repoUpsertPhone(
           color = $5, storage = $6, made_in = $7, network_version = $8,
           battery_condition = $9, battery_capacity = $10, condition = $11, note = $12,
           import_date = $13, sale_date = $14, cost = $15, expected_price = $16,
-          status = $17::public.phone_status,
+          status = $17,
           updated_by = coalesce($18, updated_by),
           updated_at = now()
         where id = $19
@@ -273,7 +291,7 @@ export async function repoUpsertPhone(
           cost, expected_price, status,
           created_by, updated_by
         ) values (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::public.phone_status,$18,$18
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$18
         ) returning *`,
         [
           storeId,
@@ -410,12 +428,12 @@ export async function repoCancelPhone(
     await skipStatusGuard(client);
     const { rows } = await client.query(
       `update public.phones
-       set status = 'cancelled',
+       set status = 'Đã hủy',
            cancelled_at = now(),
            cancelled_by = coalesce($2, cancelled_by),
            updated_by = coalesce($2, updated_by),
            updated_at = now()
-       where id = $1 and status <> 'cancelled'
+       where id = $1 and status not in ('Đã hủy', 'cancelled')
        returning *`,
       [id, actor]
     );
@@ -566,6 +584,7 @@ const LOOKUP_PHONE_COLUMN: Record<string, string> = {
   phone_condition: "condition",
   phone_battery_condition: "battery_condition",
   phone_battery_capacity: "battery_capacity",
+  phone_status: "status",
 };
 
 /** Map lookup category → accessories column (for rename cascade). */
@@ -792,6 +811,11 @@ export async function repoRenameLookupLabel(
   return withTransaction(async (client) => {
     const cat = await getLookupCategory(client, categoryCode);
     const storeUuid = await resolveStoreUuid(storeCode, client);
+    if (categoryCode === "phone_status" && isLockedPhoneStatusLabel(from)) {
+      throw new Error(
+        "Không được sửa trạng thái hệ thống (Còn hàng, Đã bán, Đã hủy, Chưa xử lý). Thêm trạng thái mới nếu cần."
+      );
+    }
 
     const { rows: found } = await client.query<{ id: string }>(
       `select id from public.lookup_items
@@ -953,6 +977,11 @@ export async function repoDeactivateLookupLabel(
   await withTransaction(async (client) => {
     const cat = await getLookupCategory(client, categoryCode);
     const storeUuid = await resolveStoreUuid(storeCode, client);
+    if (categoryCode === "phone_status" && isLockedPhoneStatusLabel(trimmed)) {
+      throw new Error(
+        "Không được xóa trạng thái hệ thống (Còn hàng, Đã bán, Đã hủy, Chưa xử lý)."
+      );
+    }
     const { rowCount } = await client.query(
       `update public.lookup_items
        set is_active = false,
@@ -1284,7 +1313,9 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
         );
         const phone = phoneRows[0];
         if (!phone) throw new Error("Không tìm thấy máy.");
-        if (phone.status !== "in_stock") throw new Error(`Máy ${phone.model_name || ""} không còn hàng.`);
+        if (!isPhoneInStockStatus(String(phone.status ?? ""))) {
+          throw new Error(`Máy ${phone.model_name || ""} không còn hàng.`);
+        }
         if (String(phone.store_id) !== storeUuid) {
           throw new Error("Máy không thuộc cửa hàng đã chọn.");
         }
@@ -1310,7 +1341,7 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
 
         await client.query(
           `update public.phones
-           set status = 'sold', sale_date = $2::date,
+           set status = 'Đã bán', sale_date = $2::date,
                updated_by = coalesce($3, updated_by), updated_at = now()
            where id = $1`,
           [phone.id, soldAt, actor]
@@ -1715,9 +1746,9 @@ export async function repoCancelSale(
       if (item.item_type === "phone" && item.phone_id) {
         await client.query(
           `update public.phones
-           set status = 'in_stock', sale_date = null,
+           set status = 'Còn hàng', sale_date = null,
                updated_by = coalesce($2, updated_by), updated_at = now()
-           where id = $1 and status = 'sold'`,
+           where id = $1 and status in ('Đã bán', 'sold')`,
           [item.phone_id, actor]
         );
       } else if (item.item_type === "accessory" && item.accessory_id) {
@@ -1844,15 +1875,15 @@ export async function repoDashboardSummary(storeCode?: StoreId): Promise<{
   let provisionalProfitShort = 0;
 
   for (const row of phonesRes.rows) {
-    if (row.status === "sold") {
+    if (isPhoneSoldStatus(row.status)) {
       phonesSold += 1;
       continue;
     }
-    if (row.status === "pending") {
+    if (isPhonePendingStatus(row.status)) {
       phonesPending += 1;
       continue;
     }
-    if (row.status !== "in_stock") continue;
+    if (isPhoneCancelledStatus(row.status) || !isPhoneInStockStatus(row.status)) continue;
     phonesInStock += 1;
     const cost = toShopMoney(Number(row.cost));
     const sell = toShopMoney(Number(row.expected_price));

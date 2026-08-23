@@ -71,6 +71,7 @@ import {
 } from "@/services/inventoryReportService";
 import {
   ACCESSORY_LOOKUP_CATEGORIES,
+  CORE_PHONE_STATUS_OPTIONS,
   OWN_DEBT_LOOKUP_CATEGORIES,
   PART_LOOKUP_CATEGORIES,
   PHONE_LOOKUP_CATEGORIES,
@@ -470,6 +471,8 @@ type PhoneItem = {
   cost: number;
   expectedPrice: number;
   status: ProductStatus;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 type Accessory = {
@@ -1151,6 +1154,23 @@ function compareSearchInventory(
   const byName = a.name.localeCompare(b.name, "vi", { sensitivity: "base" });
   if (byName !== 0) return byName;
   return b.price - a.price;
+}
+
+function recencyMs(iso?: string): number {
+  if (!iso) return 0;
+  const t = Date.parse(iso);
+  return Number.isFinite(t) ? t : 0;
+}
+
+/** Kho máy: ngày sửa gần nhất, rồi ngày thêm gần nhất. */
+function compareInventoryRecency(
+  a: { updatedAt?: string; createdAt?: string },
+  b: { updatedAt?: string; createdAt?: string }
+): number {
+  const aUpdated = recencyMs(a.updatedAt) || recencyMs(a.createdAt);
+  const bUpdated = recencyMs(b.updatedAt) || recencyMs(b.createdAt);
+  if (bUpdated !== aUpdated) return bUpdated - aUpdated;
+  return recencyMs(b.createdAt) - recencyMs(a.createdAt);
 }
 
 function StatusBadge({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "ok" | "warn" | "danger" }) {
@@ -2067,11 +2087,14 @@ export default function Home() {
       );
     })
     .sort((a, b) => {
-      if (!hasInventorySearch) return 0;
-      return compareSearchInventory(
-        { name: a.name, price: a.expectedPrice },
-        { name: b.name, price: b.expectedPrice }
-      );
+      if (hasInventorySearch) {
+        const bySearch = compareSearchInventory(
+          { name: a.name, price: a.expectedPrice },
+          { name: b.name, price: b.expectedPrice }
+        );
+        if (bySearch !== 0) return bySearch;
+      }
+      return compareInventoryRecency(a, b);
     });
 
   const filteredAccessories = accessories
@@ -2308,6 +2331,9 @@ export default function Home() {
   const conditionOptions = formLookups[PHONE_LOOKUP_CATEGORIES.condition] ?? [];
   const batteryOptions = formLookups[PHONE_LOOKUP_CATEGORIES.batteryCondition] ?? [];
   const batteryCapacityOptions = formLookups[PHONE_LOOKUP_CATEGORIES.batteryCapacity] ?? [];
+  const statusOptions = formLookups[PHONE_LOOKUP_CATEGORIES.status]?.length
+    ? formLookups[PHONE_LOOKUP_CATEGORIES.status]
+    : [...CORE_PHONE_STATUS_OPTIONS];
 
   /** Options form phụ kiện theo cửa hàng đang chọn trên form. */
   const accessoryFormLookups = lookupsByStore[accessoryFormStoreId] ?? {};
@@ -2577,6 +2603,29 @@ export default function Home() {
     return Array.from(set).sort((a, b) =>
       a.localeCompare(b, "vi", { numeric: true, sensitivity: "base" })
     );
+  }, [lookupsByStore, storeFilter, phones]);
+
+  /** Filter trạng thái: 4 hệ thống + lookup store + status đang có trên máy. */
+  const filterPhoneStatusOptions = useMemo(() => {
+    const extra = new Set<string>();
+    const maps =
+      storeFilter !== "all"
+        ? [lookupsByStore[storeFilter] ?? {}]
+        : Object.values(lookupsByStore);
+    for (const storeMap of maps) {
+      for (const s of storeMap[PHONE_LOOKUP_CATEGORIES.status] ?? []) {
+        if (s.trim()) extra.add(s.trim());
+      }
+    }
+    for (const p of phones) {
+      if (storeFilter !== "all" && p.storeId !== storeFilter) continue;
+      if (p.status?.trim()) extra.add(p.status.trim());
+    }
+    const core = [...CORE_PHONE_STATUS_OPTIONS];
+    const rest = Array.from(extra)
+      .filter((s) => !core.includes(s as (typeof CORE_PHONE_STATUS_OPTIONS)[number]))
+      .sort((a, b) => a.localeCompare(b, "vi"));
+    return [...core, ...rest];
   }, [lookupsByStore, storeFilter, phones]);
 
   const editingAccessory = editingAccessoryId ? accessories.find((item) => item.id === editingAccessoryId) : null;
@@ -7333,7 +7382,7 @@ export default function Home() {
                   <StatCard
                     label="Máy còn hàng"
                     value={isStatsHidden || dashboardSummaryLoading ? "***" : `${dashboard.phones}`}
-                    hint="Đang in_stock"
+                    hint="Tồn kho còn hàng"
                     icon={<Smartphone size={20} />}
                   />
                   <StatCard
@@ -9240,9 +9289,11 @@ export default function Home() {
                         className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
                       >
                         <option value="all">Tất cả trạng thái</option>
-                        <option value="Còn hàng">Còn hàng</option>
-                        <option value="Đã bán">Đã bán</option>
-                        <option value="Chưa xử lý">Chưa xử lý</option>
+                        {filterPhoneStatusOptions.map((status) => (
+                          <option key={status} value={status}>
+                            {status}
+                          </option>
+                        ))}
                       </select>
                     </div>
                     {(
@@ -9629,7 +9680,7 @@ export default function Home() {
                               className="h-10 rounded-lg border border-line px-3"
                             />
                           </Field>
-                          <SelectField label="Trạng thái" name="status" options={["Còn hàng", "Đã bán", "Đã hủy", "Chưa xử lý"].map((status) => [status, status])} defaultValue={phoneFormDefaults?.status ?? "Còn hàng"} />
+                          <ManageableSelect label="Trạng thái" name="status" options={statusOptions} setOptions={setFormLookupOptions(PHONE_LOOKUP_CATEGORIES.status)} defaultValue={phoneFormDefaults?.status ?? "Còn hàng"} categoryCode={PHONE_LOOKUP_CATEGORIES.status} storeId={phoneFormStoreId} onRenameCascade={reloadInventoryFromDb} allowManage actorUsername={currentUser.username} />
                         </div>
                         <div className="grid gap-3 sm:grid-cols-2">
                           <ManageableSelect label="Màu sắc" name="color" options={colorOptions} setOptions={setFormLookupOptions(PHONE_LOOKUP_CATEGORIES.color)} defaultValue={phoneFormDefaults?.color} categoryCode={PHONE_LOOKUP_CATEGORIES.color} storeId={phoneFormStoreId} onRenameCascade={reloadInventoryFromDb} allowManage actorUsername={currentUser.username} />
@@ -9991,7 +10042,7 @@ export default function Home() {
                         <Field label="IMEI"><div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 font-mono text-slate-800">{viewingPhone.imei}</div></Field>
                         <Field label="Trạng thái">
                           <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3">
-                            <StatusBadge tone={viewingPhone.status === "Còn hàng" ? "ok" : viewingPhone.status === "Đã bán" ? "warn" : viewingPhone.status === "Chưa xử lý" ? "neutral" : "danger"}>{viewingPhone.status}</StatusBadge>
+                            <StatusBadge tone={viewingPhone.status === "Còn hàng" ? "ok" : viewingPhone.status === "Đã bán" ? "warn" : viewingPhone.status === "Đã hủy" ? "danger" : "neutral"}>{viewingPhone.status}</StatusBadge>
                           </div>
                         </Field>
                       </div>

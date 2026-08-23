@@ -14,6 +14,7 @@ const BOOTSTRAP_LOOKUP_CODES = [
   "phone_condition",
   "phone_battery_condition",
   "phone_battery_capacity",
+  "phone_status",
   "accessory_category",
   "accessory_brand",
   "accessory_code",

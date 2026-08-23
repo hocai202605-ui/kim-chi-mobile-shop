@@ -69,6 +69,9 @@ export type PhoneItem = {
   cost: number;
   expectedPrice: number;
   status: ProductStatus;
+  /** ISO — dùng sort kho: sửa gần nhất → thêm gần nhất. */
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type Accessory = {

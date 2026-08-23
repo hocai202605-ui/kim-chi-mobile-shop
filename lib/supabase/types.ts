@@ -41,7 +41,8 @@ export type DbPhone = {
   sale_date: string | null;
   cost: number;
   expected_price: number;
-  status: DbPhoneStatus;
+  /** Text: Còn hàng / Đã bán / Đã hủy / Chưa xử lý hoặc status tự thêm. */
+  status: string;
   created_at?: string;
   updated_at?: string;
   /** Username app_accounts */
@@ -95,7 +96,7 @@ export type DbPhoneInsert = {
   sale_date?: string | null;
   cost: number;
   expected_price: number;
-  status?: DbPhoneStatus;
+  status?: string;
   created_by?: string | null;
   updated_by?: string | null;
 };

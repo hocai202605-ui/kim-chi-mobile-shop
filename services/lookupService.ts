@@ -14,7 +14,16 @@ export const PHONE_LOOKUP_CATEGORIES = {
   condition: "phone_condition",
   batteryCondition: "phone_battery_condition",
   batteryCapacity: "phone_battery_capacity",
+  status: "phone_status",
 } as const;
+
+/** Trạng thái máy hệ thống — droplist seed; bán/hủy vẫn dựa các nhãn này. */
+export const CORE_PHONE_STATUS_OPTIONS = [
+  "Còn hàng",
+  "Đã bán",
+  "Chưa xử lý",
+  "Đã hủy",
+] as const;
 
 export type PhoneLookupCategoryCode =
   (typeof PHONE_LOOKUP_CATEGORIES)[keyof typeof PHONE_LOOKUP_CATEGORIES];
