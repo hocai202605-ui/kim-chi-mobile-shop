@@ -10608,12 +10608,13 @@ export default function Home() {
                       saleModalTab === "accessory" ||
                       salePhoneDetailsOpen) && (
                     <>
+                      {isSaleReadOnly || saleModalTab === "phone" ? (
                       <label className="grid gap-0.5">
                         <span className="text-xs font-bold text-slate-700">
                           Hình thức thanh toán {!isSaleReadOnly ? <span className="text-red-500">*</span> : null}
                         </span>
                         <select
-                          required={!isSaleReadOnly && (saleModalTab === "accessory" || salePhoneDetailsOpen)}
+                          required={!isSaleReadOnly && salePhoneDetailsOpen}
                           value={salePayMethod}
                           onChange={(e) => setSalePayMethod(e.target.value as SalePayMethod)}
                           disabled={isSaleReadOnly}
@@ -10628,6 +10629,7 @@ export default function Home() {
                           ))}
                         </select>
                       </label>
+                      ) : null}
 
                       {/* Thông tin phiếu: mặc định thu gọn để form bán nhanh hơn. */}
                       <div className="grid gap-2 rounded-lg border border-line bg-slate-50/70 p-2">
@@ -10746,7 +10748,7 @@ export default function Home() {
                               <p className="text-sm font-black text-amber-950">Thêm phụ kiện</p>
                             </div>
                             <div className="relative grid gap-3">
-                              <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_6.5rem_auto] sm:items-end">
+                              <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_6.5rem] sm:items-end">
                                 <div className="grid min-w-0 gap-1.5">
                                   <span className="text-sm font-bold text-amber-950">Tên phụ kiện</span>
                                   <div className="min-w-0 [&_label>span]:hidden">
@@ -10800,14 +10802,6 @@ export default function Home() {
                                     </div>
                                   </div>
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={addAccessoryToSaleCart}
-                                  className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-amber-500 px-4 text-sm font-bold text-white shadow-sm hover:bg-amber-600"
-                                >
-                                  <Plus size={16} />
-                                  giỏ hàng
-                                </button>
                               </div>
                               <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
                                 <div className="grid min-w-0 gap-1.5">
@@ -10860,6 +10854,33 @@ export default function Home() {
                                     />
                                   </div>
                                 </div>
+                              </div>
+                              <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                                <label className="grid min-w-0 gap-1.5">
+                                  <span className="text-sm font-bold text-amber-950">
+                                    Hình thức thanh toán <span className="text-red-500">*</span>
+                                  </span>
+                                  <select
+                                    required
+                                    value={salePayMethod}
+                                    onChange={(e) => setSalePayMethod(e.target.value as SalePayMethod)}
+                                    className="h-10 rounded-lg border border-amber-200/70 bg-white px-2.5 text-sm font-semibold outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+                                  >
+                                    {SALE_PAY_METHOD_OPTIONS.map((p) => (
+                                      <option key={p} value={p}>
+                                        {p}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={addAccessoryToSaleCart}
+                                  className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-amber-500 px-4 text-sm font-bold text-white shadow-sm hover:bg-amber-600"
+                                >
+                                  <Plus size={16} />
+                                  Thêm giỏ hàng
+                                </button>
                               </div>
                             </div>
                           </div>
