@@ -14996,7 +14996,7 @@ export default function Home() {
                       String(i).padStart(2, "0")
                     );
                     return (
-                      <div className="grid min-w-0 gap-1.5 sm:col-span-1">
+                      <div className="grid min-w-0 gap-1.5 sm:col-span-2">
                         <span className="text-base font-black text-slate-950">
                           Ngày & giờ <span className="ml-1 text-red-500">*</span>
                         </span>
@@ -15041,34 +15041,17 @@ export default function Home() {
                       </div>
                     );
                   })()}
-                  <Field label="Trạng thái TT" required>
-                    <select
-                      name="paymentStatus"
-                      required
-                      defaultValue={formDefaults?.paymentStatus ?? "Đã thanh toán"}
-                      className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
-                    >
-                      <option value="Đã thanh toán">Đã thanh toán</option>
-                      <option value="NỢ DAI">NỢ DAI</option>
-                    </select>
-                  </Field>
+                  <input
+                    type="hidden"
+                    name="paymentStatus"
+                    defaultValue={formDefaults?.paymentStatus ?? "Đã thanh toán"}
+                  />
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Hình thức thanh toán" required>
-                    <select
-                      name="paymentMethod"
-                      required
-                      defaultValue={formDefaults?.paymentMethod ?? "Tiền mặt"}
-                      className="h-10 rounded-lg border border-line bg-white px-3 font-semibold"
-                    >
-                      {SALE_PAY_METHOD_OPTIONS.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                </div>
+                <input
+                  type="hidden"
+                  name="paymentMethod"
+                  defaultValue={formDefaults?.paymentMethod ?? "Tiền mặt"}
+                />
                 <div className="flex justify-end gap-2 border-t border-line pt-4">
                   <button
                     type="button"
