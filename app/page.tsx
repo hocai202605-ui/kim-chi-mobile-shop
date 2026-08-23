@@ -72,6 +72,7 @@ import {
 import {
   ACCESSORY_LOOKUP_CATEGORIES,
   CORE_PHONE_STATUS_OPTIONS,
+  visiblePhoneStatusOptions,
   OWN_DEBT_LOOKUP_CATEGORIES,
   PART_LOOKUP_CATEGORIES,
   PHONE_LOOKUP_CATEGORIES,
@@ -2333,9 +2334,11 @@ export default function Home() {
   const conditionOptions = formLookups[PHONE_LOOKUP_CATEGORIES.condition] ?? [];
   const batteryOptions = formLookups[PHONE_LOOKUP_CATEGORIES.batteryCondition] ?? [];
   const batteryCapacityOptions = formLookups[PHONE_LOOKUP_CATEGORIES.batteryCapacity] ?? [];
-  const statusOptions = formLookups[PHONE_LOOKUP_CATEGORIES.status]?.length
-    ? formLookups[PHONE_LOOKUP_CATEGORIES.status]
-    : [...CORE_PHONE_STATUS_OPTIONS];
+  const statusOptions = visiblePhoneStatusOptions(
+    formLookups[PHONE_LOOKUP_CATEGORIES.status]?.length
+      ? formLookups[PHONE_LOOKUP_CATEGORIES.status]
+      : [...CORE_PHONE_STATUS_OPTIONS]
+  );
 
   /** Options form phụ kiện theo cửa hàng đang chọn trên form. */
   const accessoryFormLookups = lookupsByStore[accessoryFormStoreId] ?? {};
@@ -2625,7 +2628,7 @@ export default function Home() {
     }
     const core = [...CORE_PHONE_STATUS_OPTIONS];
     const rest = Array.from(extra)
-      .filter((s) => !core.includes(s as (typeof CORE_PHONE_STATUS_OPTIONS)[number]))
+      .filter((s) => s !== "Đã hủy" && !core.includes(s as (typeof CORE_PHONE_STATUS_OPTIONS)[number]))
       .sort((a, b) => a.localeCompare(b, "vi"));
     return [...core, ...rest];
   }, [lookupsByStore, storeFilter, phones]);
@@ -10420,7 +10423,7 @@ export default function Home() {
                         {item.itemName}
                         {item.quantity > 1 ? ` (${item.quantity})` : ""}
                       </span>,
-                      <span key={`a-${item.id}`} className="whitespace-nowrap text-[38px] font-black text-danger">
+                      <span key={`a-${item.id}`} className="whitespace-nowrap text-[32.3px] font-black text-danger">
                         {isSaleSensitiveHidden ? "***" : formatMoney(item.amount)}
                       </span>,
                       <span key={`cost-${item.id}`} className="font-semibold text-slate-600">
@@ -13873,7 +13876,7 @@ export default function Home() {
                           </>
                         )}
                       </div>
-                      <strong className="text-lg font-black text-red-600">
+                      <strong className="text-[1.6875rem] font-black leading-none text-red-600">
                         {isDebtSensitiveHidden ? "***" : formatMoney(filteredCustomerOpenTotal)}
                       </strong>
                     </div>
@@ -13911,7 +13914,7 @@ export default function Home() {
                               ({openSelected.length} khoản)
                             </span>
                           </span>
-                          <strong className="text-2xl font-black tabular-nums leading-none text-red-600">
+                          <strong className="text-4xl font-black tabular-nums leading-none text-red-600">
                             {isDebtSensitiveHidden ? "***" : formatMoney(openSelectedTotal)}
                           </strong>
                         </div>
@@ -13928,12 +13931,13 @@ export default function Home() {
                       compact
                       headers={[
                         "",
-                        "Ngày",
-                        "Nguồn",
-                        "Khách / nội dung",
-                        "Cửa hàng",
+                        "Khách",
+                        "Nội dung",
                         "Số nợ",
+                        "Ngày",
                         "Trạng thái",
+                        "Nguồn",
+                        "Cửa hàng",
                         "Thao tác",
                       ]}
                       rows={pagedDebts.map((item) => {
@@ -13966,11 +13970,7 @@ export default function Home() {
                               }}
                             />
                           </div>,
-                          <span key={`dt-${item.id}`} className="text-sm font-semibold">
-                            {item.debtDate || "—"}
-                          </span>,
-                          sourceBadge(item.source),
-                          <div key={`info-${item.id}`} className="text-left">
+                          <div key={`cust-${item.id}`} className="text-left">
                             <button
                               type="button"
                               title="Mở hồ sơ khách hàng"
@@ -13984,14 +13984,18 @@ export default function Home() {
                             >
                               {item.customerName}
                             </button>
-                            <div className="text-sm font-semibold text-slate-600">{item.title}</div>
                             {item.customerPhone ? (
                               <div className="text-xs font-semibold text-muted">{item.customerPhone}</div>
                             ) : null}
                           </div>,
-                          storeName(item.storeId),
+                          <div key={`title-${item.id}`} className="text-left text-sm font-semibold text-slate-600">
+                            {item.title || "—"}
+                          </div>,
                           <span key={`amt-${item.id}`} className="font-black text-red-600">
                             {isDebtSensitiveHidden ? "***" : formatMoney(item.amount)}
+                          </span>,
+                          <span key={`dt-${item.id}`} className="text-sm font-semibold">
+                            {item.debtDate || "—"}
                           </span>,
                           <StatusBadge
                             key={`st-${item.id}`}
@@ -14001,6 +14005,8 @@ export default function Home() {
                           >
                             {statusLabel(item.status)}
                           </StatusBadge>,
+                          sourceBadge(item.source),
+                          storeName(item.storeId),
                           <div key={`act-${item.id}`} className="flex flex-nowrap justify-center gap-1">
                             <button
                               type="button"

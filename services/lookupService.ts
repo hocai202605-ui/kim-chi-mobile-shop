@@ -17,13 +17,16 @@ export const PHONE_LOOKUP_CATEGORIES = {
   status: "phone_status",
 } as const;
 
-/** Trạng thái máy hệ thống — droplist seed; bán/hủy vẫn dựa các nhãn này. */
+/** Trạng thái máy hiện trên form kho / bộ lọc. Không gồm "Đã hủy" (không dùng). */
 export const CORE_PHONE_STATUS_OPTIONS = [
   "Còn hàng",
   "Đã bán",
   "Chưa xử lý",
-  "Đã hủy",
 ] as const;
+
+export function visiblePhoneStatusOptions(options: string[]): string[] {
+  return options.filter((s) => s.trim() !== "Đã hủy");
+}
 
 export type PhoneLookupCategoryCode =
   (typeof PHONE_LOOKUP_CATEGORIES)[keyof typeof PHONE_LOOKUP_CATEGORIES];
