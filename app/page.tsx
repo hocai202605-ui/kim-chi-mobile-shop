@@ -1438,6 +1438,7 @@ export default function Home() {
   const [draftNotes, setDraftNotes] = useState<DraftNote[]>([]);
   const [draftNoteQuery, setDraftNoteQuery] = useState("");
   const [draftNoteUserFilter, setDraftNoteUserFilter] = useState("");
+  const [draftNoteTitle, setDraftNoteTitle] = useState("");
   const [draftNoteContent, setDraftNoteContent] = useState("");
   const [editingDraftNoteId, setEditingDraftNoteId] = useState<string | null>(null);
   const [draftNoteLoading, setDraftNoteLoading] = useState(false);
@@ -5830,18 +5831,25 @@ export default function Home() {
     const row = draftNotes.find((note) => note.id === id);
     if (!row) return;
     setEditingDraftNoteId(row.id);
+    setDraftNoteTitle(row.title);
     setDraftNoteContent(row.content);
   }
 
   function cancelEditDraftNote() {
     setEditingDraftNoteId(null);
+    setDraftNoteTitle("");
     setDraftNoteContent("");
   }
 
   async function saveDraftNote(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!currentUser || draftNoteSaving) return;
+    const title = draftNoteTitle.trim();
     const content = draftNoteContent.trim();
+    if (!title) {
+      showUiToast("error", "Tiêu đề ghi nháp không được trống.");
+      return;
+    }
     if (!content) {
       showUiToast("error", "Nội dung ghi nháp không được trống.");
       return;
@@ -5857,16 +5865,18 @@ export default function Home() {
       const saved = await apiUpsertDraftNote({
         id: editingDraftNoteId ?? undefined,
         storeId,
+        title,
         content,
         actorUsername: currentUser.username,
       });
       pushLog(
         editingDraftNoteId ? "Sửa ghi nháp" : "Thêm ghi nháp",
-        saved.content.slice(0, 80),
+        `${saved.title} — ${saved.content}`.slice(0, 80),
         saved.storeId
       );
       showUiToast("success", editingDraftNoteId ? "Đã cập nhật ghi nháp." : "Đã lưu ghi nháp.");
       setEditingDraftNoteId(null);
+      setDraftNoteTitle("");
       setDraftNoteContent("");
       await reloadDraftNotes();
     } catch (err) {
@@ -5884,7 +5894,7 @@ export default function Home() {
     setDraftNoteSaving(true);
     try {
       await apiCancelDraftNote(id, currentUser.username);
-      pushLog("Hủy ghi nháp", row.content.slice(0, 80), row.storeId);
+      pushLog("Hủy ghi nháp", `${row.title} — ${row.content}`.slice(0, 80), row.storeId);
       showUiToast("success", "Đã hủy ghi nháp.");
       if (editingDraftNoteId === id) cancelEditDraftNote();
       await reloadDraftNotes();
@@ -12929,13 +12939,27 @@ export default function Home() {
                   ) : null}
                 </div>
                 <form onSubmit={saveDraftNote} className="grid gap-3">
-                  <textarea
-                    value={draftNoteContent}
-                    onChange={(e) => setDraftNoteContent(e.target.value)}
-                    rows={7}
-                    placeholder="Nhập ghi chú tự do..."
-                    className="min-h-[180px] w-full resize-y rounded-lg border border-line bg-slate-50 px-4 py-3 text-base font-semibold leading-relaxed text-ink outline-none transition focus:border-brand focus:bg-white focus:ring-2 focus:ring-brand/20"
-                  />
+                  <div className="grid gap-3 lg:grid-cols-[minmax(0,3fr)_minmax(0,7fr)]">
+                    <Field label="Tiêu đề" required>
+                      <textarea
+                        value={draftNoteTitle}
+                        onChange={(e) => setDraftNoteTitle(e.target.value)}
+                        rows={7}
+                        maxLength={200}
+                        placeholder="Nhập tiêu đề..."
+                        className="min-h-[180px] w-full resize-y rounded-lg border border-line bg-slate-50 px-4 py-3 text-base font-semibold leading-relaxed text-ink outline-none transition focus:border-brand focus:bg-white focus:ring-2 focus:ring-brand/20"
+                      />
+                    </Field>
+                    <Field label="Nội dung" required>
+                      <textarea
+                        value={draftNoteContent}
+                        onChange={(e) => setDraftNoteContent(e.target.value)}
+                        rows={7}
+                        placeholder="Nhập nội dung..."
+                        className="min-h-[180px] w-full resize-y rounded-lg border border-line bg-slate-50 px-4 py-3 text-base font-semibold leading-relaxed text-ink outline-none transition focus:border-brand focus:bg-white focus:ring-2 focus:ring-brand/20"
+                      />
+                    </Field>
+                  </div>
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <span className="text-xs font-bold text-muted">
                       Người thao tác: {currentUser.username} · {storeName(
@@ -12991,7 +13015,7 @@ export default function Home() {
                       <input
                         value={draftNoteQuery}
                         onChange={(e) => setDraftNoteQuery(e.target.value)}
-                        placeholder="Tìm nội dung ghi nháp..."
+                        placeholder="Tìm tiêu đề, nội dung..."
                         className="h-10 w-full rounded-lg border border-line bg-slate-50 pl-9 pr-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand/30"
                       />
                     </label>
@@ -13019,8 +13043,13 @@ export default function Home() {
                         key={note.id}
                         className="rounded-lg border border-line bg-slate-50 p-4 transition hover:border-brand/30 hover:bg-white"
                       >
-                        <div className="whitespace-pre-wrap break-words rounded-lg border-l-4 border-gold bg-amber-50 px-4 py-3 text-base font-bold leading-relaxed text-amber-950">
-                          {note.content}
+                        <div className="grid gap-3 lg:grid-cols-[minmax(0,3fr)_minmax(0,7fr)]">
+                          <div className="whitespace-pre-wrap break-words rounded-lg border-l-4 border-brand bg-brand-soft px-4 py-3 text-base font-black leading-relaxed text-ink">
+                            {note.title || "Không có tiêu đề"}
+                          </div>
+                          <div className="whitespace-pre-wrap break-words rounded-lg border-l-4 border-gold bg-amber-50 px-4 py-3 text-base font-bold leading-relaxed text-amber-950">
+                            {note.content}
+                          </div>
                         </div>
                         <div className="mt-4 flex flex-col gap-3 border-t border-line pt-3 lg:flex-row lg:items-center lg:justify-between">
                           <div className="grid gap-1 text-xs font-bold text-muted sm:grid-cols-2 lg:flex lg:flex-wrap lg:gap-x-4">
@@ -16004,7 +16033,7 @@ export default function Home() {
                   </p>
                   <p className="flex items-center gap-2 text-xs font-semibold text-white sm:text-sm">
                     <span className="hidden h-1.5 w-1.5 shrink-0 rounded-full bg-white md:block"></span>
-                    Địa chỉ tin cậy và uy tín tại số 1 TP. Hải Phòng
+                    Địa chỉ tin cậy và uy tín số 1 - tại phường Nam Sách - TP. Hải Phòng
                   </p>
                 </div>
               </div>
@@ -16157,7 +16186,7 @@ export default function Home() {
                             }}
                           />
                         </div>,
-                        <span key={`c-${item.id}`} className="font-bold text-brand whitespace-nowrap">{item.customerName}</span>,
+                        <span key={`c-${item.id}`} className="whitespace-nowrap text-[1.15em] font-bold text-gold">{item.customerName}</span>,
                         <span key={`d-${item.id}`} className="whitespace-nowrap text-[24px] font-black text-slate-800">{item.deviceName}</span>,
                         <span key={`q-${item.id}`} className="whitespace-nowrap text-[27px] font-black text-danger">{formatMoney(item.quote)}</span>,
                         isOnlineRepairSensitiveHidden ? "***" : formatMoney(item.deposit),

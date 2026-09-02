@@ -43,6 +43,7 @@ export async function POST(req: NextRequest) {
     const data = await repoUpsertDraftNote({
       id: body?.id ? String(body.id) : undefined,
       storeId,
+      title: String(body?.title ?? ""),
       content: String(body?.content ?? ""),
       actorUsername:
         typeof body?.actorUsername === "string" ? body.actorUsername : undefined,

@@ -5,6 +5,7 @@ import { getPool } from "./pool";
 export type DraftNote = {
   id: string;
   storeId: Exclude<StoreId, "all">;
+  title: string;
   content: string;
   createdAt: string;
   updatedAt: string;
@@ -15,6 +16,7 @@ export type DraftNote = {
 export type DraftNoteInput = {
   id?: string;
   storeId: Exclude<StoreId, "all">;
+  title: string;
   content: string;
   actorUsername?: string;
 };
@@ -28,12 +30,16 @@ export type DraftNoteListFilters = {
 type DraftNoteRow = {
   id: string;
   store_id: string;
+  title: string;
   content: string;
   created_at: Date | string;
   updated_at: Date | string;
   created_by: string | null;
   updated_by: string | null;
 };
+
+const DRAFT_NOTE_COLUMNS =
+  "id, store_id, title, content, created_at, updated_at, created_by, updated_by";
 
 function normalizeActor(value?: string | null): string | null {
   const t = String(value ?? "").trim();
@@ -65,6 +71,7 @@ function mapDraftNote(
   return {
     id: String(row.id),
     storeId: idToCode.get(String(row.store_id)) ?? "store-1",
+    title: String(row.title ?? ""),
     content: String(row.content ?? ""),
     createdAt: formatVnDateTime(row.created_at),
     updatedAt: formatVnDateTime(row.updated_at),
@@ -91,8 +98,9 @@ export async function repoListDraftNotes(
 
   const q = String(filters.query ?? "").trim();
   if (q) {
-    where.push(`content ilike $${i++}`);
+    where.push(`(title ilike $${i} or content ilike $${i})`);
     params.push(`%${q}%`);
+    i += 1;
   }
 
   const username = String(filters.username ?? "").trim();
@@ -102,7 +110,7 @@ export async function repoListDraftNotes(
   }
 
   const { rows } = await getPool().query<DraftNoteRow>(
-    `select id, store_id, content, created_at, updated_at, created_by, updated_by
+    `select ${DRAFT_NOTE_COLUMNS}
      from public.draft_notes
      where ${where.join(" and ")}
      order by updated_at desc, created_at desc
@@ -118,6 +126,8 @@ export async function repoUpsertDraftNote(input: DraftNoteInput): Promise<DraftN
   const storeUuid = codeToId.get(input.storeId);
   if (!storeUuid) throw new Error(`Không tìm thấy cửa hàng ${input.storeId}.`);
 
+  const title = String(input.title ?? "").trim();
+  if (!title) throw new Error("Tiêu đề ghi nháp không được trống.");
   const content = String(input.content ?? "").trim();
   if (!content) throw new Error("Nội dung ghi nháp không được trống.");
   const actor = normalizeActor(input.actorUsername);
@@ -126,13 +136,14 @@ export async function repoUpsertDraftNote(input: DraftNoteInput): Promise<DraftN
     const { rows } = await getPool().query<DraftNoteRow>(
       `update public.draft_notes set
          store_id = $1,
-         content = $2,
-         updated_by = coalesce($3, updated_by),
+         title = $2,
+         content = $3,
+         updated_by = coalesce($4, updated_by),
          updated_at = now()
-       where id = $4::uuid
+       where id = $5::uuid
          and status = 'active'
-       returning id, store_id, content, created_at, updated_at, created_by, updated_by`,
-      [storeUuid, content, actor, input.id]
+       returning ${DRAFT_NOTE_COLUMNS}`,
+      [storeUuid, title, content, actor, input.id]
     );
     if (!rows[0]) throw new Error("Không tìm thấy ghi nháp để sửa.");
     return mapDraftNote(rows[0], idToCode);
@@ -140,10 +151,10 @@ export async function repoUpsertDraftNote(input: DraftNoteInput): Promise<DraftN
 
   const { rows } = await getPool().query<DraftNoteRow>(
     `insert into public.draft_notes (
-       store_id, content, status, created_by, updated_by
-     ) values ($1,$2,'active',$3,$3)
-     returning id, store_id, content, created_at, updated_at, created_by, updated_by`,
-    [storeUuid, content, actor]
+       store_id, title, content, status, created_by, updated_by
+     ) values ($1,$2,$3,'active',$4,$4)
+     returning ${DRAFT_NOTE_COLUMNS}`,
+    [storeUuid, title, content, actor]
   );
   if (!rows[0]) throw new Error("Không tạo được ghi nháp.");
   return mapDraftNote(rows[0], idToCode);
@@ -162,7 +173,7 @@ export async function repoCancelDraftNote(
        updated_at = now()
      where id = $1::uuid
        and status = 'active'
-     returning id, store_id, content, created_at, updated_at, created_by, updated_by`,
+     returning ${DRAFT_NOTE_COLUMNS}`,
     [id, actor]
   );
   if (!rows[0]) throw new Error("Không tìm thấy ghi nháp để hủy.");
