@@ -6,6 +6,7 @@ export type DraftNote = {
   id: string;
   storeId: Exclude<StoreId, "all">;
   title: string;
+  name: string;
   content: string;
   createdAt: string;
   updatedAt: string;
@@ -17,6 +18,7 @@ export type DraftNoteInput = {
   id?: string;
   storeId: Exclude<StoreId, "all">;
   title: string;
+  name: string;
   content: string;
   actorUsername?: string;
 };
@@ -31,6 +33,7 @@ type DraftNoteRow = {
   id: string;
   store_id: string;
   title: string;
+  name: string;
   content: string;
   created_at: Date | string;
   updated_at: Date | string;
@@ -39,7 +42,7 @@ type DraftNoteRow = {
 };
 
 const DRAFT_NOTE_COLUMNS =
-  "id, store_id, title, content, created_at, updated_at, created_by, updated_by";
+  "id, store_id, title, name, content, created_at, updated_at, created_by, updated_by";
 
 function normalizeActor(value?: string | null): string | null {
   const t = String(value ?? "").trim();
@@ -72,6 +75,7 @@ function mapDraftNote(
     id: String(row.id),
     storeId: idToCode.get(String(row.store_id)) ?? "store-1",
     title: String(row.title ?? ""),
+    name: String(row.name ?? ""),
     content: String(row.content ?? ""),
     createdAt: formatVnDateTime(row.created_at),
     updatedAt: formatVnDateTime(row.updated_at),
@@ -98,7 +102,7 @@ export async function repoListDraftNotes(
 
   const q = String(filters.query ?? "").trim();
   if (q) {
-    where.push(`(title ilike $${i} or content ilike $${i})`);
+    where.push(`(title ilike $${i} or name ilike $${i} or content ilike $${i})`);
     params.push(`%${q}%`);
     i += 1;
   }
@@ -127,7 +131,7 @@ export async function repoUpsertDraftNote(input: DraftNoteInput): Promise<DraftN
   if (!storeUuid) throw new Error(`Không tìm thấy cửa hàng ${input.storeId}.`);
 
   const title = String(input.title ?? "").trim();
-  if (!title) throw new Error("Tiêu đề ghi nháp không được trống.");
+  const name = String(input.name ?? "").trim();
   const content = String(input.content ?? "").trim();
   if (!content) throw new Error("Nội dung ghi nháp không được trống.");
   const actor = normalizeActor(input.actorUsername);
@@ -137,13 +141,14 @@ export async function repoUpsertDraftNote(input: DraftNoteInput): Promise<DraftN
       `update public.draft_notes set
          store_id = $1,
          title = $2,
-         content = $3,
-         updated_by = coalesce($4, updated_by),
+         name = $3,
+         content = $4,
+         updated_by = coalesce($5, updated_by),
          updated_at = now()
-       where id = $5::uuid
+       where id = $6::uuid
          and status = 'active'
        returning ${DRAFT_NOTE_COLUMNS}`,
-      [storeUuid, title, content, actor, input.id]
+      [storeUuid, title, name, content, actor, input.id]
     );
     if (!rows[0]) throw new Error("Không tìm thấy ghi nháp để sửa.");
     return mapDraftNote(rows[0], idToCode);
@@ -151,10 +156,10 @@ export async function repoUpsertDraftNote(input: DraftNoteInput): Promise<DraftN
 
   const { rows } = await getPool().query<DraftNoteRow>(
     `insert into public.draft_notes (
-       store_id, title, content, status, created_by, updated_by
-     ) values ($1,$2,$3,'active',$4,$4)
+       store_id, title, name, content, status, created_by, updated_by
+     ) values ($1,$2,$3,$4,'active',$5,$5)
      returning ${DRAFT_NOTE_COLUMNS}`,
-    [storeUuid, title, content, actor]
+    [storeUuid, title, name, content, actor]
   );
   if (!rows[0]) throw new Error("Không tạo được ghi nháp.");
   return mapDraftNote(rows[0], idToCode);

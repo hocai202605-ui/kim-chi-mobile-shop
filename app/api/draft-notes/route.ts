@@ -44,6 +44,7 @@ export async function POST(req: NextRequest) {
       id: body?.id ? String(body.id) : undefined,
       storeId,
       title: String(body?.title ?? ""),
+      name: String(body?.name ?? ""),
       content: String(body?.content ?? ""),
       actorUsername:
         typeof body?.actorUsername === "string" ? body.actorUsername : undefined,

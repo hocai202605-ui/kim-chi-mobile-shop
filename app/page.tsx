@@ -1207,6 +1207,43 @@ function Field({
   );
 }
 
+function AutoGrowTextarea({
+  value,
+  onChange,
+  minRows = 1,
+  maxLength,
+  placeholder,
+  className = "",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  minRows?: number;
+  maxLength?: number;
+  placeholder?: string;
+  className?: string;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      rows={minRows}
+      maxLength={maxLength}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+      className={`block w-full resize-none overflow-hidden ${className}`}
+    />
+  );
+}
+
 function StatCard({ label, value, hint, icon }: { label: string; value: string; hint: string; icon: ReactNode }) {
   return (
     <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
@@ -1439,6 +1476,7 @@ export default function Home() {
   const [draftNoteQuery, setDraftNoteQuery] = useState("");
   const [draftNoteUserFilter, setDraftNoteUserFilter] = useState("");
   const [draftNoteTitle, setDraftNoteTitle] = useState("");
+  const [draftNoteName, setDraftNoteName] = useState("");
   const [draftNoteContent, setDraftNoteContent] = useState("");
   const [editingDraftNoteId, setEditingDraftNoteId] = useState<string | null>(null);
   const [draftNoteLoading, setDraftNoteLoading] = useState(false);
@@ -5832,12 +5870,14 @@ export default function Home() {
     if (!row) return;
     setEditingDraftNoteId(row.id);
     setDraftNoteTitle(row.title);
+    setDraftNoteName(row.name);
     setDraftNoteContent(row.content);
   }
 
   function cancelEditDraftNote() {
     setEditingDraftNoteId(null);
     setDraftNoteTitle("");
+    setDraftNoteName("");
     setDraftNoteContent("");
   }
 
@@ -5845,11 +5885,8 @@ export default function Home() {
     event.preventDefault();
     if (!currentUser || draftNoteSaving) return;
     const title = draftNoteTitle.trim();
+    const name = draftNoteName.trim();
     const content = draftNoteContent.trim();
-    if (!title) {
-      showUiToast("error", "Tiêu đề ghi nháp không được trống.");
-      return;
-    }
     if (!content) {
       showUiToast("error", "Nội dung ghi nháp không được trống.");
       return;
@@ -5866,17 +5903,19 @@ export default function Home() {
         id: editingDraftNoteId ?? undefined,
         storeId,
         title,
+        name,
         content,
         actorUsername: currentUser.username,
       });
       pushLog(
         editingDraftNoteId ? "Sửa ghi nháp" : "Thêm ghi nháp",
-        `${saved.title} — ${saved.content}`.slice(0, 80),
+        [saved.title, saved.name, saved.content].filter(Boolean).join(" — ").slice(0, 80),
         saved.storeId
       );
       showUiToast("success", editingDraftNoteId ? "Đã cập nhật ghi nháp." : "Đã lưu ghi nháp.");
       setEditingDraftNoteId(null);
       setDraftNoteTitle("");
+      setDraftNoteName("");
       setDraftNoteContent("");
       await reloadDraftNotes();
     } catch (err) {
@@ -5894,7 +5933,11 @@ export default function Home() {
     setDraftNoteSaving(true);
     try {
       await apiCancelDraftNote(id, currentUser.username);
-      pushLog("Hủy ghi nháp", `${row.title} — ${row.content}`.slice(0, 80), row.storeId);
+      pushLog(
+        "Hủy ghi nháp",
+        [row.title, row.name, row.content].filter(Boolean).join(" — ").slice(0, 80),
+        row.storeId
+      );
       showUiToast("success", "Đã hủy ghi nháp.");
       if (editingDraftNoteId === id) cancelEditDraftNote();
       await reloadDraftNotes();
@@ -12939,24 +12982,34 @@ export default function Home() {
                   ) : null}
                 </div>
                 <form onSubmit={saveDraftNote} className="grid gap-3">
-                  <div className="grid gap-3 lg:grid-cols-[minmax(0,3fr)_minmax(0,7fr)]">
-                    <Field label="Tiêu đề" required>
-                      <textarea
+                  <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)_minmax(0,5fr)]">
+                    <Field label="Tiêu đề">
+                      <AutoGrowTextarea
                         value={draftNoteTitle}
-                        onChange={(e) => setDraftNoteTitle(e.target.value)}
-                        rows={7}
+                        onChange={setDraftNoteTitle}
+                        minRows={1}
                         maxLength={200}
-                        placeholder="Nhập tiêu đề..."
-                        className="min-h-[180px] w-full resize-y rounded-lg border border-line bg-slate-50 px-4 py-3 text-base font-semibold leading-relaxed text-ink outline-none transition focus:border-brand focus:bg-white focus:ring-2 focus:ring-brand/20"
+                        placeholder="Không bắt buộc"
+                        className="min-h-11 rounded-lg border border-line bg-slate-50 px-3 py-2 text-base font-semibold leading-relaxed text-ink outline-none transition focus:border-brand focus:bg-white focus:ring-2 focus:ring-brand/20"
+                      />
+                    </Field>
+                    <Field label="Tên">
+                      <AutoGrowTextarea
+                        value={draftNoteName}
+                        onChange={setDraftNoteName}
+                        minRows={1}
+                        maxLength={200}
+                        placeholder="Không bắt buộc"
+                        className="min-h-11 rounded-lg border border-line bg-slate-50 px-3 py-2 text-base font-semibold leading-relaxed text-ink outline-none transition focus:border-brand focus:bg-white focus:ring-2 focus:ring-brand/20"
                       />
                     </Field>
                     <Field label="Nội dung" required>
-                      <textarea
+                      <AutoGrowTextarea
                         value={draftNoteContent}
-                        onChange={(e) => setDraftNoteContent(e.target.value)}
-                        rows={7}
+                        onChange={setDraftNoteContent}
+                        minRows={2}
                         placeholder="Nhập nội dung..."
-                        className="min-h-[180px] w-full resize-y rounded-lg border border-line bg-slate-50 px-4 py-3 text-base font-semibold leading-relaxed text-ink outline-none transition focus:border-brand focus:bg-white focus:ring-2 focus:ring-brand/20"
+                        className="min-h-[4.5rem] rounded-lg border border-line bg-slate-50 px-3 py-2 text-base font-semibold leading-relaxed text-ink outline-none transition focus:border-brand focus:bg-white focus:ring-2 focus:ring-brand/20"
                       />
                     </Field>
                   </div>
@@ -13015,7 +13068,7 @@ export default function Home() {
                       <input
                         value={draftNoteQuery}
                         onChange={(e) => setDraftNoteQuery(e.target.value)}
-                        placeholder="Tìm tiêu đề, nội dung..."
+                        placeholder="Tìm tiêu đề, tên, nội dung..."
                         className="h-10 w-full rounded-lg border border-line bg-slate-50 pl-9 pr-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand/30"
                       />
                     </label>
@@ -13029,6 +13082,13 @@ export default function Home() {
                 ) : null}
 
                 <div className="grid gap-3 p-4">
+                  {draftNotes.length > 0 && !draftNoteLoading ? (
+                    <div className="hidden gap-3 px-3 text-xs font-black uppercase tracking-wide text-muted lg:grid lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)_minmax(0,5fr)]">
+                      <span>Tiêu đề</span>
+                      <span>Tên</span>
+                      <span>Nội dung</span>
+                    </div>
+                  ) : null}
                   {draftNoteLoading ? (
                     <div className="grid min-h-[160px] place-items-center text-muted">
                       <Loader2 className="animate-spin" />
@@ -13043,11 +13103,14 @@ export default function Home() {
                         key={note.id}
                         className="rounded-lg border border-line bg-slate-50 p-4 transition hover:border-brand/30 hover:bg-white"
                       >
-                        <div className="grid gap-3 lg:grid-cols-[minmax(0,3fr)_minmax(0,7fr)]">
-                          <div className="whitespace-pre-wrap break-words rounded-lg border-l-4 border-brand bg-brand-soft px-4 py-3 text-base font-black leading-relaxed text-ink">
-                            {note.title || "Không có tiêu đề"}
+                        <div className="grid gap-3 rounded-lg bg-black p-3 text-gold lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)_minmax(0,5fr)]">
+                          <div className="whitespace-pre-wrap break-words text-base font-black leading-relaxed">
+                            {note.title}
                           </div>
-                          <div className="whitespace-pre-wrap break-words rounded-lg border-l-4 border-gold bg-amber-50 px-4 py-3 text-base font-bold leading-relaxed text-amber-950">
+                          <div className="whitespace-pre-wrap break-words text-base font-bold leading-relaxed">
+                            {note.name}
+                          </div>
+                          <div className="whitespace-pre-wrap break-words text-base font-bold leading-relaxed">
                             {note.content}
                           </div>
                         </div>
