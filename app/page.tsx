@@ -1207,40 +1207,77 @@ function Field({
   );
 }
 
-function AutoGrowTextarea({
-  value,
-  onChange,
-  minRows = 1,
-  maxLength,
-  placeholder,
-  className = "",
+const DRAFT_NOTE_COLS =
+  "lg:grid-cols-[minmax(0,20fr)_minmax(0,15fr)_minmax(0,65fr)]";
+const DRAFT_NOTE_LIST_COLS =
+  "lg:grid-cols-[minmax(0,20fr)_minmax(0,65fr)_minmax(0,15fr)]";
+
+const DRAFT_NOTE_INPUT_CLASS =
+  "box-border min-h-[4.5rem] w-full rounded-lg border border-line bg-slate-50 px-3 py-2 text-base font-semibold leading-relaxed text-ink outline-none transition focus:border-brand focus:bg-white focus:ring-2 focus:ring-brand/20";
+
+function DraftNoteComposer({
+  title,
+  name,
+  content,
+  onTitleChange,
+  onNameChange,
+  onContentChange,
 }: {
-  value: string;
-  onChange: (value: string) => void;
-  minRows?: number;
-  maxLength?: number;
-  placeholder?: string;
-  className?: string;
+  title: string;
+  name: string;
+  content: string;
+  onTitleChange: (value: string) => void;
+  onNameChange: (value: string) => void;
+  onContentChange: (value: string) => void;
 }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
+  const titleRef = useRef<HTMLTextAreaElement>(null);
+  const nameRef = useRef<HTMLTextAreaElement>(null);
+  const contentRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-  }, [value]);
+    const els = [titleRef.current, nameRef.current, contentRef.current].filter(
+      (el): el is HTMLTextAreaElement => Boolean(el)
+    );
+    for (const el of els) el.style.height = "auto";
+    const next = Math.max(72, ...els.map((el) => el.scrollHeight));
+    for (const el of els) el.style.height = `${next}px`;
+  }, [title, name, content]);
 
   return (
-    <textarea
-      ref={ref}
-      value={value}
-      rows={minRows}
-      maxLength={maxLength}
-      placeholder={placeholder}
-      onChange={(e) => onChange(e.target.value)}
-      className={`block w-full resize-none overflow-hidden ${className}`}
-    />
+    <div className={`grid w-full min-w-0 items-stretch gap-3 ${DRAFT_NOTE_COLS}`}>
+      <Field label="Tiêu đề" className="min-w-0">
+        <textarea
+          ref={titleRef}
+          value={title}
+          rows={2}
+          maxLength={200}
+          placeholder="Không bắt buộc"
+          onChange={(e) => onTitleChange(e.target.value)}
+          className={`${DRAFT_NOTE_INPUT_CLASS} resize-none overflow-hidden`}
+        />
+      </Field>
+      <Field label="Tên" className="min-w-0">
+        <textarea
+          ref={nameRef}
+          value={name}
+          rows={2}
+          maxLength={200}
+          placeholder="Không bắt buộc"
+          onChange={(e) => onNameChange(e.target.value)}
+          className={`${DRAFT_NOTE_INPUT_CLASS} resize-none overflow-hidden`}
+        />
+      </Field>
+      <Field label="Nội dung" required className="min-w-0">
+        <textarea
+          ref={contentRef}
+          value={content}
+          rows={2}
+          placeholder="Nhập nội dung..."
+          onChange={(e) => onContentChange(e.target.value)}
+          className={`${DRAFT_NOTE_INPUT_CLASS} resize-none overflow-hidden`}
+        />
+      </Field>
+    </div>
   );
 }
 
@@ -12982,37 +13019,14 @@ export default function Home() {
                   ) : null}
                 </div>
                 <form onSubmit={saveDraftNote} className="grid gap-3">
-                  <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)_minmax(0,5fr)]">
-                    <Field label="Tiêu đề">
-                      <AutoGrowTextarea
-                        value={draftNoteTitle}
-                        onChange={setDraftNoteTitle}
-                        minRows={1}
-                        maxLength={200}
-                        placeholder="Không bắt buộc"
-                        className="min-h-11 rounded-lg border border-line bg-slate-50 px-3 py-2 text-base font-semibold leading-relaxed text-ink outline-none transition focus:border-brand focus:bg-white focus:ring-2 focus:ring-brand/20"
-                      />
-                    </Field>
-                    <Field label="Tên">
-                      <AutoGrowTextarea
-                        value={draftNoteName}
-                        onChange={setDraftNoteName}
-                        minRows={1}
-                        maxLength={200}
-                        placeholder="Không bắt buộc"
-                        className="min-h-11 rounded-lg border border-line bg-slate-50 px-3 py-2 text-base font-semibold leading-relaxed text-ink outline-none transition focus:border-brand focus:bg-white focus:ring-2 focus:ring-brand/20"
-                      />
-                    </Field>
-                    <Field label="Nội dung" required>
-                      <AutoGrowTextarea
-                        value={draftNoteContent}
-                        onChange={setDraftNoteContent}
-                        minRows={2}
-                        placeholder="Nhập nội dung..."
-                        className="min-h-[4.5rem] rounded-lg border border-line bg-slate-50 px-3 py-2 text-base font-semibold leading-relaxed text-ink outline-none transition focus:border-brand focus:bg-white focus:ring-2 focus:ring-brand/20"
-                      />
-                    </Field>
-                  </div>
+                  <DraftNoteComposer
+                    title={draftNoteTitle}
+                    name={draftNoteName}
+                    content={draftNoteContent}
+                    onTitleChange={setDraftNoteTitle}
+                    onNameChange={setDraftNoteName}
+                    onContentChange={setDraftNoteContent}
+                  />
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <span className="text-xs font-bold text-muted">
                       Người thao tác: {currentUser.username} · {storeName(
@@ -13083,10 +13097,10 @@ export default function Home() {
 
                 <div className="grid gap-3 p-4">
                   {draftNotes.length > 0 && !draftNoteLoading ? (
-                    <div className="hidden gap-3 px-3 text-xs font-black uppercase tracking-wide text-muted lg:grid lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)_minmax(0,5fr)]">
+                    <div className={`hidden gap-3 px-3 text-xs font-black uppercase tracking-wide text-muted lg:grid ${DRAFT_NOTE_LIST_COLS}`}>
                       <span>Tiêu đề</span>
-                      <span>Tên</span>
                       <span>Nội dung</span>
+                      <span>Tên</span>
                     </div>
                   ) : null}
                   {draftNoteLoading ? (
@@ -13103,15 +13117,15 @@ export default function Home() {
                         key={note.id}
                         className="rounded-lg border border-line bg-slate-50 p-4 transition hover:border-brand/30 hover:bg-white"
                       >
-                        <div className="grid gap-3 rounded-lg bg-black p-3 text-gold lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)_minmax(0,5fr)]">
+                        <div className={`grid gap-3 rounded-lg bg-black p-3 text-gold ${DRAFT_NOTE_LIST_COLS}`}>
                           <div className="whitespace-pre-wrap break-words text-base font-black leading-relaxed">
                             {note.title}
                           </div>
                           <div className="whitespace-pre-wrap break-words text-base font-bold leading-relaxed">
-                            {note.name}
+                            {note.content}
                           </div>
                           <div className="whitespace-pre-wrap break-words text-base font-bold leading-relaxed">
-                            {note.content}
+                            {note.name}
                           </div>
                         </div>
                         <div className="mt-4 flex flex-col gap-3 border-t border-line pt-3 lg:flex-row lg:items-center lg:justify-between">
