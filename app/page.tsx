@@ -554,6 +554,16 @@ type SoftwareService = {
   isPaid: boolean;
 };
 
+function isDaThanhToanDeviceName(value: string) {
+  return (
+    String(value || "")
+      .normalize("NFC")
+      .trim()
+      .replace(/\s+/g, " ")
+      .toLowerCase() === "đã thanh toán"
+  );
+}
+
 type OnlineRepair = {
   id: string;
   createdAt: string;
@@ -1153,6 +1163,7 @@ function Field({
   );
 }
 
+const DRAFT_NOTE_NEW_ID = "__new__";
 const DRAFT_NOTE_LIST_COLS =
   "lg:grid-cols-[minmax(0,20fr)_minmax(0,65fr)_minmax(0,15fr)]";
 
@@ -5878,6 +5889,14 @@ export default function Home() {
     void reloadDraftNotes();
   }, [activePage, currentUser, storeFilter, reloadDraftNotes]);
 
+  function openNewDraftNote() {
+    if (draftNoteSaving) return;
+    setEditingDraftNoteId(DRAFT_NOTE_NEW_ID);
+    setDraftNoteTitle("");
+    setDraftNoteName("");
+    setDraftNoteContent("");
+  }
+
   function openEditDraftNote(id: string) {
     const row = draftNotes.find((note) => note.id === id);
     if (!row) return;
@@ -5896,6 +5915,7 @@ export default function Home() {
 
   async function saveDraftNote() {
     if (!currentUser || draftNoteSaving || !editingDraftNoteId) return;
+    const isNew = editingDraftNoteId === DRAFT_NOTE_NEW_ID;
     const title = draftNoteTitle.trim();
     const name = draftNoteName.trim();
     const content = draftNoteContent.trim();
@@ -5903,7 +5923,7 @@ export default function Home() {
       showUiToast("error", "Nội dung ghi nháp không được trống.");
       return;
     }
-    const row = draftNotes.find((note) => note.id === editingDraftNoteId);
+    const row = isNew ? null : draftNotes.find((note) => note.id === editingDraftNoteId);
     const storeId: Exclude<StoreId, "all"> =
       row?.storeId ??
       (currentUser.role === "staff"
@@ -5914,7 +5934,7 @@ export default function Home() {
     setDraftNoteSaving(true);
     try {
       const saved = await apiUpsertDraftNote({
-        id: editingDraftNoteId,
+        id: isNew ? undefined : editingDraftNoteId,
         storeId,
         title,
         name,
@@ -5922,11 +5942,11 @@ export default function Home() {
         actorUsername: currentUser.username,
       });
       pushLog(
-        "Sửa ghi nháp",
+        isNew ? "Thêm ghi nháp" : "Sửa ghi nháp",
         [saved.title, saved.name, saved.content].filter(Boolean).join(" — ").slice(0, 80),
         saved.storeId
       );
-      showUiToast("success", "Đã cập nhật ghi nháp.");
+      showUiToast("success", isNew ? "Đã lưu ghi nháp." : "Đã cập nhật ghi nháp.");
       cancelEditDraftNote();
       await reloadDraftNotes();
     } catch (err) {
@@ -12914,6 +12934,13 @@ export default function Home() {
         })()}
 
         {activePage === "draft-notes" && currentUser && (() => {
+          const isAddingNew = editingDraftNoteId === DRAFT_NOTE_NEW_ID;
+          const newStoreId: Exclude<StoreId, "all"> =
+            currentUser.role === "staff"
+              ? currentUser.storeId
+              : storeFilter !== "all"
+                ? storeFilter
+                : currentUser.storeId || "store-1";
           return (
             <section className="rounded-lg border border-line bg-white shadow-panel">
               <div className="flex flex-col gap-3 border-b border-line p-4 lg:flex-row lg:items-center lg:justify-between">
@@ -12922,16 +12949,16 @@ export default function Home() {
                   <p className="text-sm font-semibold text-muted">
                     {draftNoteLoading
                       ? "Đang tải..."
-                      : `${draftNotes.length.toLocaleString("vi-VN")} ghi nháp · bấm Sửa để chỉnh trên danh sách`}
+                      : `${draftNotes.length.toLocaleString("vi-VN")} ghi nháp · bấm Thêm / Sửa trên danh sách`}
                   </p>
                 </div>
-                <div className="grid w-full gap-2 sm:grid-cols-2 lg:max-w-2xl">
+                <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
                   {currentUser.role === "owner" ? (
                     <select
                       value={draftNoteUserFilter || currentUser.username}
                       onChange={(e) => setDraftNoteUserFilter(e.target.value)}
                       aria-label="Lọc ghi nháp theo người dùng"
-                      className="h-10 w-full rounded-lg border border-line bg-slate-50 px-3 text-sm font-bold text-ink outline-none focus:ring-2 focus:ring-brand/30"
+                      className="h-11 w-full rounded-lg border border-line bg-slate-50 px-3 text-sm font-bold text-ink outline-none focus:ring-2 focus:ring-brand/30 sm:min-w-[12rem]"
                     >
                       <option value="all">Tất cả người dùng</option>
                       {sortLoginUsers(loginUsers).map((user) => (
@@ -12941,19 +12968,28 @@ export default function Home() {
                       ))}
                     </select>
                   ) : (
-                    <div className="flex h-10 items-center rounded-lg border border-line bg-slate-50 px-3 text-sm font-bold text-muted">
+                    <div className="flex h-11 items-center rounded-lg border border-line bg-slate-50 px-3 text-sm font-bold text-muted">
                       Người dùng: {currentUser.username}
                     </div>
                   )}
-                  <label className="relative w-full">
-                    <Search size={16} className="absolute left-3 top-3 text-muted" />
+                  <label className="relative min-w-0 flex-1 sm:min-w-[14rem]">
+                    <Search size={16} className="absolute left-3 top-3.5 text-muted" />
                     <input
                       value={draftNoteQuery}
                       onChange={(e) => setDraftNoteQuery(e.target.value)}
                       placeholder="Tìm tiêu đề, tên, nội dung..."
-                      className="h-10 w-full rounded-lg border border-line bg-slate-50 pl-9 pr-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand/30"
+                      className="h-11 w-full rounded-lg border border-line bg-slate-50 pl-9 pr-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand/30"
                     />
                   </label>
+                  <button
+                    type="button"
+                    onClick={openNewDraftNote}
+                    disabled={draftNoteSaving || isAddingNew}
+                    className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-bold text-white hover:bg-brand-dark disabled:opacity-50"
+                  >
+                    <Plus size={18} />
+                    Thêm
+                  </button>
                 </div>
               </div>
 
@@ -12968,88 +13004,143 @@ export default function Home() {
                   <div className="grid min-h-[160px] place-items-center text-muted">
                     <Loader2 className="animate-spin" />
                   </div>
-                ) : draftNotes.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-line p-8 text-center text-sm font-semibold text-muted">
-                    Chưa có ghi nháp phù hợp.
-                  </div>
                 ) : (
-                  draftNotes.map((note) => {
-                    const isEditing = editingDraftNoteId === note.id;
-                    return (
-                      <article
-                        key={note.id}
-                        className={`overflow-hidden rounded-xl border bg-white ${
-                          isEditing ? "border-brand shadow-panel" : "border-line"
-                        }`}
-                      >
+                  <>
+                    {isAddingNew ? (
+                      <article className="overflow-hidden rounded-xl border border-brand bg-white shadow-panel">
                         <DraftNoteColumns
-                          title={isEditing ? draftNoteTitle : note.title}
-                          name={isEditing ? draftNoteName : note.name}
-                          content={isEditing ? draftNoteContent : note.content}
-                          editing={isEditing}
+                          title={draftNoteTitle}
+                          name={draftNoteName}
+                          content={draftNoteContent}
+                          editing
                           onTitleChange={setDraftNoteTitle}
                           onNameChange={setDraftNoteName}
                           onContentChange={setDraftNoteContent}
                         />
                         <div className="flex flex-col gap-3 border-t border-line bg-slate-50 px-3 py-2.5 lg:flex-row lg:items-center lg:justify-between">
-                          <div className="grid gap-1 text-xs font-bold text-muted sm:grid-cols-2 lg:flex lg:flex-wrap lg:gap-x-4">
-                            <span>Nhập: {note.createdBy || "Không rõ"} · {note.createdAt || "Chưa có giờ"}</span>
-                            <span>Sửa: {note.updatedBy || note.createdBy || "Không rõ"} · {note.updatedAt || note.createdAt || "Chưa có giờ"}</span>
-                            <span>Cửa hàng: {storeName(note.storeId)}</span>
+                          <div className="text-xs font-bold text-muted">
+                            Ghi nháp mới · {storeName(newStoreId)}
                           </div>
                           <div className="flex justify-end gap-2">
-                            {isEditing ? (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={cancelEditDraftNote}
-                                  disabled={draftNoteSaving}
-                                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-line bg-white px-3 text-xs font-black text-muted hover:bg-slate-50 disabled:opacity-50"
-                                >
-                                  <X size={15} />
-                                  Hủy sửa
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => void saveDraftNote()}
-                                  disabled={draftNoteSaving}
-                                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-black text-white hover:bg-brand-dark disabled:opacity-50"
-                                >
-                                  {draftNoteSaving ? (
-                                    <Loader2 size={15} className="animate-spin" />
-                                  ) : (
-                                    <Edit3 size={15} />
-                                  )}
-                                  Cập nhật
-                                </button>
-                              </>
-                            ) : (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => openEditDraftNote(note.id)}
-                                  disabled={draftNoteSaving}
-                                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand-soft px-3 text-xs font-black text-brand hover:bg-brand/20 disabled:opacity-50"
-                                >
-                                  <Edit3 size={15} />
-                                  Sửa
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => void cancelDraftNote(note.id)}
-                                  disabled={draftNoteSaving}
-                                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-red-50 px-3 text-xs font-black text-danger hover:bg-red-100 disabled:opacity-50"
-                                >
-                                  <Trash2 size={15} />
-                                  Hủy
-                                </button>
-                              </>
-                            )}
+                            <button
+                              type="button"
+                              onClick={cancelEditDraftNote}
+                              disabled={draftNoteSaving}
+                              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-line bg-white px-3 text-xs font-black text-muted hover:bg-slate-50 disabled:opacity-50"
+                            >
+                              <X size={15} />
+                              Hủy
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void saveDraftNote()}
+                              disabled={draftNoteSaving}
+                              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-black text-white hover:bg-brand-dark disabled:opacity-50"
+                            >
+                              {draftNoteSaving ? (
+                                <Loader2 size={15} className="animate-spin" />
+                              ) : (
+                                <Plus size={15} />
+                              )}
+                              Lưu ghi nháp
+                            </button>
                           </div>
                         </div>
                       </article>
-                    );
-                  })
+                    ) : null}
+                    {draftNotes.length === 0 && !isAddingNew ? (
+                      <div className="rounded-lg border border-dashed border-line p-8 text-center">
+                        <p className="text-sm font-semibold text-muted">Chưa có ghi nháp phù hợp.</p>
+                        <button
+                          type="button"
+                          onClick={openNewDraftNote}
+                          disabled={draftNoteSaving}
+                          className="mt-3 inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-bold text-white hover:bg-brand-dark disabled:opacity-50"
+                        >
+                          <Plus size={18} />
+                          Thêm ghi nháp
+                        </button>
+                      </div>
+                    ) : (
+                      draftNotes.map((note) => {
+                        const isEditing = editingDraftNoteId === note.id;
+                        return (
+                          <article
+                            key={note.id}
+                            className={`overflow-hidden rounded-xl border bg-white ${
+                              isEditing ? "border-brand shadow-panel" : "border-line"
+                            }`}
+                          >
+                            <DraftNoteColumns
+                              title={isEditing ? draftNoteTitle : note.title}
+                              name={isEditing ? draftNoteName : note.name}
+                              content={isEditing ? draftNoteContent : note.content}
+                              editing={isEditing}
+                              onTitleChange={setDraftNoteTitle}
+                              onNameChange={setDraftNoteName}
+                              onContentChange={setDraftNoteContent}
+                            />
+                            <div className="flex flex-col gap-3 border-t border-line bg-slate-50 px-3 py-2.5 lg:flex-row lg:items-center lg:justify-between">
+                              <div className="grid gap-1 text-xs font-bold text-muted sm:grid-cols-2 lg:flex lg:flex-wrap lg:gap-x-4">
+                                <span>Nhập: {note.createdBy || "Không rõ"} · {note.createdAt || "Chưa có giờ"}</span>
+                                <span>Sửa: {note.updatedBy || note.createdBy || "Không rõ"} · {note.updatedAt || note.createdAt || "Chưa có giờ"}</span>
+                                <span>Cửa hàng: {storeName(note.storeId)}</span>
+                              </div>
+                              <div className="flex justify-end gap-2">
+                                {isEditing ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={cancelEditDraftNote}
+                                      disabled={draftNoteSaving}
+                                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-line bg-white px-3 text-xs font-black text-muted hover:bg-slate-50 disabled:opacity-50"
+                                    >
+                                      <X size={15} />
+                                      Hủy sửa
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => void saveDraftNote()}
+                                      disabled={draftNoteSaving}
+                                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-black text-white hover:bg-brand-dark disabled:opacity-50"
+                                    >
+                                      {draftNoteSaving ? (
+                                        <Loader2 size={15} className="animate-spin" />
+                                      ) : (
+                                        <Edit3 size={15} />
+                                      )}
+                                      Cập nhật
+                                    </button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => openEditDraftNote(note.id)}
+                                      disabled={draftNoteSaving}
+                                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand-soft px-3 text-xs font-black text-brand hover:bg-brand/20 disabled:opacity-50"
+                                    >
+                                      <Edit3 size={15} />
+                                      Sửa
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => void cancelDraftNote(note.id)}
+                                      disabled={draftNoteSaving}
+                                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-red-50 px-3 text-xs font-black text-danger hover:bg-red-100 disabled:opacity-50"
+                                    >
+                                      <Trash2 size={15} />
+                                      Hủy
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </article>
+                        );
+                      })
+                    )}
+                  </>
                 )}
               </div>
             </section>
@@ -15833,6 +15924,14 @@ export default function Home() {
                     allowManage
                     allowFreeText
                     actorUsername={currentUser.username}
+                    onValueChange={(v) => {
+                      if (editingOnlineRepairId) return;
+                      if (!isDaThanhToanDeviceName(v)) return;
+                      const sel = document.getElementById(
+                        "software-order-payment-status"
+                      ) as HTMLSelectElement | null;
+                      if (sel) sel.value = "Đã thanh toán";
+                    }}
                   />
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -15937,6 +16036,7 @@ export default function Home() {
                   })()}
                   <Field label="Thanh toán" required>
                     <select
+                      id="software-order-payment-status"
                       name="paymentStatus"
                       required
                       defaultValue={onlineRepairFormDefaults?.paymentStatus ?? "NỢ DAI"}
