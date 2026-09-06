@@ -101,6 +101,7 @@ import {
   listPartInbounds as apiListPartInbounds,
   upsertPartInbound as apiUpsertPartInbound,
 } from "@/services/partsService";
+import { isUuid } from "@/lib/utils";
 import { PartsInventoryScreen } from "@/components/features/parts/PartsInventoryScreen";
 import {
   cancelManualDebt as apiCancelManualDebt,
@@ -666,61 +667,6 @@ type PartInbound = {
   retailPrice?: number | null;
 };
 
-const initialPartInboundsSeed: PartInbound[] = [
-  {
-    id: "part-seed-1",
-    createdAt: "2026-08-01 10:30",
-    storeId: "store-1",
-    distributor: "Linh Kiện Tín Thành",
-    partType: "Màn hình",
-    brand: "Apple",
-    partName: "iPhone 13 Pro Max",
-    color: "Đen",
-    quantity: 5,
-    costPrice: 2800000,
-    retailPrice: 3500000,
-  },
-  {
-    id: "part-seed-2",
-    createdAt: "2026-08-02 14:15",
-    storeId: "store-1",
-    distributor: "Phụ Kiện Hoàng Anh",
-    partType: "Pin",
-    brand: "Pisen",
-    partName: "iPhone 11",
-    color: "Trắng",
-    quantity: 10,
-    costPrice: 250000,
-    retailPrice: 450000,
-  },
-  {
-    id: "part-seed-3",
-    createdAt: "2026-08-03 09:00",
-    storeId: "store-2",
-    distributor: "Linh Kiện An Khang",
-    partType: "Màn hình",
-    brand: "Samsung",
-    partName: "Galaxy S22 Ultra",
-    color: "Xanh",
-    quantity: 3,
-    costPrice: 3200000,
-    retailPrice: 4000000,
-  },
-  {
-    id: "part-seed-4",
-    createdAt: "2026-08-04 16:45",
-    storeId: "store-3",
-    distributor: "Đại Lý Tiến Phát",
-    partType: "Kính ép",
-    brand: "Apple",
-    partName: "iPhone 12 Pro",
-    color: "Trong suốt",
-    quantity: 15,
-    costPrice: 120000,
-    retailPrice: 300000,
-  },
-];
-
 function uniquePartLabels(values: string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -1207,18 +1153,46 @@ function Field({
   );
 }
 
-const DRAFT_NOTE_COLS =
-  "lg:grid-cols-[minmax(0,20fr)_minmax(0,15fr)_minmax(0,65fr)]";
 const DRAFT_NOTE_LIST_COLS =
   "lg:grid-cols-[minmax(0,20fr)_minmax(0,65fr)_minmax(0,15fr)]";
 
 const DRAFT_NOTE_INPUT_CLASS =
-  "box-border min-h-[4.5rem] w-full rounded-lg border border-line bg-slate-50 px-3 py-2 text-base font-semibold leading-relaxed text-ink outline-none transition focus:border-brand focus:bg-white focus:ring-2 focus:ring-brand/20";
+  "box-border min-h-[4.5rem] w-full rounded-lg border border-line bg-white px-3 py-2 text-base font-semibold leading-relaxed text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20";
 
-function DraftNoteComposer({
+function DraftNoteCell({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="min-w-0 p-3">
+      <p className="mb-1.5 text-[11px] font-black uppercase tracking-wide text-muted">
+        {label}
+      </p>
+      {children}
+    </div>
+  );
+}
+
+function DraftNoteText({ value }: { value: string }) {
+  const text = value.trim();
+  if (!text) {
+    return <p className="text-base font-semibold text-muted">—</p>;
+  }
+  return (
+    <p className="whitespace-pre-wrap break-words text-base font-semibold leading-relaxed text-ink">
+      {text}
+    </p>
+  );
+}
+
+function DraftNoteColumns({
   title,
   name,
   content,
+  editing = false,
   onTitleChange,
   onNameChange,
   onContentChange,
@@ -1226,57 +1200,73 @@ function DraftNoteComposer({
   title: string;
   name: string;
   content: string;
-  onTitleChange: (value: string) => void;
-  onNameChange: (value: string) => void;
-  onContentChange: (value: string) => void;
+  editing?: boolean;
+  onTitleChange?: (value: string) => void;
+  onNameChange?: (value: string) => void;
+  onContentChange?: (value: string) => void;
 }) {
   const titleRef = useRef<HTMLTextAreaElement>(null);
-  const nameRef = useRef<HTMLTextAreaElement>(null);
   const contentRef = useRef<HTMLTextAreaElement>(null);
+  const nameRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    const els = [titleRef.current, nameRef.current, contentRef.current].filter(
+    if (!editing) return;
+    const els = [titleRef.current, contentRef.current, nameRef.current].filter(
       (el): el is HTMLTextAreaElement => Boolean(el)
     );
     for (const el of els) el.style.height = "auto";
     const next = Math.max(72, ...els.map((el) => el.scrollHeight));
     for (const el of els) el.style.height = `${next}px`;
-  }, [title, name, content]);
+  }, [editing, title, name, content]);
 
   return (
-    <div className={`grid w-full min-w-0 items-stretch gap-3 ${DRAFT_NOTE_COLS}`}>
-      <Field label="Tiêu đề" className="min-w-0">
-        <textarea
-          ref={titleRef}
-          value={title}
-          rows={2}
-          maxLength={200}
-          placeholder="Không bắt buộc"
-          onChange={(e) => onTitleChange(e.target.value)}
-          className={`${DRAFT_NOTE_INPUT_CLASS} resize-none overflow-hidden`}
-        />
-      </Field>
-      <Field label="Tên" className="min-w-0">
-        <textarea
-          ref={nameRef}
-          value={name}
-          rows={2}
-          maxLength={200}
-          placeholder="Không bắt buộc"
-          onChange={(e) => onNameChange(e.target.value)}
-          className={`${DRAFT_NOTE_INPUT_CLASS} resize-none overflow-hidden`}
-        />
-      </Field>
-      <Field label="Nội dung" required className="min-w-0">
-        <textarea
-          ref={contentRef}
-          value={content}
-          rows={2}
-          placeholder="Nhập nội dung..."
-          onChange={(e) => onContentChange(e.target.value)}
-          className={`${DRAFT_NOTE_INPUT_CLASS} resize-none overflow-hidden`}
-        />
-      </Field>
+    <div
+      className={`grid w-full min-w-0 divide-y divide-line lg:divide-x lg:divide-y-0 ${DRAFT_NOTE_LIST_COLS}`}
+    >
+      <DraftNoteCell label="Tiêu đề">
+        {editing ? (
+          <textarea
+            ref={titleRef}
+            value={title}
+            rows={2}
+            maxLength={200}
+            placeholder="Không bắt buộc"
+            onChange={(e) => onTitleChange?.(e.target.value)}
+            className={`${DRAFT_NOTE_INPUT_CLASS} resize-none overflow-hidden`}
+          />
+        ) : (
+          <DraftNoteText value={title} />
+        )}
+      </DraftNoteCell>
+      <DraftNoteCell label="Nội dung">
+        {editing ? (
+          <textarea
+            ref={contentRef}
+            value={content}
+            rows={2}
+            placeholder="Nhập nội dung..."
+            onChange={(e) => onContentChange?.(e.target.value)}
+            className={`${DRAFT_NOTE_INPUT_CLASS} resize-none overflow-hidden`}
+          />
+        ) : (
+          <DraftNoteText value={content} />
+        )}
+      </DraftNoteCell>
+      <DraftNoteCell label="Tên">
+        {editing ? (
+          <textarea
+            ref={nameRef}
+            value={name}
+            rows={2}
+            maxLength={200}
+            placeholder="Không bắt buộc"
+            onChange={(e) => onNameChange?.(e.target.value)}
+            className={`${DRAFT_NOTE_INPUT_CLASS} resize-none overflow-hidden`}
+          />
+        ) : (
+          <DraftNoteText value={name} />
+        )}
+      </DraftNoteCell>
     </div>
   );
 }
@@ -1467,7 +1457,7 @@ export default function Home() {
   const [shopRepairPaying, setShopRepairPaying] = useState(false);
 
   /** Nhập hàng — phiếu nhập (DB part_inbounds, page id `parts` & `inbound`). */
-  const [partInbounds, setPartInbounds] = useState<PartInbound[]>(initialPartInboundsSeed);
+  const [partInbounds, setPartInbounds] = useState<PartInbound[]>([]);
   const [partLoading, setPartLoading] = useState(false);
   const [partSaving, setPartSaving] = useState(false);
   const [partBackendError, setPartBackendError] = useState("");
@@ -1492,20 +1482,18 @@ export default function Home() {
   const [partBrand, setPartBrand] = useState("");
   const [partDeviceModel, setPartDeviceModel] = useState("");
   const [partColor, setPartColor] = useState("");
-  /** Dòng linh kiện (tên + giá nhập + giá thay + SL) — tạo mới nhiều dòng; sửa = 1 dòng. */
+  /** Dòng linh kiện (tên) — tạo mới nhiều dòng; sửa = 1 dòng. SL ẩn, mặc định 1 khi lưu mới. */
   type PartLineDraft = {
     key: string;
     name: string;
     costPrice: string;
     retailPrice: string;
-    quantity: string;
   };
   const emptyPartLine = (): PartLineDraft => ({
     key: "pl-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7),
     name: "",
     costPrice: "",
     retailPrice: "",
-    quantity: "1",
   });
   const [partLines, setPartLines] = useState<PartLineDraft[]>(() => [emptyPartLine()]);
 
@@ -1832,12 +1820,7 @@ export default function Home() {
         return;
       }
       const rows = await apiListPartInbounds(scope, currentUser.username);
-      const list =
-        Array.isArray(rows) && rows.length > 0
-          ? rows
-          : initialPartInboundsSeed.filter(
-              (p) => !scope || p.storeId === scope
-            );
+      const list = Array.isArray(rows) ? rows : [];
       setPartInbounds(list);
       setPartPage(1);
       setSelectedPartIds((prev) => prev.filter((id) => list.some((p) => p.id === id)));
@@ -3719,7 +3702,6 @@ export default function Home() {
         name: row.partName,
         costPrice: row.costPrice != null ? formatInputMoney(row.costPrice) : "",
         retailPrice: row.retailPrice != null ? formatInputMoney(row.retailPrice) : "",
-        quantity: String(row.quantity > 0 ? row.quantity : 1),
       },
     ]);
     setPartFormKey((k) => k + 1);
@@ -3747,7 +3729,6 @@ export default function Home() {
         name: row.partName,
         costPrice: row.costPrice != null ? formatInputMoney(row.costPrice) : "",
         retailPrice: row.retailPrice != null ? formatInputMoney(row.retailPrice) : "",
-        quantity: String(row.quantity > 0 ? row.quantity : 1),
       },
     ]);
     setPartFormKey((k) => k + 1);
@@ -3769,19 +3750,9 @@ export default function Home() {
 
   function updatePartLine(
     key: string,
-    patch: Partial<Pick<PartLineDraft, "name" | "costPrice" | "retailPrice" | "quantity">>
+    patch: Partial<Pick<PartLineDraft, "name" | "costPrice" | "retailPrice">>
   ) {
     setPartLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
-  }
-
-  function bumpPartLineQty(key: string, delta: number) {
-    setPartLines((prev) =>
-      prev.map((l) => {
-        if (l.key !== key) return l;
-        const current = Math.max(0, Number(String(l.quantity).replace(/[^\d]/g, "")) || 0);
-        return { ...l, quantity: String(Math.max(1, current + delta)) };
-      })
-    );
   }
 
   async function handleSavePartInbound(e: FormEvent<HTMLFormElement>) {
@@ -3790,9 +3761,14 @@ export default function Home() {
     const form = new FormData(e.currentTarget);
     const distributor = String(form.get("distributor") || partDistributor || "").trim();
     const partTypeVal = String(form.get("partType") || partType || "").trim();
-    const brandVal = String(form.get("brand") || partBrand || "").trim();
+    const isEdit = Boolean(editingPartId);
+    const brandVal = isEdit
+      ? String(form.get("brand") || partBrand || "").trim()
+      : "";
     const deviceModelVal = String(form.get("deviceModel") || partDeviceModel || "").trim();
-    const colorVal = String(form.get("color") || partColor || "").trim();
+    const colorVal = isEdit
+      ? String(form.get("color") || partColor || "").trim()
+      : "";
 
     if (!distributor) {
       window.alert("Nhập nhà phân phối.");
@@ -3807,10 +3783,9 @@ export default function Home() {
       .map((l) => {
         const rawName = l.name.trim();
         const name = rawName || deviceModelVal || partTypeVal;
-        const quantity = Math.max(0, Number(String(l.quantity).replace(/[^\d]/g, "")) || 0);
         const costPrice = parseInputMoney(l.costPrice);
         const retailPrice = parseInputMoney(l.retailPrice);
-        return { name, quantity, costPrice, retailPrice };
+        return { name, costPrice, retailPrice };
       })
       .filter((l) => l.name.length > 0);
 
@@ -3818,14 +3793,8 @@ export default function Home() {
       window.alert("Nhập hoặc chọn Thuộc Tên Máy / Tên linh kiện.");
       return;
     }
-    const badQty = linesToSave.find((l) => l.quantity <= 0);
-    if (badQty) {
-      window.alert("Số lượng «" + badQty.name + "» phải lớn hơn 0.");
-      return;
-    }
 
     const storeId = resolvePartsStoreId();
-    const isEdit = Boolean(editingPartId);
     const existing = isEdit ? partInbounds.find((p) => p.id === editingPartId) : null;
 
     if (isEdit && existing) {
@@ -3834,14 +3803,14 @@ export default function Home() {
       setPartBackendError("");
       try {
         const saved = await apiUpsertPartInbound({
-          id: existing.id,
+          id: isUuid(existing.id) ? existing.id : undefined,
           storeId: existing.storeId,
           distributor,
           partType: partTypeVal,
           partName: only.name,
           brand: brandVal,
           color: colorVal,
-          quantity: only.quantity,
+          quantity: Math.max(1, existing.quantity || 1),
           costPrice: only.costPrice,
           retailPrice: only.retailPrice,
           actorUsername: currentUser.username,
@@ -3859,10 +3828,13 @@ export default function Home() {
           costPrice: saved.costPrice ?? null,
           retailPrice: saved.retailPrice ?? null,
         };
-        setPartInbounds((prev) => prev.map((p) => (p.id === next.id ? next : p)));
+        setPartInbounds((prev) => [
+          next,
+          ...prev.filter((p) => p.id !== existing.id && p.id !== next.id),
+        ]);
         pushLog(
           "Sửa phiếu linh kiện",
-          `${saved.partType} — ${saved.brand ? `${saved.brand} · ` : ""}${saved.partName}${saved.color ? ` · ${saved.color}` : ""} ×${saved.quantity} (${saved.distributor})`,
+          `${saved.partType} — ${saved.brand ? `${saved.brand} · ` : ""}${saved.partName}${saved.color ? ` · ${saved.color}` : ""} (${saved.distributor})`,
           saved.storeId
         );
         showUiToast("success", "Đã cập nhật linh kiện «" + saved.partName + "».");
@@ -3892,7 +3864,7 @@ export default function Home() {
             partName: line.name,
             brand: brandVal,
             color: colorVal,
-            quantity: line.quantity,
+            quantity: 1,
             costPrice: line.costPrice,
             retailPrice: line.retailPrice,
             actorUsername: currentUser.username,
@@ -3932,7 +3904,7 @@ export default function Home() {
           "success",
           savedRows.length === 1
             ? "Đã lưu phiếu nhập «" + savedRows[0].partName + "»."
-            : "Đã lưu " + savedRows.length + " phiếu nhập (tách từng tên + SL)."
+            : "Đã lưu " + savedRows.length + " phiếu nhập (tách từng tên)."
         );
         closePartInboundForm();
       } else if (savedRows.length === 0) {
@@ -3966,12 +3938,14 @@ export default function Home() {
     setPartSaving(true);
     setPartBackendError("");
     try {
-      await apiDeletePartInbound(id);
+      if (isUuid(id)) {
+        await apiDeletePartInbound(id);
+      }
       setPartInbounds((prev) => prev.filter((p) => p.id !== id));
       setSelectedPartIds((prev) => prev.filter((x) => x !== id));
       pushLog(
         "Xóa phiếu nhập hàng",
-        `${row.partType} — ${row.partName} ×${row.quantity}`,
+        `${row.partType} — ${row.partName}`,
         row.storeId
       );
       showUiToast("success", `Đã xóa phiếu «${row.partName}».`);
@@ -3996,7 +3970,7 @@ export default function Home() {
     }
     const preview = toDelete
       .slice(0, 5)
-      .map((p) => `• ${p.partName} ×${p.quantity}`)
+      .map((p) => `• ${p.partName}`)
       .join("\n");
     const more =
       toDelete.length > 5 ? `\n… và ${toDelete.length - 5} phiếu khác` : "";
@@ -4018,7 +3992,9 @@ export default function Home() {
       // Tuần tự — pool DB max=1
       for (const row of toDelete) {
         try {
-          await apiDeletePartInbound(row.id);
+          if (isUuid(row.id)) {
+            await apiDeletePartInbound(row.id);
+          }
           successIds.push(row.id);
         } catch (err) {
           failedNames.push(row.partName || row.id);
@@ -5918,9 +5894,8 @@ export default function Home() {
     setDraftNoteContent("");
   }
 
-  async function saveDraftNote(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!currentUser || draftNoteSaving) return;
+  async function saveDraftNote() {
+    if (!currentUser || draftNoteSaving || !editingDraftNoteId) return;
     const title = draftNoteTitle.trim();
     const name = draftNoteName.trim();
     const content = draftNoteContent.trim();
@@ -5928,16 +5903,18 @@ export default function Home() {
       showUiToast("error", "Nội dung ghi nháp không được trống.");
       return;
     }
+    const row = draftNotes.find((note) => note.id === editingDraftNoteId);
     const storeId: Exclude<StoreId, "all"> =
-      currentUser.role === "staff"
+      row?.storeId ??
+      (currentUser.role === "staff"
         ? currentUser.storeId
         : storeFilter !== "all"
           ? storeFilter
-          : currentUser.storeId || "store-1";
+          : currentUser.storeId || "store-1");
     setDraftNoteSaving(true);
     try {
       const saved = await apiUpsertDraftNote({
-        id: editingDraftNoteId ?? undefined,
+        id: editingDraftNoteId,
         storeId,
         title,
         name,
@@ -5945,15 +5922,12 @@ export default function Home() {
         actorUsername: currentUser.username,
       });
       pushLog(
-        editingDraftNoteId ? "Sửa ghi nháp" : "Thêm ghi nháp",
+        "Sửa ghi nháp",
         [saved.title, saved.name, saved.content].filter(Boolean).join(" — ").slice(0, 80),
         saved.storeId
       );
-      showUiToast("success", editingDraftNoteId ? "Đã cập nhật ghi nháp." : "Đã lưu ghi nháp.");
-      setEditingDraftNoteId(null);
-      setDraftNoteTitle("");
-      setDraftNoteName("");
-      setDraftNoteContent("");
+      showUiToast("success", "Đã cập nhật ghi nháp.");
+      cancelEditDraftNote();
       await reloadDraftNotes();
     } catch (err) {
       showUiToast("error", toUiError(err));
@@ -8513,16 +8487,12 @@ export default function Home() {
                 p.brand,
                 p.partName,
                 p.color,
-                String(p.quantity),
               ]
                 .join(" ")
                 .toLowerCase();
               return hay.includes(q);
             })
             .sort((a, b) => {
-              // Grid: createdAt → nhà phân phối → loại → hãng
-              const byDate = b.createdAt.localeCompare(a.createdAt);
-              if (byDate !== 0) return byDate;
               const byDist = a.distributor.localeCompare(b.distributor, "vi", {
                 sensitivity: "base",
               });
@@ -8531,14 +8501,21 @@ export default function Home() {
                 sensitivity: "base",
               });
               if (byType !== 0) return byType;
-              const byBrand = (a.brand || "").localeCompare(b.brand || "", "vi", {
+              const byName = a.partName.localeCompare(b.partName, "vi", {
                 sensitivity: "base",
               });
-              if (byBrand !== 0) return byBrand;
+              if (byName !== 0) return byName;
+              const byDate = b.createdAt.localeCompare(a.createdAt);
+              if (byDate !== 0) return byDate;
+              const byStore = storeName(a.storeId).localeCompare(
+                storeName(b.storeId),
+                "vi",
+                { sensitivity: "base" }
+              );
+              if (byStore !== 0) return byStore;
               return b.id.localeCompare(a.id);
             });
           const activeCount = list.length;
-          const totalQty = list.reduce((s, p) => s + p.quantity, 0);
           const partTotalPages = Math.max(1, Math.ceil(activeCount / partPageSize));
           const safePartPage = Math.min(partPage, partTotalPages);
           const partStart = (safePartPage - 1) * partPageSize;
@@ -8561,8 +8538,7 @@ export default function Home() {
                   <div>
                     <h2 className="text-xl font-black text-ink">Nhập hàng</h2>
                     <p className="text-sm font-semibold text-muted">
-                      {storeName(storeFilter)} · {activeCount.toLocaleString("vi-VN")} phiếu /{" "}
-                      {totalQty.toLocaleString("vi-VN")} cái
+                      {storeName(storeFilter)} · {activeCount.toLocaleString("vi-VN")} phiếu
                       {partInbounds.length > 0 && activeCount === 0
                         ? " · (lọc đang ẩn hết — chọn Tất cả NPP/loại)"
                         : ""}
@@ -8606,7 +8582,7 @@ export default function Home() {
                   onClick={closePartInboundForm}
                 >
                   <section
-                    className="max-h-[92vh] w-full max-w-3xl overflow-auto rounded-2xl border border-white/20 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.4)]"
+                    className="max-h-[92vh] w-full max-w-2xl overflow-auto rounded-2xl border border-white/20 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.4)]"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <div className="flex items-start justify-between gap-3 border-b border-line bg-gradient-to-r from-brand/10 to-transparent p-4 sm:p-5">
@@ -8673,147 +8649,108 @@ export default function Home() {
                           onValueChange={setPartType}
                           onManageNotify={(type, message) => showUiToast(type, message)}
                         />
-                        <ManageableSelect
-                          key={`part-brand-${partCascadeKey}-${partsLookupStoreId}`}
-                          label="Hãng"
-                          name="brand"
-                          options={partBrandOptions}
-                          setOptions={setPartBrandOptions}
-                          defaultValue={partBrand}
-                          required={false}
-                          allowFreeText
-                          allowManage
-                          categoryCode={PART_LOOKUP_CATEGORIES.brand}
-                          storeId={partsLookupStoreId}
-                          onRenameCascade={reloadPartLookupsAndRows}
-                          actorUsername={currentUser?.username ?? ""}
-                          onValueChange={setPartBrand}
-                          onManageNotify={(type, message) => showUiToast(type, message)}
-                        />
-                        <ManageableSelect
-                          key={`part-color-${partCascadeKey}-${partsLookupStoreId}`}
-                          label="Màu sắc"
-                          name="color"
-                          options={partColorOptions}
-                          setOptions={setPartColorOptions}
-                          defaultValue={partColor}
-                          required={false}
-                          allowFreeText
-                          allowManage
-                          categoryCode={PART_LOOKUP_CATEGORIES.color}
-                          storeId={partsLookupStoreId}
-                          onRenameCascade={reloadPartLookupsAndRows}
-                          actorUsername={currentUser?.username ?? ""}
-                          onValueChange={setPartColor}
-                          onManageNotify={(type, message) => showUiToast(type, message)}
-                        />
+                        {isEditMode ? (
+                          <>
+                            <ManageableSelect
+                              key={`part-brand-${partCascadeKey}-${partsLookupStoreId}`}
+                              label="Hãng"
+                              name="brand"
+                              options={partBrandOptions}
+                              setOptions={setPartBrandOptions}
+                              defaultValue={partBrand}
+                              required={false}
+                              allowFreeText
+                              allowManage
+                              categoryCode={PART_LOOKUP_CATEGORIES.brand}
+                              storeId={partsLookupStoreId}
+                              onRenameCascade={reloadPartLookupsAndRows}
+                              actorUsername={currentUser?.username ?? ""}
+                              onValueChange={setPartBrand}
+                              onManageNotify={(type, message) => showUiToast(type, message)}
+                            />
+                            <ManageableSelect
+                              key={`part-color-${partCascadeKey}-${partsLookupStoreId}`}
+                              label="Màu sắc"
+                              name="color"
+                              options={partColorOptions}
+                              setOptions={setPartColorOptions}
+                              defaultValue={partColor}
+                              required={false}
+                              allowFreeText
+                              allowManage
+                              categoryCode={PART_LOOKUP_CATEGORIES.color}
+                              storeId={partsLookupStoreId}
+                              onRenameCascade={reloadPartLookupsAndRows}
+                              actorUsername={currentUser?.username ?? ""}
+                              onValueChange={setPartColor}
+                              onManageNotify={(type, message) => showUiToast(type, message)}
+                            />
+                          </>
+                        ) : null}
                       </div>
 
-                      <div className="rounded-xl border border-line bg-slate-50/80 p-3 sm:p-4">
-                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                          <div>
-                            <p className="text-sm font-black text-ink">Linh kiện</p>
-                            <p className="text-xs font-semibold text-muted">
-                              {isEditMode
-                                ? "Sửa 1 phiếu: chỉ 1 dòng tên + SL"
-                                : "Cùng NPP/loại/hãng/màu — mỗi dòng tên + SL lưu thành 1 phiếu riêng trên grid"}
-                            </p>
-                          </div>
-                          {!isEditMode ? (
-                            <button
-                              type="button"
-                              onClick={addPartLine}
-                              disabled={partSaving || partLines.length >= 20}
-                              className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-3 text-sm font-bold text-white hover:bg-brand-dark disabled:opacity-50"
-                            >
-                              <Plus size={16} />
-                              Thêm linh kiện
-                            </button>
-                          ) : null}
-                        </div>
-                        <div className="grid gap-3">
-                          {partLines.map((line, idx) => (
-                            <div
-                              key={line.key}
-                              className="grid gap-2 rounded-lg border border-line bg-white p-3 sm:grid-cols-[minmax(0,1fr)_7.5rem_auto] sm:items-end"
-                            >
-                              <Field label={`Tên linh kiện #${idx + 1}`} required>
-                                <input
-                                  value={line.name}
-                                  onChange={(e) =>
-                                    updatePartLine(line.key, { name: e.target.value })
-                                  }
-                                  autoComplete="off"
-                                  placeholder="Tên / model linh kiện"
-                                  className="h-11 w-full rounded-lg border border-line px-3 text-sm font-semibold outline-none ring-brand/30 focus:ring-2"
-                                />
-                              </Field>
-                              <Field label="SL" required>
-                                <div className="flex h-11 w-full overflow-hidden rounded-lg border border-line bg-white focus-within:ring-2 focus-within:ring-brand/30">
-                                  <input
-                                    value={line.quantity}
-                                    onChange={(e) =>
-                                      updatePartLine(line.key, {
-                                        quantity: e.target.value.replace(/[^\d]/g, ""),
-                                      })
-                                    }
-                                    onBlur={() => {
-                                      const n = Number(
-                                        String(line.quantity || "").replace(/[^\d]/g, "")
-                                      );
-                                      if (!n || n < 1) {
-                                        updatePartLine(line.key, { quantity: "1" });
-                                      }
-                                    }}
-                                    autoComplete="off"
-                                    inputMode="numeric"
-                                    placeholder="1"
-                                    className="h-full min-w-0 flex-1 border-0 bg-transparent px-3 text-center text-sm font-black tabular-nums text-ink outline-none"
-                                  />
-                                  <div className="flex w-9 shrink-0 flex-col border-l border-line">
-                                    <button
-                                      type="button"
-                                      onClick={() => bumpPartLineQty(line.key, 1)}
-                                      disabled={partSaving}
-                                      title="Tăng 1"
-                                      className="inline-flex h-1/2 w-full items-center justify-center border-b border-line bg-slate-50 text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
-                                    >
-                                      <Plus size={14} />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => bumpPartLineQty(line.key, -1)}
-                                      disabled={partSaving}
-                                      title="Giảm 1"
-                                      className="inline-flex h-1/2 w-full items-center justify-center bg-slate-50 text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
-                                    >
-                                      <Minus size={14} />
-                                    </button>
-                                  </div>
-                                </div>
-                              </Field>
-                              {!isEditMode && partLines.length > 1 ? (
+                      <div className="grid gap-2">
+                        {partLines.map((line, idx) => {
+                          const isLast = idx === partLines.length - 1;
+                          const nameInput = (
+                            <input
+                              value={line.name}
+                              onChange={(e) =>
+                                updatePartLine(line.key, { name: e.target.value })
+                              }
+                              autoComplete="off"
+                              placeholder="Tên / model linh kiện"
+                              className="h-11 w-full rounded-lg border border-line px-3 text-sm font-semibold outline-none ring-brand/30 focus:ring-2"
+                            />
+                          );
+                          const rowActions = !isEditMode ? (
+                            <div className="flex h-11 shrink-0 items-center gap-1.5">
+                              {partLines.length > 1 ? (
                                 <button
                                   type="button"
                                   onClick={() => removePartLine(line.key)}
                                   disabled={partSaving}
                                   title="Xóa dòng"
-                                  className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-red-50 text-danger hover:bg-red-100 disabled:opacity-50 sm:mb-0"
+                                  className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-red-50 text-danger hover:bg-red-100 disabled:opacity-50"
                                 >
                                   <Trash2 size={16} />
                                 </button>
-                              ) : (
-                                <span className="hidden sm:block" />
-                              )}
+                              ) : null}
+                              {isLast ? (
+                                <button
+                                  type="button"
+                                  onClick={addPartLine}
+                                  disabled={partSaving || partLines.length >= 20}
+                                  title="Thêm linh kiện"
+                                  className="inline-flex h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg bg-brand px-3 text-sm font-bold text-white hover:bg-brand-dark disabled:opacity-50"
+                                >
+                                  <Plus size={16} />
+                                  Thêm linh kiện
+                                </button>
+                              ) : null}
                             </div>
-                          ))}
-                        </div>
+                          ) : null;
+                          return (
+                            <div
+                              key={line.key}
+                              className={
+                                isEditMode
+                                  ? "grid gap-2"
+                                  : "grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"
+                              }
+                            >
+                              {idx === 0 ? (
+                                <Field label="Tên linh kiện" required>
+                                  {nameInput}
+                                </Field>
+                              ) : (
+                                nameInput
+                              )}
+                              {rowActions}
+                            </div>
+                          );
+                        })}
                       </div>
-
-                      <p className="text-xs font-semibold text-muted">
-                        Chọn hoặc nhập NPP / loại / hãng / màu một lần. Bấm «Thêm linh kiện»
-                        để thêm dòng tên + SL. Hãng và màu không bắt buộc.
-                      </p>
                       <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line pt-4">
                         <button
                           type="button"
@@ -8858,8 +8795,9 @@ export default function Home() {
                   <div>
                     <h3 className="text-lg font-black text-ink">Danh sách nhập</h3>
                     <p className="text-xs font-semibold text-muted">
-                      Sắp xếp ngày → NPP → loại → hãng · {activeCount.toLocaleString("vi-VN")} bản ghi
-                      · trang {safePartPage}/{partTotalPages}
+                      Sắp xếp NPP → loại LK → tên LK → ngày → cửa hàng ·{" "}
+                      {activeCount.toLocaleString("vi-VN")} bản ghi · trang {safePartPage}/
+                      {partTotalPages}
                     </p>
                   </div>
                   <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
@@ -8918,7 +8856,7 @@ export default function Home() {
                           setPartPage(1);
                           setSelectedPartIds([]);
                         }}
-                        placeholder="Tìm loại, hãng, tên, màu…"
+                        placeholder="Tìm NPP, loại, tên LK…"
                         className="h-10 w-full rounded-lg border border-line bg-slate-50 py-2 pl-9 pr-3 text-sm font-semibold outline-none ring-brand/30 focus:bg-white focus:ring-2"
                       />
                     </div>
@@ -8962,14 +8900,11 @@ export default function Home() {
                             }}
                           />
                         </th>
-                        <th className="whitespace-nowrap px-3 py-3">Ngày</th>
-                        <th className="whitespace-nowrap px-3 py-3">CH</th>
                         <th className="min-w-[9rem] px-3 py-3">Nhà phân phối</th>
-                        <th className="whitespace-nowrap px-3 py-3">Loại</th>
-                        <th className="whitespace-nowrap px-3 py-3">Hãng</th>
+                        <th className="whitespace-nowrap px-3 py-3">Loại LK</th>
                         <th className="min-w-[9rem] px-3 py-3">Tên LK</th>
-                        <th className="whitespace-nowrap px-3 py-3">Màu</th>
-                        <th className="whitespace-nowrap px-3 py-3 text-right">SL</th>
+                        <th className="whitespace-nowrap px-3 py-3">Ngày</th>
+                        <th className="whitespace-nowrap px-3 py-3">Cửa hàng</th>
                         <th className="whitespace-nowrap px-3 py-3 text-center">Thao tác</th>
                       </tr>
                     </thead>
@@ -8977,7 +8912,7 @@ export default function Home() {
                       {activeCount === 0 ? (
                         <tr>
                           <td
-                            colSpan={10}
+                            colSpan={7}
                             className="px-4 py-10 text-center text-sm font-semibold text-muted"
                           >
                             Chưa có phiếu nhập phù hợp.
@@ -9016,27 +8951,18 @@ export default function Home() {
                                 }}
                               />
                             </td>
-                            <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">
-                              {formatDateVi(row.createdAt)}
-                            </td>
-                            <td className="whitespace-nowrap px-3 py-2.5 text-xs font-bold text-muted">
-                              {storeName(row.storeId)}
-                            </td>
                             <td className="px-3 py-2.5 font-bold text-ink">{row.distributor}</td>
                             <td className="px-3 py-2.5">
                               <span className="inline-flex rounded-full bg-brand-soft px-2 py-0.5 text-xs font-bold text-brand-dark">
                                 {row.partType}
                               </span>
                             </td>
-                            <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">
-                              {row.brand?.trim() ? row.brand : "—"}
-                            </td>
                             <td className="px-3 py-2.5 font-semibold text-ink">{row.partName}</td>
                             <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">
-                              {row.color?.trim() ? row.color : "—"}
+                              {formatDateVi(row.createdAt)}
                             </td>
-                            <td className="whitespace-nowrap px-3 py-2.5 text-right font-black text-ink">
-                              {row.quantity.toLocaleString("vi-VN")}
+                            <td className="whitespace-nowrap px-3 py-2.5 text-xs font-bold text-muted">
+                              {storeName(row.storeId)}
                             </td>
                             <td className="px-3 py-2.5">
                               <div className="flex flex-nowrap items-center justify-center gap-1.5">
@@ -12989,177 +12915,143 @@ export default function Home() {
 
         {activePage === "draft-notes" && currentUser && (() => {
           return (
-            <section className="grid gap-4">
-              <section className="rounded-lg border border-line bg-white p-5 shadow-panel">
-                <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <h2 className="text-xl font-black text-ink">
-                      {editingDraftNoteId ? "Sửa ghi nháp" : "Tạo ghi nháp"}
-                    </h2>
-                    <p className="text-sm font-semibold text-muted">
-                      Free text để ghi nhanh nội dung cần nhớ. Lưu theo {storeName(
-                        currentUser.role === "staff"
-                          ? currentUser.storeId
-                          : storeFilter !== "all"
-                            ? storeFilter
-                            : currentUser.storeId
-                      )}.
-                    </p>
-                  </div>
-                  {editingDraftNoteId ? (
-                    <button
-                      type="button"
-                      onClick={cancelEditDraftNote}
-                      disabled={draftNoteSaving}
-                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-line bg-white px-4 text-sm font-bold text-muted disabled:opacity-50"
-                    >
-                      <X size={16} />
-                      Hủy sửa
-                    </button>
-                  ) : null}
+            <section className="rounded-lg border border-line bg-white shadow-panel">
+              <div className="flex flex-col gap-3 border-b border-line p-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <h2 className="text-xl font-black text-ink">Ghi nháp</h2>
+                  <p className="text-sm font-semibold text-muted">
+                    {draftNoteLoading
+                      ? "Đang tải..."
+                      : `${draftNotes.length.toLocaleString("vi-VN")} ghi nháp · bấm Sửa để chỉnh trên danh sách`}
+                  </p>
                 </div>
-                <form onSubmit={saveDraftNote} className="grid gap-3">
-                  <DraftNoteComposer
-                    title={draftNoteTitle}
-                    name={draftNoteName}
-                    content={draftNoteContent}
-                    onTitleChange={setDraftNoteTitle}
-                    onNameChange={setDraftNoteName}
-                    onContentChange={setDraftNoteContent}
-                  />
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <span className="text-xs font-bold text-muted">
-                      Người thao tác: {currentUser.username} · {storeName(
-                        currentUser.role === "staff"
-                          ? currentUser.storeId
-                          : storeFilter !== "all"
-                            ? storeFilter
-                            : currentUser.storeId
-                      )}
-                    </span>
-                    <button
-                      type="submit"
-                      disabled={draftNoteSaving}
-                      className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-brand px-5 text-sm font-black text-white hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-60"
+                <div className="grid w-full gap-2 sm:grid-cols-2 lg:max-w-2xl">
+                  {currentUser.role === "owner" ? (
+                    <select
+                      value={draftNoteUserFilter || currentUser.username}
+                      onChange={(e) => setDraftNoteUserFilter(e.target.value)}
+                      aria-label="Lọc ghi nháp theo người dùng"
+                      className="h-10 w-full rounded-lg border border-line bg-slate-50 px-3 text-sm font-bold text-ink outline-none focus:ring-2 focus:ring-brand/30"
                     >
-                      {draftNoteSaving ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
-                      {editingDraftNoteId ? "Cập nhật ghi nháp" : "Lưu ghi nháp"}
-                    </button>
-                  </div>
-                </form>
-              </section>
-
-              <section className="rounded-lg border border-line bg-white shadow-panel">
-                <div className="flex flex-col gap-3 border-b border-line p-4 lg:flex-row lg:items-center lg:justify-between">
-                  <div>
-                    <h2 className="text-xl font-black text-ink">Danh sách ghi nháp</h2>
-                    <p className="text-sm font-semibold text-muted">
-                      {draftNoteLoading ? "Đang tải..." : `${draftNotes.length.toLocaleString("vi-VN")} ghi nháp`}
-                    </p>
-                  </div>
-                  <div className="grid w-full gap-2 sm:grid-cols-2 lg:max-w-2xl">
-                    {currentUser.role === "owner" ? (
-                      <select
-                        value={draftNoteUserFilter || currentUser.username}
-                        onChange={(e) => setDraftNoteUserFilter(e.target.value)}
-                        aria-label="Lọc ghi nháp theo người dùng"
-                        className="h-10 w-full rounded-lg border border-line bg-slate-50 px-3 text-sm font-bold text-ink outline-none focus:ring-2 focus:ring-brand/30"
-                      >
-                        <option value="all">Tất cả người dùng</option>
-                        {sortLoginUsers(loginUsers).map((user) => (
-                          <option key={user.username} value={user.username}>
-                            {user.name} ({user.username})
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <div className="flex h-10 items-center rounded-lg border border-line bg-slate-50 px-3 text-sm font-bold text-muted">
-                        Người dùng: {currentUser.username}
-                      </div>
-                    )}
-                    <label className="relative w-full">
-                      <Search size={16} className="absolute left-3 top-3 text-muted" />
-                      <input
-                        value={draftNoteQuery}
-                        onChange={(e) => setDraftNoteQuery(e.target.value)}
-                        placeholder="Tìm tiêu đề, tên, nội dung..."
-                        className="h-10 w-full rounded-lg border border-line bg-slate-50 pl-9 pr-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand/30"
-                      />
-                    </label>
-                  </div>
-                </div>
-
-                {draftNoteError ? (
-                  <div className="m-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-danger">
-                    {draftNoteError}
-                  </div>
-                ) : null}
-
-                <div className="grid gap-3 p-4">
-                  {draftNotes.length > 0 && !draftNoteLoading ? (
-                    <div className={`hidden gap-3 px-3 text-xs font-black uppercase tracking-wide text-muted lg:grid ${DRAFT_NOTE_LIST_COLS}`}>
-                      <span>Tiêu đề</span>
-                      <span>Nội dung</span>
-                      <span>Tên</span>
-                    </div>
-                  ) : null}
-                  {draftNoteLoading ? (
-                    <div className="grid min-h-[160px] place-items-center text-muted">
-                      <Loader2 className="animate-spin" />
-                    </div>
-                  ) : draftNotes.length === 0 ? (
-                    <div className="rounded-lg border border-dashed border-line p-8 text-center text-sm font-semibold text-muted">
-                      Chưa có ghi nháp phù hợp.
-                    </div>
+                      <option value="all">Tất cả người dùng</option>
+                      {sortLoginUsers(loginUsers).map((user) => (
+                        <option key={user.username} value={user.username}>
+                          {user.name} ({user.username})
+                        </option>
+                      ))}
+                    </select>
                   ) : (
-                    draftNotes.map((note) => (
+                    <div className="flex h-10 items-center rounded-lg border border-line bg-slate-50 px-3 text-sm font-bold text-muted">
+                      Người dùng: {currentUser.username}
+                    </div>
+                  )}
+                  <label className="relative w-full">
+                    <Search size={16} className="absolute left-3 top-3 text-muted" />
+                    <input
+                      value={draftNoteQuery}
+                      onChange={(e) => setDraftNoteQuery(e.target.value)}
+                      placeholder="Tìm tiêu đề, tên, nội dung..."
+                      className="h-10 w-full rounded-lg border border-line bg-slate-50 pl-9 pr-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand/30"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {draftNoteError ? (
+                <div className="m-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-danger">
+                  {draftNoteError}
+                </div>
+              ) : null}
+
+              <div className="grid gap-3 p-4">
+                {draftNoteLoading ? (
+                  <div className="grid min-h-[160px] place-items-center text-muted">
+                    <Loader2 className="animate-spin" />
+                  </div>
+                ) : draftNotes.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-line p-8 text-center text-sm font-semibold text-muted">
+                    Chưa có ghi nháp phù hợp.
+                  </div>
+                ) : (
+                  draftNotes.map((note) => {
+                    const isEditing = editingDraftNoteId === note.id;
+                    return (
                       <article
                         key={note.id}
-                        className="rounded-lg border border-line bg-slate-50 p-4 transition hover:border-brand/30 hover:bg-white"
+                        className={`overflow-hidden rounded-xl border bg-white ${
+                          isEditing ? "border-brand shadow-panel" : "border-line"
+                        }`}
                       >
-                        <div className={`grid gap-3 rounded-lg bg-black p-3 text-gold ${DRAFT_NOTE_LIST_COLS}`}>
-                          <div className="whitespace-pre-wrap break-words text-base font-black leading-relaxed">
-                            {note.title}
-                          </div>
-                          <div className="whitespace-pre-wrap break-words text-base font-bold leading-relaxed">
-                            {note.content}
-                          </div>
-                          <div className="whitespace-pre-wrap break-words text-base font-bold leading-relaxed">
-                            {note.name}
-                          </div>
-                        </div>
-                        <div className="mt-4 flex flex-col gap-3 border-t border-line pt-3 lg:flex-row lg:items-center lg:justify-between">
+                        <DraftNoteColumns
+                          title={isEditing ? draftNoteTitle : note.title}
+                          name={isEditing ? draftNoteName : note.name}
+                          content={isEditing ? draftNoteContent : note.content}
+                          editing={isEditing}
+                          onTitleChange={setDraftNoteTitle}
+                          onNameChange={setDraftNoteName}
+                          onContentChange={setDraftNoteContent}
+                        />
+                        <div className="flex flex-col gap-3 border-t border-line bg-slate-50 px-3 py-2.5 lg:flex-row lg:items-center lg:justify-between">
                           <div className="grid gap-1 text-xs font-bold text-muted sm:grid-cols-2 lg:flex lg:flex-wrap lg:gap-x-4">
                             <span>Nhập: {note.createdBy || "Không rõ"} · {note.createdAt || "Chưa có giờ"}</span>
                             <span>Sửa: {note.updatedBy || note.createdBy || "Không rõ"} · {note.updatedAt || note.createdAt || "Chưa có giờ"}</span>
                             <span>Cửa hàng: {storeName(note.storeId)}</span>
                           </div>
                           <div className="flex justify-end gap-2">
-                            <button
-                              type="button"
-                              onClick={() => openEditDraftNote(note.id)}
-                              disabled={draftNoteSaving}
-                              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand-soft px-3 text-xs font-black text-brand hover:bg-brand/20 disabled:opacity-50"
-                            >
-                              <Edit3 size={15} />
-                              Sửa
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void cancelDraftNote(note.id)}
-                              disabled={draftNoteSaving}
-                              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-red-50 px-3 text-xs font-black text-danger hover:bg-red-100 disabled:opacity-50"
-                            >
-                              <Trash2 size={15} />
-                              Hủy
-                            </button>
+                            {isEditing ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={cancelEditDraftNote}
+                                  disabled={draftNoteSaving}
+                                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-line bg-white px-3 text-xs font-black text-muted hover:bg-slate-50 disabled:opacity-50"
+                                >
+                                  <X size={15} />
+                                  Hủy sửa
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void saveDraftNote()}
+                                  disabled={draftNoteSaving}
+                                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-black text-white hover:bg-brand-dark disabled:opacity-50"
+                                >
+                                  {draftNoteSaving ? (
+                                    <Loader2 size={15} className="animate-spin" />
+                                  ) : (
+                                    <Edit3 size={15} />
+                                  )}
+                                  Cập nhật
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => openEditDraftNote(note.id)}
+                                  disabled={draftNoteSaving}
+                                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand-soft px-3 text-xs font-black text-brand hover:bg-brand/20 disabled:opacity-50"
+                                >
+                                  <Edit3 size={15} />
+                                  Sửa
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void cancelDraftNote(note.id)}
+                                  disabled={draftNoteSaving}
+                                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-red-50 px-3 text-xs font-black text-danger hover:bg-red-100 disabled:opacity-50"
+                                >
+                                  <Trash2 size={15} />
+                                  Hủy
+                                </button>
+                              </>
+                            )}
                           </div>
                         </div>
                       </article>
-                    ))
-                  )}
-                </div>
-              </section>
+                    );
+                  })
+                )}
+              </div>
             </section>
           );
         })()}

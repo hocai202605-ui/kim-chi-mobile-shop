@@ -1,5 +1,6 @@
 import type { StoreId } from "@/types";
 import { toVnDate } from "@/lib/datetime";
+import { isUuid } from "@/lib/utils";
 import { getPool } from "./pool";
 
 export type PartInboundDto = {
@@ -162,7 +163,8 @@ export async function repoUpsertPartInbound(
   if (!partName) throw new Error("Nhập tên linh kiện.");
   if (quantity <= 0) throw new Error("Số lượng phải lớn hơn 0.");
 
-  if (input.id) {
+  const existingId = isUuid(input.id) ? String(input.id).trim() : "";
+  if (existingId) {
     const { rows } = await getPool().query<DbRow>(
       `update public.part_inbounds set
          store_id = $1,
@@ -191,7 +193,7 @@ export async function repoUpsertPartInbound(
         costPrice,
         retailPrice,
         actor,
-        input.id,
+        existingId,
       ]
     );
     if (!rows[0]) throw new Error("Không tìm thấy phiếu nhập để cập nhật.");
@@ -212,6 +214,9 @@ export async function repoUpsertPartInbound(
 export async function repoDeletePartInbound(id: string): Promise<PartInboundDto> {
   const orderId = String(id || "").trim();
   if (!orderId) throw new Error("Thiếu mã phiếu nhập.");
+  if (!isUuid(orderId)) {
+    throw new Error("Mã phiếu nhập không hợp lệ.");
+  }
   const { idToCode } = await loadStoreMaps();
   const { rows } = await getPool().query<DbRow>(
     `delete from public.part_inbounds where id = $1::uuid returning *`,
