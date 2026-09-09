@@ -154,6 +154,7 @@ import {
 import { ALL_MENU_IDS } from "@/lib/constants";
 import { downloadPhonesExcel } from "@/lib/exportPhonesExcel";
 import {
+  shiftVnDate,
   toVnDate,
   toVnDisplayParts,
   vnNowDate,
@@ -10319,11 +10320,10 @@ export default function Home() {
               <div className="rounded-lg border border-line bg-white p-4 shadow-sm">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                   <span className="block text-sm font-bold text-slate-500">Doanh thu & lãi ngày</span>
-                  <input
-                    type="date"
+                  <DayStepFilter
                     value={saleStats.displayDate}
-                    onChange={(e) => setSaleDate(e.target.value)}
-                    className="h-8 rounded border border-line bg-slate-50 px-2 text-sm font-semibold text-slate-700"
+                    onChange={setSaleDate}
+                    inputClassName="h-8 rounded border border-line bg-slate-50 px-2 text-sm font-semibold text-slate-700"
                   />
                 </div>
                 <strong className="text-3xl text-red-600">
@@ -10377,12 +10377,7 @@ export default function Home() {
                   </select>
                   <div className="flex items-center gap-2 rounded-lg border border-line bg-slate-50 px-2">
                     <span className="text-sm font-semibold text-slate-500">Lọc ngày:</span>
-                    <input
-                      type="date"
-                      value={saleDate}
-                      onChange={(e) => setSaleDate(e.target.value)}
-                      className="h-8 rounded border border-line px-2 text-sm"
-                    />
+                    <DayStepFilter value={saleDate} onChange={setSaleDate} />
                     {saleDate ? (
                       <button
                         type="button"
@@ -15245,11 +15240,13 @@ export default function Home() {
                 <div className="rounded-lg border border-line bg-white p-4 shadow-sm">
                   <div className="flex items-center justify-between gap-2 mb-2">
                     <span className="block text-sm font-bold text-slate-500">Lợi nhuận Ngày</span>
-                    <input
-                      type="date"
+                    <DayStepFilter
                       value={displayDate}
-                      onChange={(e) => setShopRepairDate(e.target.value)}
-                      className="h-8 rounded border border-line bg-slate-50 px-2 text-sm font-semibold text-slate-700"
+                      onChange={(next) => {
+                        setShopRepairDate(next);
+                        setSelectedShopRepairIds([]);
+                      }}
+                      inputClassName="h-8 rounded border border-line bg-slate-50 px-2 text-sm font-semibold text-slate-700"
                     />
                   </div>
                   <strong className="text-3xl text-red-600">
@@ -15289,14 +15286,12 @@ export default function Home() {
                     </select>
                     <div className="flex items-center gap-2 rounded-lg border border-line bg-slate-50 px-2">
                       <span className="text-sm font-semibold text-slate-500">Lọc ngày:</span>
-                      <input
-                        type="date"
+                      <DayStepFilter
                         value={shopRepairDate}
-                        onChange={(e) => {
-                          setShopRepairDate(e.target.value);
+                        onChange={(next) => {
+                          setShopRepairDate(next);
                           setSelectedShopRepairIds([]);
                         }}
-                        className="h-8 rounded border border-line px-2 text-sm"
                       />
                       {shopRepairDate ? (
                         <button
@@ -16138,7 +16133,14 @@ export default function Home() {
                 <div className="rounded-lg border border-line bg-white p-4 shadow-sm">
                   <div className="flex items-center justify-between gap-2 mb-2">
                     <span className="block text-sm font-bold text-slate-500">Lợi nhuận Ngày</span>
-                    <input type="date" value={displayDate} onChange={e => setOnlineRepairDate(e.target.value)} className="h-8 rounded border border-line bg-slate-50 px-2 text-sm font-semibold text-slate-700" />
+                    <DayStepFilter
+                      value={displayDate}
+                      onChange={(next) => {
+                        setOnlineRepairDate(next);
+                        setSelectedSoftwareIds([]);
+                      }}
+                      inputClassName="h-8 rounded border border-line bg-slate-50 px-2 text-sm font-semibold text-slate-700"
+                    />
                   </div>
                   <strong className="text-3xl text-red-600">{isOnlineRepairSensitiveHidden ? "*** ₫" : formatMoney(dailyRepairs.reduce((sum, r) => sum + (r.quote - r.deposit), 0))}</strong>
                   <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 text-sm font-semibold text-slate-500">
@@ -16166,14 +16168,12 @@ export default function Home() {
                     
                     <div className="flex items-center gap-2 rounded-lg border border-line bg-slate-50 px-2">
                       <span className="text-sm font-semibold text-slate-500">Lọc ngày:</span>
-                      <input
-                        type="date"
+                      <DayStepFilter
                         value={onlineRepairDate}
-                        onChange={(e) => {
-                          setOnlineRepairDate(e.target.value);
+                        onChange={(next) => {
+                          setOnlineRepairDate(next);
                           setSelectedSoftwareIds([]);
                         }}
-                        className="h-8 rounded border border-line px-2 text-sm"
                       />
                       {onlineRepairDate && (
                         <button
@@ -16474,6 +16474,32 @@ function Panel({ title, children }: { title: string; children: ReactNode }) {
       <h2 className="mb-4 text-lg font-black">{title}</h2>
       {children}
     </section>
+  );
+}
+
+/** Lọc ngày trên lưới: input + lùi/tiến 1 ngày. */
+function DayStepFilter({
+  value,
+  onChange,
+  inputClassName = "h-8 rounded border border-line bg-white px-2 text-sm font-semibold text-slate-700",
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  inputClassName?: string;
+}) {
+  const step = (delta: number) => onChange(shiftVnDate(value || vnNowDate(), delta));
+  const btnCls =
+    "grid h-8 w-8 shrink-0 place-items-center rounded-md border border-line bg-white text-slate-600 transition hover:bg-slate-50";
+  return (
+    <div className="flex items-center gap-1">
+      <button type="button" onClick={() => step(-1)} title="Lùi 1 ngày" aria-label="Lùi 1 ngày" className={btnCls}>
+        <ChevronLeft size={16} />
+      </button>
+      <input type="date" value={value} onChange={(e) => onChange(e.target.value)} className={inputClassName} />
+      <button type="button" onClick={() => step(1)} title="Tiến 1 ngày" aria-label="Tiến 1 ngày" className={btnCls}>
+        <ChevronRight size={16} />
+      </button>
+    </div>
   );
 }
 

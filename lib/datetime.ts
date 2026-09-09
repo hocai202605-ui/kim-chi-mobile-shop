@@ -53,6 +53,22 @@ export function vnNowDate(): string {
   return `${p.year}-${pad2(p.month)}-${pad2(p.day)}`;
 }
 
+/**
+ * Calendar `YYYY-MM-DD` ± days (UTC date math, không lệch timezone).
+ * Chuỗi rỗng / không parse được → hôm nay VN ± days.
+ */
+export function shiftVnDate(isoDate: string | null | undefined, days: number): string {
+  const m = String(isoDate || "")
+    .trim()
+    .match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const ymd = m ? `${m[1]}-${m[2]}-${m[3]}` : vnNowDate();
+  const p = ymd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!p) return vnNowDate();
+  const utc = Date.UTC(Number(p[1]), Number(p[2]) - 1, Number(p[3]) + days);
+  const d = new Date(utc);
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+}
+
 /** Now → YYYY-MM (VN). */
 export function vnNowMonth(): string {
   const p = toVnParts(new Date());
