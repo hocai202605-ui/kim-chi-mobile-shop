@@ -16489,7 +16489,7 @@ function DayStepFilter({
 }) {
   const step = (delta: number) => onChange(shiftVnDate(value || vnNowDate(), delta));
   const btnCls =
-    "grid h-8 w-8 shrink-0 place-items-center rounded-md border border-line bg-white text-slate-600 transition hover:bg-slate-50";
+    "grid h-8 w-8 shrink-0 place-items-center rounded-md bg-brand text-white shadow-sm transition hover:bg-brand-dark";
   return (
     <div className="flex items-center gap-1">
       <button type="button" onClick={() => step(-1)} title="Lùi 1 ngày" aria-label="Lùi 1 ngày" className={btnCls}>
