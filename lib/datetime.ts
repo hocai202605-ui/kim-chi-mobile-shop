@@ -134,10 +134,53 @@ export function vnDateTimeLocalToIso(value: string | null | undefined): string |
   return d.toISOString();
 }
 
-/** Display helper: "YYYY-MM-DD HH:mm" in VN. */
+/** Display helper: "YYYY-MM-DD HH:mm" in VN. Data-layer string — do not invert for UI. */
 export function formatVnDateTime(value: Date | string | null | undefined): string {
   const local = toVnDateTimeLocal(value);
   return local ? local.replace("T", " ") : "";
+}
+
+export type VnDisplayParts = {
+  dd: string;
+  mm: string;
+  yyyy: string;
+  /** `HH:mm` when the source has a time; omitted for date-only. */
+  hhmm?: string;
+};
+
+/**
+ * Parse a VN date/datetime into display parts (`dd-mm` + year + optional time).
+ * Does not change storage / filter / datetime-local strings.
+ */
+export function toVnDisplayParts(value: Date | string | null | undefined): VnDisplayParts | null {
+  if (value == null || value === "") return null;
+
+  if (typeof value === "string") {
+    const s = value.trim();
+    const hasTz = /[zZ]|[+-]\d{2}:?\d{2}$/.test(s);
+    if (!hasTz) {
+      const dt = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+      if (dt) {
+        return { yyyy: dt[1], mm: dt[2], dd: dt[3], hhmm: `${dt[4]}:${dt[5]}` };
+      }
+      const dateOnly = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (dateOnly) {
+        return { yyyy: dateOnly[1], mm: dateOnly[2], dd: dateOnly[3] };
+      }
+    }
+  }
+
+  const p = toVnParts(value);
+  if (!p) return null;
+  const parts: VnDisplayParts = {
+    yyyy: String(p.year),
+    mm: pad2(p.month),
+    dd: pad2(p.day),
+  };
+  if (value instanceof Date || (typeof value === "string" && /[T ]\d{2}:\d{2}/.test(value))) {
+    parts.hhmm = `${pad2(p.hour)}:${pad2(p.minute)}`;
+  }
+  return parts;
 }
 
 /** Display helper: "YYYY-MM-DD HH:mm:ss" in VN. */

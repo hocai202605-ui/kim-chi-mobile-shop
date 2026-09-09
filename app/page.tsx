@@ -154,8 +154,8 @@ import {
 import { ALL_MENU_IDS } from "@/lib/constants";
 import { downloadPhonesExcel } from "@/lib/exportPhonesExcel";
 import {
-  formatVnDateTime,
   toVnDate,
+  toVnDisplayParts,
   vnNowDate,
   vnNowDateTimeLocal,
   vnNowMonth,
@@ -13082,8 +13082,18 @@ export default function Home() {
                             />
                             <div className="flex flex-col gap-3 border-t border-line bg-slate-50 px-3 py-2.5 lg:flex-row lg:items-center lg:justify-between">
                               <div className="grid gap-1 text-xs font-bold text-muted sm:grid-cols-2 lg:flex lg:flex-wrap lg:gap-x-4">
-                                <span>Nhập: {note.createdBy || "Không rõ"} · {note.createdAt || "Chưa có giờ"}</span>
-                                <span>Sửa: {note.updatedBy || note.createdBy || "Không rõ"} · {note.updatedAt || note.createdAt || "Chưa có giờ"}</span>
+                                <span className="inline-flex flex-wrap items-center gap-1">
+                                  Nhập: {note.createdBy || "Không rõ"} ·{" "}
+                                  {note.createdAt ? <ColoredDateTime value={note.createdAt} /> : "Chưa có giờ"}
+                                </span>
+                                <span className="inline-flex flex-wrap items-center gap-1">
+                                  Sửa: {note.updatedBy || note.createdBy || "Không rõ"} ·{" "}
+                                  {note.updatedAt || note.createdAt ? (
+                                    <ColoredDateTime value={note.updatedAt || note.createdAt} />
+                                  ) : (
+                                    "Chưa có giờ"
+                                  )}
+                                </span>
                                 <span>Cửa hàng: {storeName(note.storeId)}</span>
                               </div>
                               <div className="flex justify-end gap-2">
@@ -14519,9 +14529,7 @@ export default function Home() {
                     "Thao tác",
                   ]}
                   rows={logs.map((item) => [
-                    <span key={`t-${item.id}`} className="whitespace-nowrap text-sm font-semibold text-slate-700">
-                      {item.createdAt}
-                    </span>,
+                    <ColoredDateTime key={`t-${item.id}`} value={item.createdAt} />,
                     <span key={`u-${item.id}`} className="font-bold text-ink">
                       {item.user || "—"}
                     </span>,
@@ -14612,7 +14620,7 @@ export default function Home() {
                     <div className="grid gap-3 sm:grid-cols-2">
                       <Field label="Thời gian">
                         <div className="flex h-10 w-full items-center rounded-lg border border-line bg-slate-50 px-3 text-sm font-semibold text-slate-800">
-                          {viewingLog.createdAt || "—"}
+                          <ColoredDateTime value={viewingLog.createdAt} />
                         </div>
                       </Field>
                       <Field label="Người thao tác">
@@ -14665,8 +14673,9 @@ export default function Home() {
                                 className="flex w-full flex-col rounded-lg border border-line bg-white px-3 py-2 text-left transition hover:border-brand/40 hover:bg-brand-soft/40 sm:flex-row sm:items-center sm:justify-between sm:gap-2"
                               >
                                 <span className="text-sm font-bold text-brand">{r.action}</span>
-                                <span className="text-xs font-semibold text-muted">
-                                  {r.createdAt} · {r.user}
+                                <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted">
+                                  <ColoredDateTime value={r.createdAt} />
+                                  <span>· {r.user}</span>
                                 </span>
                               </button>
                             </li>
@@ -16468,7 +16477,7 @@ function Panel({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-/** Ngày (xanh brand) + giờ phút (vàng amber) — đồng bộ form tạo đơn. */
+/** Ngày-tháng (xanh brand) + năm (muted, cách ra) + giờ phút (vàng amber). */
 function ColoredDateTime({
   value,
   size = "sm",
@@ -16476,21 +16485,24 @@ function ColoredDateTime({
   value?: string | null;
   size?: "sm" | "md";
 }) {
-  const raw = formatVnDateTime(value) || String(value || "").replace("T", " ").trim();
-  if (!raw) {
-    return <span className="text-muted">—</span>;
-  }
-  const m = raw.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)/);
+  const parts = toVnDisplayParts(value);
   const textCls = size === "md" ? "text-sm font-bold" : "text-xs font-semibold";
-  if (!m) {
-    return <span className={`${textCls} text-slate-600 whitespace-nowrap`}>{raw}</span>;
+  if (!parts) {
+    const raw = String(value || "").replace("T", " ").trim();
+    if (!raw) {
+      return <span className="text-muted">—</span>;
+    }
+    return <span className={`${textCls} whitespace-nowrap text-slate-600`}>{raw}</span>;
   }
-  const datePart = m[1];
-  const timePart = m[2].slice(0, 5); // HH:mm
   return (
     <span className={`inline-flex items-center gap-1.5 whitespace-nowrap ${textCls}`}>
-      <span className="rounded-md bg-brand-soft/70 px-1.5 py-0.5 font-black text-brand">{datePart}</span>
-      <span className="rounded-md bg-amber-50 px-1.5 py-0.5 font-black text-amber-800">{timePart}</span>
+      <span className="rounded-md bg-brand-soft/70 px-1.5 py-0.5 font-black text-brand">
+        {parts.dd}-{parts.mm}
+      </span>
+      <span className="px-1 font-bold tabular-nums text-muted">{parts.yyyy}</span>
+      {parts.hhmm ? (
+        <span className="rounded-md bg-amber-50 px-1.5 py-0.5 font-black text-amber-800">{parts.hhmm}</span>
+      ) : null}
     </span>
   );
 }
