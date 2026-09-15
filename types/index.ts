@@ -22,6 +22,7 @@ export type MenuId =
   | "customers"
   | "ledger"
   | "draft-notes"
+  | "tools"
   | "debt-notes"
   | "logs"
   | "accounts"

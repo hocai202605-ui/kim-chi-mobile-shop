@@ -22,6 +22,7 @@ import {
   ChevronRight,
   CircleAlert,
   ClipboardList,
+  Copy,
   CopyPlus,
   CreditCard,
   Crown,
@@ -30,6 +31,7 @@ import {
   EyeOff,
   FileSpreadsheet,
   FileText,
+  KeyRound,
   LayoutDashboard,
   Loader2,
   LogOut,
@@ -142,6 +144,12 @@ import {
   upsertDraftNote as apiUpsertDraftNote,
   type DraftNote,
 } from "@/services/draftNotesService";
+import {
+  cancelToolNote as apiCancelToolNote,
+  listToolNotes as apiListToolNotes,
+  upsertToolNote as apiUpsertToolNote,
+  type ToolNote,
+} from "@/services/toolsService";
 import {
   apiListAccounts,
   apiListLoginUsers,
@@ -830,6 +838,7 @@ const navItems = [
   { id: "customers", label: "KHÁCH HÀNG", icon: Users },
   { id: "ledger", label: "CÔNG NỢ", icon: CreditCard },
   { id: "draft-notes", label: "GHI NHÁP", icon: FileText },
+  { id: "tools", label: "TOOLS", icon: KeyRound },
   { id: "debt-notes", label: "MÌNH NỢ", icon: NotebookPen },
   { id: "logs", label: "NHẬT KÝ", icon: ClipboardList },
   { id: "accounts", label: "TÀI KHOẢN", icon: UserCog },
@@ -1283,6 +1292,163 @@ function DraftNoteColumns({
   );
 }
 
+const TOOL_NOTE_NEW_ID = "__new__";
+const TOOL_NOTE_LIST_COLS =
+  "lg:grid-cols-[minmax(0,22fr)_minmax(0,39fr)_minmax(0,39fr)]";
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  const value = text.trim();
+  if (!value) return false;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    /* fall through */
+  }
+  try {
+    const el = document.createElement("textarea");
+    el.value = value;
+    el.setAttribute("readonly", "");
+    el.style.position = "fixed";
+    el.style.left = "-9999px";
+    document.body.appendChild(el);
+    el.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(el);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+function ToolCopyButton({
+  value,
+  label,
+  onResult,
+}: {
+  value: string;
+  label: string;
+  onResult?: (ok: boolean, label: string) => void;
+}) {
+  const canCopy = Boolean(value.trim());
+  return (
+    <button
+      type="button"
+      disabled={!canCopy}
+      title={canCopy ? `Copy ${label}` : "Không có nội dung để copy"}
+      aria-label={`Copy ${label}`}
+      onClick={() => {
+        if (!canCopy) return;
+        void copyTextToClipboard(value).then((ok) => onResult?.(ok, label));
+      }}
+      className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-white text-muted hover:bg-slate-50 hover:text-brand disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      <Copy size={14} />
+    </button>
+  );
+}
+
+function ToolNoteColumns({
+  title,
+  account,
+  password,
+  editing = false,
+  onTitleChange,
+  onAccountChange,
+  onPasswordChange,
+  onCopyResult,
+}: {
+  title: string;
+  account: string;
+  password: string;
+  editing?: boolean;
+  onTitleChange?: (value: string) => void;
+  onAccountChange?: (value: string) => void;
+  onPasswordChange?: (value: string) => void;
+  onCopyResult?: (ok: boolean, label: string) => void;
+}) {
+  const titleRef = useRef<HTMLTextAreaElement>(null);
+  const accountRef = useRef<HTMLTextAreaElement>(null);
+  const passwordRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!editing) return;
+    const els = [titleRef.current, accountRef.current, passwordRef.current].filter(
+      (el): el is HTMLTextAreaElement => Boolean(el)
+    );
+    for (const el of els) el.style.height = "auto";
+    const next = Math.max(72, ...els.map((el) => el.scrollHeight));
+    for (const el of els) el.style.height = `${next}px`;
+  }, [editing, title, account, password]);
+
+  return (
+    <div
+      className={`grid w-full min-w-0 divide-y divide-line lg:divide-x lg:divide-y-0 ${TOOL_NOTE_LIST_COLS}`}
+    >
+      <DraftNoteCell label="Tiêu đề">
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            {editing ? (
+              <textarea
+                ref={titleRef}
+                value={title}
+                rows={2}
+                maxLength={200}
+                placeholder="Không bắt buộc"
+                onChange={(e) => onTitleChange?.(e.target.value)}
+                className={`${DRAFT_NOTE_INPUT_CLASS} resize-none overflow-hidden`}
+              />
+            ) : (
+              <DraftNoteText value={title} />
+            )}
+          </div>
+          <ToolCopyButton value={title} label="tiêu đề" onResult={onCopyResult} />
+        </div>
+      </DraftNoteCell>
+      <DraftNoteCell label="Tài khoản">
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            {editing ? (
+              <textarea
+                ref={accountRef}
+                value={account}
+                rows={2}
+                placeholder="Nhập tài khoản..."
+                onChange={(e) => onAccountChange?.(e.target.value)}
+                className={`${DRAFT_NOTE_INPUT_CLASS} resize-none overflow-hidden`}
+              />
+            ) : (
+              <DraftNoteText value={account} />
+            )}
+          </div>
+          <ToolCopyButton value={account} label="tài khoản" onResult={onCopyResult} />
+        </div>
+      </DraftNoteCell>
+      <DraftNoteCell label="Mật khẩu">
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            {editing ? (
+              <textarea
+                ref={passwordRef}
+                value={password}
+                rows={2}
+                placeholder="Không bắt buộc"
+                onChange={(e) => onPasswordChange?.(e.target.value)}
+                className={`${DRAFT_NOTE_INPUT_CLASS} resize-none overflow-hidden`}
+              />
+            ) : (
+              <DraftNoteText value={password} />
+            )}
+          </div>
+          <ToolCopyButton value={password} label="mật khẩu" onResult={onCopyResult} />
+        </div>
+      </DraftNoteCell>
+    </div>
+  );
+}
+
 function StatCard({ label, value, hint, icon }: { label: string; value: string; hint: string; icon: ReactNode }) {
   return (
     <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
@@ -1519,6 +1685,17 @@ export default function Home() {
   const [draftNoteLoading, setDraftNoteLoading] = useState(false);
   const [draftNoteSaving, setDraftNoteSaving] = useState(false);
   const [draftNoteError, setDraftNoteError] = useState("");
+
+  const [toolNotes, setToolNotes] = useState<ToolNote[]>([]);
+  const [toolNoteQuery, setToolNoteQuery] = useState("");
+  const [toolNoteUserFilter, setToolNoteUserFilter] = useState("");
+  const [toolNoteTitle, setToolNoteTitle] = useState("");
+  const [toolNoteAccount, setToolNoteAccount] = useState("");
+  const [toolNotePassword, setToolNotePassword] = useState("");
+  const [editingToolNoteId, setEditingToolNoteId] = useState<string | null>(null);
+  const [toolNoteLoading, setToolNoteLoading] = useState(false);
+  const [toolNoteSaving, setToolNoteSaving] = useState(false);
+  const [toolNoteError, setToolNoteError] = useState("");
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customersLoading, setCustomersLoading] = useState(false);
@@ -5977,6 +6154,141 @@ export default function Home() {
       showUiToast("error", toUiError(err));
     } finally {
       setDraftNoteSaving(false);
+    }
+  }
+
+  function handleToolCopyResult(ok: boolean, label: string) {
+    if (ok) showUiToast("success", `Đã copy ${label}.`);
+    else showUiToast("error", `Không copy được ${label}.`);
+  }
+
+  // ─── Tools (API / DB) ────────────────────────────────────────────
+  const reloadToolNotes = useCallback(async () => {
+    if (!currentUser) return;
+    setToolNoteLoading(true);
+    setToolNoteError("");
+    try {
+      const storeId: StoreId =
+        currentUser.role === "staff"
+          ? currentUser.storeId
+          : storeFilter !== "all"
+            ? storeFilter
+            : "all";
+      const rows = await apiListToolNotes({
+        storeId,
+        query: toolNoteQuery.trim() || undefined,
+        username:
+          currentUser.role === "staff"
+            ? currentUser.username
+            : toolNoteUserFilter === "all"
+              ? undefined
+              : toolNoteUserFilter || currentUser.username,
+      });
+      setToolNotes(rows);
+    } catch (err) {
+      setToolNoteError(toUiError(err));
+      setToolNotes([]);
+    } finally {
+      setToolNoteLoading(false);
+    }
+  }, [currentUser, storeFilter, toolNoteQuery, toolNoteUserFilter]);
+
+  useEffect(() => {
+    setToolNoteUserFilter(currentUser?.username ?? "");
+  }, [currentUser?.id, currentUser?.username]);
+
+  useEffect(() => {
+    if (activePage !== "tools" || !currentUser) return;
+    void reloadToolNotes();
+  }, [activePage, currentUser, storeFilter, reloadToolNotes]);
+
+  function openNewToolNote() {
+    if (toolNoteSaving) return;
+    setEditingToolNoteId(TOOL_NOTE_NEW_ID);
+    setToolNoteTitle("");
+    setToolNoteAccount("");
+    setToolNotePassword("");
+  }
+
+  function openEditToolNote(id: string) {
+    const row = toolNotes.find((note) => note.id === id);
+    if (!row) return;
+    setEditingToolNoteId(row.id);
+    setToolNoteTitle(row.title);
+    setToolNoteAccount(row.account);
+    setToolNotePassword(row.password);
+  }
+
+  function cancelEditToolNote() {
+    setEditingToolNoteId(null);
+    setToolNoteTitle("");
+    setToolNoteAccount("");
+    setToolNotePassword("");
+  }
+
+  async function saveToolNote() {
+    if (!currentUser || toolNoteSaving || !editingToolNoteId) return;
+    const isNew = editingToolNoteId === TOOL_NOTE_NEW_ID;
+    const title = toolNoteTitle.trim();
+    const account = toolNoteAccount.trim();
+    const password = toolNotePassword.trim();
+    if (!account) {
+      showUiToast("error", "Tài khoản không được trống.");
+      return;
+    }
+    const row = isNew ? null : toolNotes.find((note) => note.id === editingToolNoteId);
+    const storeId: Exclude<StoreId, "all"> =
+      row?.storeId ??
+      (currentUser.role === "staff"
+        ? currentUser.storeId
+        : storeFilter !== "all"
+          ? storeFilter
+          : currentUser.storeId || "store-1");
+    setToolNoteSaving(true);
+    try {
+      const saved = await apiUpsertToolNote({
+        id: isNew ? undefined : editingToolNoteId,
+        storeId,
+        title,
+        account,
+        password,
+        actorUsername: currentUser.username,
+      });
+      pushLog(
+        isNew ? "Thêm tools" : "Sửa tools",
+        [saved.title, saved.account].filter(Boolean).join(" — ").slice(0, 80),
+        saved.storeId
+      );
+      showUiToast("success", isNew ? "Đã lưu tools." : "Đã cập nhật tools.");
+      cancelEditToolNote();
+      await reloadToolNotes();
+    } catch (err) {
+      showUiToast("error", toUiError(err));
+    } finally {
+      setToolNoteSaving(false);
+    }
+  }
+
+  async function cancelToolNote(id: string) {
+    if (!currentUser || toolNoteSaving) return;
+    const row = toolNotes.find((note) => note.id === id);
+    if (!row) return;
+    if (!window.confirm("Hủy mục tools này?")) return;
+    setToolNoteSaving(true);
+    try {
+      await apiCancelToolNote(id, currentUser.username);
+      pushLog(
+        "Hủy tools",
+        [row.title, row.account].filter(Boolean).join(" — ").slice(0, 80),
+        row.storeId
+      );
+      showUiToast("success", "Đã hủy tools.");
+      if (editingToolNoteId === id) cancelEditToolNote();
+      await reloadToolNotes();
+    } catch (err) {
+      showUiToast("error", toUiError(err));
+    } finally {
+      setToolNoteSaving(false);
     }
   }
 
@@ -13132,6 +13444,232 @@ export default function Home() {
                                       type="button"
                                       onClick={() => void cancelDraftNote(note.id)}
                                       disabled={draftNoteSaving}
+                                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-red-50 px-3 text-xs font-black text-danger hover:bg-red-100 disabled:opacity-50"
+                                    >
+                                      <Trash2 size={15} />
+                                      Hủy
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </article>
+                        );
+                      })
+                    )}
+                  </>
+                )}
+              </div>
+            </section>
+          );
+        })()}
+
+        {activePage === "tools" && currentUser && (() => {
+          const isAddingNew = editingToolNoteId === TOOL_NOTE_NEW_ID;
+          const newStoreId: Exclude<StoreId, "all"> =
+            currentUser.role === "staff"
+              ? currentUser.storeId
+              : storeFilter !== "all"
+                ? storeFilter
+                : currentUser.storeId || "store-1";
+          return (
+            <section className="rounded-lg border border-line bg-white shadow-panel">
+              <div className="flex flex-col gap-3 border-b border-line p-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <h2 className="text-xl font-black text-ink">Tools</h2>
+                  <p className="text-sm font-semibold text-muted">
+                    {toolNoteLoading
+                      ? "Đang tải..."
+                      : `${toolNotes.length.toLocaleString("vi-VN")} mục · bấm Thêm / Sửa trên danh sách`}
+                  </p>
+                </div>
+                <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
+                  {currentUser.role === "owner" ? (
+                    <select
+                      value={toolNoteUserFilter || currentUser.username}
+                      onChange={(e) => setToolNoteUserFilter(e.target.value)}
+                      aria-label="Lọc tools theo người dùng"
+                      className="h-11 w-full rounded-lg border border-line bg-slate-50 px-3 text-sm font-bold text-ink outline-none focus:ring-2 focus:ring-brand/30 sm:min-w-[12rem]"
+                    >
+                      <option value="all">Tất cả người dùng</option>
+                      {sortLoginUsers(loginUsers).map((user) => (
+                        <option key={user.username} value={user.username}>
+                          {user.name} ({user.username})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="flex h-11 items-center rounded-lg border border-line bg-slate-50 px-3 text-sm font-bold text-muted">
+                      Người dùng: {currentUser.username}
+                    </div>
+                  )}
+                  <label className="relative min-w-0 flex-1 sm:min-w-[14rem]">
+                    <Search size={16} className="absolute left-3 top-3.5 text-muted" />
+                    <input
+                      value={toolNoteQuery}
+                      onChange={(e) => setToolNoteQuery(e.target.value)}
+                      placeholder="Tìm tiêu đề, tài khoản, mật khẩu..."
+                      className="h-11 w-full rounded-lg border border-line bg-slate-50 pl-9 pr-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand/30"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={openNewToolNote}
+                    disabled={toolNoteSaving || isAddingNew}
+                    className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-bold text-white hover:bg-brand-dark disabled:opacity-50"
+                  >
+                    <Plus size={18} />
+                    Thêm
+                  </button>
+                </div>
+              </div>
+
+              {toolNoteError ? (
+                <div className="m-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-danger">
+                  {toolNoteError}
+                </div>
+              ) : null}
+
+              <div className="grid gap-3 p-4">
+                {toolNoteLoading ? (
+                  <div className="grid min-h-[160px] place-items-center text-muted">
+                    <Loader2 className="animate-spin" />
+                  </div>
+                ) : (
+                  <>
+                    {isAddingNew ? (
+                      <article className="overflow-hidden rounded-xl border border-brand bg-white shadow-panel">
+                        <ToolNoteColumns
+                          title={toolNoteTitle}
+                          account={toolNoteAccount}
+                          password={toolNotePassword}
+                          editing
+                          onTitleChange={setToolNoteTitle}
+                          onAccountChange={setToolNoteAccount}
+                          onPasswordChange={setToolNotePassword}
+                          onCopyResult={handleToolCopyResult}
+                        />
+                        <div className="flex flex-col gap-3 border-t border-line bg-slate-50 px-3 py-2.5 lg:flex-row lg:items-center lg:justify-between">
+                          <div className="text-xs font-bold text-muted">
+                            Tools mới · {storeName(newStoreId)}
+                          </div>
+                          <div className="flex justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={cancelEditToolNote}
+                              disabled={toolNoteSaving}
+                              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-line bg-white px-3 text-xs font-black text-muted hover:bg-slate-50 disabled:opacity-50"
+                            >
+                              <X size={15} />
+                              Hủy
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void saveToolNote()}
+                              disabled={toolNoteSaving}
+                              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-black text-white hover:bg-brand-dark disabled:opacity-50"
+                            >
+                              {toolNoteSaving ? (
+                                <Loader2 size={15} className="animate-spin" />
+                              ) : (
+                                <Plus size={15} />
+                              )}
+                              Lưu tools
+                            </button>
+                          </div>
+                        </div>
+                      </article>
+                    ) : null}
+                    {toolNotes.length === 0 && !isAddingNew ? (
+                      <div className="rounded-lg border border-dashed border-line p-8 text-center">
+                        <p className="text-sm font-semibold text-muted">Chưa có mục tools phù hợp.</p>
+                        <button
+                          type="button"
+                          onClick={openNewToolNote}
+                          disabled={toolNoteSaving}
+                          className="mt-3 inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-bold text-white hover:bg-brand-dark disabled:opacity-50"
+                        >
+                          <Plus size={18} />
+                          Thêm tools
+                        </button>
+                      </div>
+                    ) : (
+                      toolNotes.map((note) => {
+                        const isEditing = editingToolNoteId === note.id;
+                        return (
+                          <article
+                            key={note.id}
+                            className={`overflow-hidden rounded-xl border bg-white ${
+                              isEditing ? "border-brand shadow-panel" : "border-line"
+                            }`}
+                          >
+                            <ToolNoteColumns
+                              title={isEditing ? toolNoteTitle : note.title}
+                              account={isEditing ? toolNoteAccount : note.account}
+                              password={isEditing ? toolNotePassword : note.password}
+                              editing={isEditing}
+                              onTitleChange={setToolNoteTitle}
+                              onAccountChange={setToolNoteAccount}
+                              onPasswordChange={setToolNotePassword}
+                              onCopyResult={handleToolCopyResult}
+                            />
+                            <div className="flex flex-col gap-3 border-t border-line bg-slate-50 px-3 py-2.5 lg:flex-row lg:items-center lg:justify-between">
+                              <div className="grid gap-1 text-xs font-bold text-muted sm:grid-cols-2 lg:flex lg:flex-wrap lg:gap-x-4">
+                                <span className="inline-flex flex-wrap items-center gap-1">
+                                  Nhập: {note.createdBy || "Không rõ"} ·{" "}
+                                  {note.createdAt ? <ColoredDateTime value={note.createdAt} /> : "Chưa có giờ"}
+                                </span>
+                                <span className="inline-flex flex-wrap items-center gap-1">
+                                  Sửa: {note.updatedBy || note.createdBy || "Không rõ"} ·{" "}
+                                  {note.updatedAt || note.createdAt ? (
+                                    <ColoredDateTime value={note.updatedAt || note.createdAt} />
+                                  ) : (
+                                    "Chưa có giờ"
+                                  )}
+                                </span>
+                                <span>Cửa hàng: {storeName(note.storeId)}</span>
+                              </div>
+                              <div className="flex justify-end gap-2">
+                                {isEditing ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={cancelEditToolNote}
+                                      disabled={toolNoteSaving}
+                                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-line bg-white px-3 text-xs font-black text-muted hover:bg-slate-50 disabled:opacity-50"
+                                    >
+                                      <X size={15} />
+                                      Hủy sửa
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => void saveToolNote()}
+                                      disabled={toolNoteSaving}
+                                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-black text-white hover:bg-brand-dark disabled:opacity-50"
+                                    >
+                                      {toolNoteSaving ? (
+                                        <Loader2 size={15} className="animate-spin" />
+                                      ) : (
+                                        <Edit3 size={15} />
+                                      )}
+                                      Cập nhật
+                                    </button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => openEditToolNote(note.id)}
+                                      disabled={toolNoteSaving}
+                                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand-soft px-3 text-xs font-black text-brand hover:bg-brand/20 disabled:opacity-50"
+                                    >
+                                      <Edit3 size={15} />
+                                      Sửa
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => void cancelToolNote(note.id)}
+                                      disabled={toolNoteSaving}
                                       className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-red-50 px-3 text-xs font-black text-danger hover:bg-red-100 disabled:opacity-50"
                                     >
                                       <Trash2 size={15} />
