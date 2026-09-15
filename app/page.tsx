@@ -1293,8 +1293,8 @@ function DraftNoteColumns({
 }
 
 const TOOL_NOTE_NEW_ID = "__new__";
-const TOOL_NOTE_LIST_COLS =
-  "lg:grid-cols-[minmax(0,22fr)_minmax(0,39fr)_minmax(0,39fr)]";
+const TOOL_NOTE_INPUT_CLASS =
+  "box-border min-h-[2.75rem] w-full rounded-lg border border-line bg-white px-3 py-2 text-sm font-semibold leading-relaxed text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20";
 
 async function copyTextToClipboard(text: string): Promise<boolean> {
   const value = text.trim();
@@ -1343,7 +1343,7 @@ function ToolCopyButton({
         if (!canCopy) return;
         void copyTextToClipboard(value).then((ok) => onResult?.(ok, label));
       }}
-      className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-white text-muted hover:bg-slate-50 hover:text-brand disabled:cursor-not-allowed disabled:opacity-40"
+      className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-line bg-white text-muted hover:bg-slate-50 hover:text-brand disabled:cursor-not-allowed disabled:opacity-40"
     >
       <Copy size={14} />
     </button>
@@ -1375,30 +1375,28 @@ function ToolNoteColumns({
 
   useEffect(() => {
     if (!editing) return;
-    const els = [titleRef.current, accountRef.current, passwordRef.current].filter(
-      (el): el is HTMLTextAreaElement => Boolean(el)
-    );
-    for (const el of els) el.style.height = "auto";
-    const next = Math.max(72, ...els.map((el) => el.scrollHeight));
-    for (const el of els) el.style.height = `${next}px`;
+    for (const el of [titleRef.current, accountRef.current, passwordRef.current]) {
+      if (!el) continue;
+      el.style.height = "auto";
+      el.style.height = `${Math.max(44, el.scrollHeight)}px`;
+    }
   }, [editing, title, account, password]);
 
   return (
-    <div
-      className={`grid w-full min-w-0 divide-y divide-line lg:divide-x lg:divide-y-0 ${TOOL_NOTE_LIST_COLS}`}
-    >
-      <DraftNoteCell label="Tiêu đề">
+    <div className="grid w-full min-w-0 divide-y divide-line">
+      <div className="min-w-0 p-2.5">
+        <p className="mb-1 text-[11px] font-black uppercase tracking-wide text-muted">Tiêu đề</p>
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
             {editing ? (
               <textarea
                 ref={titleRef}
                 value={title}
-                rows={2}
+                rows={1}
                 maxLength={200}
                 placeholder="Không bắt buộc"
                 onChange={(e) => onTitleChange?.(e.target.value)}
-                className={`${DRAFT_NOTE_INPUT_CLASS} resize-none overflow-hidden`}
+                className={`${TOOL_NOTE_INPUT_CLASS} resize-none overflow-hidden`}
               />
             ) : (
               <DraftNoteText value={title} />
@@ -1406,18 +1404,19 @@ function ToolNoteColumns({
           </div>
           <ToolCopyButton value={title} label="tiêu đề" onResult={onCopyResult} />
         </div>
-      </DraftNoteCell>
-      <DraftNoteCell label="Tài khoản">
+      </div>
+      <div className="min-w-0 p-2.5">
+        <p className="mb-1 text-[11px] font-black uppercase tracking-wide text-muted">Tài khoản</p>
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
             {editing ? (
               <textarea
                 ref={accountRef}
                 value={account}
-                rows={2}
+                rows={1}
                 placeholder="Nhập tài khoản..."
                 onChange={(e) => onAccountChange?.(e.target.value)}
-                className={`${DRAFT_NOTE_INPUT_CLASS} resize-none overflow-hidden`}
+                className={`${TOOL_NOTE_INPUT_CLASS} resize-none overflow-hidden`}
               />
             ) : (
               <DraftNoteText value={account} />
@@ -1425,18 +1424,19 @@ function ToolNoteColumns({
           </div>
           <ToolCopyButton value={account} label="tài khoản" onResult={onCopyResult} />
         </div>
-      </DraftNoteCell>
-      <DraftNoteCell label="Mật khẩu">
+      </div>
+      <div className="min-w-0 p-2.5">
+        <p className="mb-1 text-[11px] font-black uppercase tracking-wide text-muted">Mật khẩu</p>
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
             {editing ? (
               <textarea
                 ref={passwordRef}
                 value={password}
-                rows={2}
+                rows={1}
                 placeholder="Không bắt buộc"
                 onChange={(e) => onPasswordChange?.(e.target.value)}
-                className={`${DRAFT_NOTE_INPUT_CLASS} resize-none overflow-hidden`}
+                className={`${TOOL_NOTE_INPUT_CLASS} resize-none overflow-hidden`}
               />
             ) : (
               <DraftNoteText value={password} />
@@ -1444,7 +1444,7 @@ function ToolNoteColumns({
           </div>
           <ToolCopyButton value={password} label="mật khẩu" onResult={onCopyResult} />
         </div>
-      </DraftNoteCell>
+      </div>
     </div>
   );
 }
@@ -2131,11 +2131,25 @@ export default function Home() {
   // Khi vào BÁN HÀNG hoặc tab Bán Gà — load đúng channel (không trộn phiếu).
   useEffect(() => {
     if (!currentUser) return;
-    if (activePage === "sales" || (activePage === "software" && softwareHubTab === "ban-ga")) {
+    if (activePage === "sales") {
+      void reloadSalesFromDb("retail");
+      void reloadBanGaSalesFromDb();
+      void reloadShopRepairsFromDb();
+      return;
+    }
+    if (activePage === "software" && softwareHubTab === "ban-ga") {
       void reloadSalesFromDb(saleChannel);
       void reloadBanGaSalesFromDb();
     }
-  }, [currentUser, activePage, softwareHubTab, saleChannel, reloadSalesFromDb, reloadBanGaSalesFromDb]);
+  }, [
+    currentUser,
+    activePage,
+    softwareHubTab,
+    saleChannel,
+    reloadSalesFromDb,
+    reloadBanGaSalesFromDb,
+    reloadShopRepairsFromDb,
+  ]);
 
   // Báo cáo → tab Sửa chữa / Phần mềm / Bán Gà / Tổng quan: đảm bảo có data thống kê.
   useEffect(() => {
@@ -2439,6 +2453,25 @@ export default function Home() {
       dailyProfit: sum(daily, "profit"),
     };
   }, [sales, storeFilter, saleMonth, saleDate]);
+
+  /** Góc header Bán hàng: lãi tháng = bán hàng + bán gà + sửa chữa. */
+  const salesHeaderMonthProfit = useMemo(() => {
+    const inStore = (s: Sale) => storeFilter === "all" || s.storeId === storeFilter;
+    const inMonth = (raw: string | undefined) =>
+      String(raw || "")
+        .replace("T", " ")
+        .startsWith(saleMonth);
+    const saleProfit = (rows: Sale[]) =>
+      rows.reduce((sum, s) => {
+        if (s.status !== "Hoàn tất" || !inStore(s) || !inMonth(s.createdAt)) return sum;
+        return sum + (Number(s.profit) || 0);
+      }, 0);
+    const suaChua = shopRepairs.reduce((sum, r) => {
+      if (!inMonth(r.receiveDate || r.createdAt)) return sum;
+      return sum + ((Number(r.quote) || 0) - (Number(r.deposit) || 0));
+    }, 0);
+    return saleProfit(salesRetail) + saleProfit(salesBanGa) + suaChua;
+  }, [salesRetail, salesBanGa, shopRepairs, saleMonth, storeFilter]);
 
   /** Tổng tiền ngoài grid — TM / CK / Nợ (không hiện TT 1 phần). */
   const salePayTotals = useMemo(() => {
@@ -7065,6 +7098,14 @@ export default function Home() {
             <p className="mt-1 text-sm font-semibold text-muted">Xin chào, {currentUser.name}. Chúc bạn một ngày làm việc hiệu quả!</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {activePage === "sales" ? (
+              <strong
+                aria-label="Lãi tháng"
+                className="inline-flex h-10 items-center rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-sm font-black text-emerald-700"
+              >
+                {isSaleSensitiveHidden ? "***" : formatMoney(salesHeaderMonthProfit)}
+              </strong>
+            ) : null}
             <select
               value={currentUser.role === "staff" ? currentUser.storeId : storeFilter}
               onChange={(event) => {
@@ -13530,15 +13571,28 @@ export default function Home() {
                 </div>
               ) : null}
 
-              <div className="grid gap-3 p-4">
+              <div className="p-4">
                 {toolNoteLoading ? (
                   <div className="grid min-h-[160px] place-items-center text-muted">
                     <Loader2 className="animate-spin" />
                   </div>
+                ) : toolNotes.length === 0 && !isAddingNew ? (
+                  <div className="rounded-lg border border-dashed border-line p-8 text-center">
+                    <p className="text-sm font-semibold text-muted">Chưa có mục tools phù hợp.</p>
+                    <button
+                      type="button"
+                      onClick={openNewToolNote}
+                      disabled={toolNoteSaving}
+                      className="mt-3 inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-bold text-white hover:bg-brand-dark disabled:opacity-50"
+                    >
+                      <Plus size={18} />
+                      Thêm tools
+                    </button>
+                  </div>
                 ) : (
-                  <>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     {isAddingNew ? (
-                      <article className="overflow-hidden rounded-xl border border-brand bg-white shadow-panel">
+                      <article className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-brand bg-white shadow-panel">
                         <ToolNoteColumns
                           title={toolNoteTitle}
                           account={toolNoteAccount}
@@ -13549,16 +13603,16 @@ export default function Home() {
                           onPasswordChange={setToolNotePassword}
                           onCopyResult={handleToolCopyResult}
                         />
-                        <div className="flex flex-col gap-3 border-t border-line bg-slate-50 px-3 py-2.5 lg:flex-row lg:items-center lg:justify-between">
-                          <div className="text-xs font-bold text-muted">
+                        <div className="mt-auto flex flex-col gap-2 border-t border-line bg-slate-50 px-3 py-2.5">
+                          <div className="text-[11px] font-bold text-muted">
                             Tools mới · {storeName(newStoreId)}
                           </div>
-                          <div className="flex justify-end gap-2">
+                          <div className="flex gap-2">
                             <button
                               type="button"
                               onClick={cancelEditToolNote}
                               disabled={toolNoteSaving}
-                              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-line bg-white px-3 text-xs font-black text-muted hover:bg-slate-50 disabled:opacity-50"
+                              className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-line bg-white px-3 text-xs font-black text-muted hover:bg-slate-50 disabled:opacity-50"
                             >
                               <X size={15} />
                               Hủy
@@ -13567,123 +13621,108 @@ export default function Home() {
                               type="button"
                               onClick={() => void saveToolNote()}
                               disabled={toolNoteSaving}
-                              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-black text-white hover:bg-brand-dark disabled:opacity-50"
+                              className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-black text-white hover:bg-brand-dark disabled:opacity-50"
                             >
                               {toolNoteSaving ? (
                                 <Loader2 size={15} className="animate-spin" />
                               ) : (
                                 <Plus size={15} />
                               )}
-                              Lưu tools
+                              Lưu
                             </button>
                           </div>
                         </div>
                       </article>
                     ) : null}
-                    {toolNotes.length === 0 && !isAddingNew ? (
-                      <div className="rounded-lg border border-dashed border-line p-8 text-center">
-                        <p className="text-sm font-semibold text-muted">Chưa có mục tools phù hợp.</p>
-                        <button
-                          type="button"
-                          onClick={openNewToolNote}
-                          disabled={toolNoteSaving}
-                          className="mt-3 inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-bold text-white hover:bg-brand-dark disabled:opacity-50"
+                    {toolNotes.map((note) => {
+                      const isEditing = editingToolNoteId === note.id;
+                      return (
+                        <article
+                          key={note.id}
+                          className={`flex min-w-0 flex-col overflow-hidden rounded-xl border bg-white ${
+                            isEditing ? "border-brand shadow-panel" : "border-line"
+                          }`}
                         >
-                          <Plus size={18} />
-                          Thêm tools
-                        </button>
-                      </div>
-                    ) : (
-                      toolNotes.map((note) => {
-                        const isEditing = editingToolNoteId === note.id;
-                        return (
-                          <article
-                            key={note.id}
-                            className={`overflow-hidden rounded-xl border bg-white ${
-                              isEditing ? "border-brand shadow-panel" : "border-line"
-                            }`}
-                          >
-                            <ToolNoteColumns
-                              title={isEditing ? toolNoteTitle : note.title}
-                              account={isEditing ? toolNoteAccount : note.account}
-                              password={isEditing ? toolNotePassword : note.password}
-                              editing={isEditing}
-                              onTitleChange={setToolNoteTitle}
-                              onAccountChange={setToolNoteAccount}
-                              onPasswordChange={setToolNotePassword}
-                              onCopyResult={handleToolCopyResult}
-                            />
-                            <div className="flex flex-col gap-3 border-t border-line bg-slate-50 px-3 py-2.5 lg:flex-row lg:items-center lg:justify-between">
-                              <div className="grid gap-1 text-xs font-bold text-muted sm:grid-cols-2 lg:flex lg:flex-wrap lg:gap-x-4">
-                                <span className="inline-flex flex-wrap items-center gap-1">
-                                  Nhập: {note.createdBy || "Không rõ"} ·{" "}
-                                  {note.createdAt ? <ColoredDateTime value={note.createdAt} /> : "Chưa có giờ"}
-                                </span>
-                                <span className="inline-flex flex-wrap items-center gap-1">
-                                  Sửa: {note.updatedBy || note.createdBy || "Không rõ"} ·{" "}
-                                  {note.updatedAt || note.createdAt ? (
-                                    <ColoredDateTime value={note.updatedAt || note.createdAt} />
-                                  ) : (
-                                    "Chưa có giờ"
-                                  )}
-                                </span>
-                                <span>Cửa hàng: {storeName(note.storeId)}</span>
-                              </div>
-                              <div className="flex justify-end gap-2">
-                                {isEditing ? (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={cancelEditToolNote}
-                                      disabled={toolNoteSaving}
-                                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-line bg-white px-3 text-xs font-black text-muted hover:bg-slate-50 disabled:opacity-50"
-                                    >
-                                      <X size={15} />
-                                      Hủy sửa
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => void saveToolNote()}
-                                      disabled={toolNoteSaving}
-                                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-black text-white hover:bg-brand-dark disabled:opacity-50"
-                                    >
-                                      {toolNoteSaving ? (
-                                        <Loader2 size={15} className="animate-spin" />
-                                      ) : (
-                                        <Edit3 size={15} />
-                                      )}
-                                      Cập nhật
-                                    </button>
-                                  </>
+                          <ToolNoteColumns
+                            title={isEditing ? toolNoteTitle : note.title}
+                            account={isEditing ? toolNoteAccount : note.account}
+                            password={isEditing ? toolNotePassword : note.password}
+                            editing={isEditing}
+                            onTitleChange={setToolNoteTitle}
+                            onAccountChange={setToolNoteAccount}
+                            onPasswordChange={setToolNotePassword}
+                            onCopyResult={handleToolCopyResult}
+                          />
+                          <div className="mt-auto flex flex-col gap-2 border-t border-line bg-slate-50 px-3 py-2.5">
+                            <div className="grid gap-0.5 text-[11px] font-bold text-muted">
+                              <span className="inline-flex flex-wrap items-center gap-1">
+                                Nhập: {note.createdBy || "Không rõ"} ·{" "}
+                                {note.createdAt ? <ColoredDateTime value={note.createdAt} /> : "Chưa có giờ"}
+                              </span>
+                              <span className="inline-flex flex-wrap items-center gap-1">
+                                Sửa: {note.updatedBy || note.createdBy || "Không rõ"} ·{" "}
+                                {note.updatedAt || note.createdAt ? (
+                                  <ColoredDateTime value={note.updatedAt || note.createdAt} />
                                 ) : (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={() => openEditToolNote(note.id)}
-                                      disabled={toolNoteSaving}
-                                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-brand-soft px-3 text-xs font-black text-brand hover:bg-brand/20 disabled:opacity-50"
-                                    >
-                                      <Edit3 size={15} />
-                                      Sửa
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => void cancelToolNote(note.id)}
-                                      disabled={toolNoteSaving}
-                                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-red-50 px-3 text-xs font-black text-danger hover:bg-red-100 disabled:opacity-50"
-                                    >
-                                      <Trash2 size={15} />
-                                      Hủy
-                                    </button>
-                                  </>
+                                  "Chưa có giờ"
                                 )}
-                              </div>
+                              </span>
+                              <span>Cửa hàng: {storeName(note.storeId)}</span>
                             </div>
-                          </article>
-                        );
-                      })
-                    )}
-                  </>
+                            <div className="flex gap-2">
+                              {isEditing ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={cancelEditToolNote}
+                                    disabled={toolNoteSaving}
+                                    className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-line bg-white px-3 text-xs font-black text-muted hover:bg-slate-50 disabled:opacity-50"
+                                  >
+                                    <X size={15} />
+                                    Hủy
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void saveToolNote()}
+                                    disabled={toolNoteSaving}
+                                    className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-black text-white hover:bg-brand-dark disabled:opacity-50"
+                                  >
+                                    {toolNoteSaving ? (
+                                      <Loader2 size={15} className="animate-spin" />
+                                    ) : (
+                                      <Edit3 size={15} />
+                                    )}
+                                    Lưu
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditToolNote(note.id)}
+                                    disabled={toolNoteSaving}
+                                    className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand-soft px-3 text-xs font-black text-brand hover:bg-brand/20 disabled:opacity-50"
+                                  >
+                                    <Edit3 size={15} />
+                                    Sửa
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void cancelToolNote(note.id)}
+                                    disabled={toolNoteSaving}
+                                    className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-red-50 px-3 text-xs font-black text-danger hover:bg-red-100 disabled:opacity-50"
+                                  >
+                                    <Trash2 size={15} />
+                                    Hủy
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
             </section>
