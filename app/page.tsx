@@ -13654,21 +13654,11 @@ export default function Home() {
                             onCopyResult={handleToolCopyResult}
                           />
                           <div className="mt-auto flex flex-col gap-2 border-t border-line bg-slate-50 px-3 py-2.5">
-                            <div className="grid gap-0.5 text-[11px] font-bold text-muted">
-                              <span className="inline-flex flex-wrap items-center gap-1">
-                                Nhập: {note.createdBy || "Không rõ"} ·{" "}
-                                {note.createdAt ? <ColoredDateTime value={note.createdAt} /> : "Chưa có giờ"}
-                              </span>
-                              <span className="inline-flex flex-wrap items-center gap-1">
-                                Sửa: {note.updatedBy || note.createdBy || "Không rõ"} ·{" "}
-                                {note.updatedAt || note.createdAt ? (
-                                  <ColoredDateTime value={note.updatedAt || note.createdAt} />
-                                ) : (
-                                  "Chưa có giờ"
-                                )}
-                              </span>
-                              <span>Cửa hàng: {storeName(note.storeId)}</span>
-                            </div>
+                            <p className="truncate whitespace-nowrap text-[11px] font-bold text-muted">
+                              Nhập {formatToolNoteWhen(note.createdAt) || "—"}
+                              {" · "}
+                              Sửa {formatToolNoteWhen(note.updatedAt || note.createdAt) || "—"}
+                            </p>
                             <div className="flex gap-2">
                               {isEditing ? (
                                 <>
@@ -17081,6 +17071,13 @@ function DayStepFilter({
 }
 
 /** Ngày-tháng (xanh brand) + năm (muted, cách ra) + giờ phút (vàng amber). */
+function formatToolNoteWhen(value?: string | null): string {
+  const parts = toVnDisplayParts(value);
+  if (!parts) return String(value || "").replace("T", " ").trim();
+  const date = `${parts.dd}/${parts.mm}/${parts.yyyy}`;
+  return parts.hhmm ? `${date} ${parts.hhmm}` : date;
+}
+
 function ColoredDateTime({
   value,
   size = "sm",
