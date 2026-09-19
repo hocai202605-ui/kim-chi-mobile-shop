@@ -5595,7 +5595,10 @@ export default function Home() {
       }
       return next;
     });
-    if (isFirstPhone) setSaleGifts(createDefaultSaleGifts());
+    if (isFirstPhone) {
+      setSaleGifts(createDefaultSaleGifts());
+      setSalePhoneDetailsOpen(true);
+    }
     setSalePhoneListOpen(false);
     setSalePhoneSearch("");
   }
@@ -5659,14 +5662,6 @@ export default function Home() {
       return;
     }
     const cost = parseShopMoney(saleAccCostRaw); // 0 nếu trống
-    if (saleModalTab === "accessory") {
-      const warranty = String(fd?.get("saleWarranty") ?? saleWarranty ?? "").trim();
-      if (!warranty) {
-        window.alert("Nhập bảo hành khi bán phụ kiện.");
-        return;
-      }
-      setSaleWarranty(warranty);
-    }
     setSaleCart((prev) => [
       ...prev,
       {
@@ -5785,16 +5780,13 @@ export default function Home() {
       : "";
 
     const hasPhone = saleCart.some((l) => l.kind === "phone");
-    const hasSoldAccessory = saleCart.some(
-      (l) => l.kind === "accessory" && (Number(l.unitPrice) || 0) > 0
-    );
     const customerName = (saleCustomerName.trim() || (hasPhone ? "" : "Khách lẻ")).trim();
     if (hasPhone && !customerName) {
       window.alert("Tên khách bắt buộc khi bán máy.");
       return;
     }
-    if (hasSoldAccessory && !warrantyNote) {
-      window.alert("Nhập bảo hành khi bán phụ kiện.");
+    if (hasPhone && !warrantyNote) {
+      window.alert("Nhập bảo hành khi bán máy.");
       return;
     }
     if (saleCart.length === 0) {
@@ -11039,17 +11031,6 @@ export default function Home() {
                         <button
                           type="button"
                           onClick={() => {
-                            if (saleModalTab === "accessory") {
-                              const form = document.getElementById(
-                                "sale-create-form"
-                              ) as HTMLFormElement | null;
-                              if (form) {
-                                const fd = new FormData(form);
-                                setSaleWarranty(
-                                  String(fd.get("saleWarranty") ?? "").trim()
-                                );
-                              }
-                            }
                             setSaleModalTab("phone");
                             // Vào tab Máy: thu gọn (bấm 1 nút mới mở cả 2 cụm)
                             setSalePhoneDetailsOpen(false);
@@ -11346,29 +11327,6 @@ export default function Home() {
                                   </div>
                                 </div>
                               </div>
-                              <div className="grid min-w-0 gap-1.5">
-                                <span className="text-sm font-bold text-amber-950">
-                                  Bảo hành <span className="text-red-500">*</span>
-                                </span>
-                                <div className="min-w-0 [&_label>span]:hidden">
-                                  <ManageableSelect
-                                    key={`sale-warranty-acc-${saleWarrantyKey}-${saleStoreId}`}
-                                    label="Bảo hành"
-                                    name="saleWarranty"
-                                    options={saleWarrantyOptions}
-                                    setOptions={setSaleWarrantyOptions}
-                                    defaultValue={saleWarranty}
-                                    required
-                                    categoryCode={SALE_LOOKUP_CATEGORIES.warranty}
-                                    storeId={saleStoreId}
-                                    allowManage
-                                    allowFreeText
-                                    actorUsername={currentUser?.username ?? ""}
-                                    onValueChange={setSaleWarranty}
-                                    onManageNotify={(type, message) => showUiToast(type, message)}
-                                  />
-                                </div>
-                              </div>
                               <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
                                 <label className="grid min-w-0 gap-1.5">
                                   <span className="text-sm font-bold text-amber-950">
@@ -11508,7 +11466,9 @@ export default function Home() {
                                   />
                                 </label>
                                 <div className="grid min-w-0 gap-0.5">
-                                  <span className="text-xs font-bold text-slate-700">Bảo hành</span>
+                                  <span className="text-xs font-bold text-slate-700">
+                                    Bảo hành <span className="text-red-500">*</span>
+                                  </span>
                                   <div className="min-w-0 [&_label>span]:hidden">
                                     <ManageableSelect
                                       key={`sale-warranty-${saleWarrantyKey}-${saleStoreId}`}
@@ -11517,7 +11477,7 @@ export default function Home() {
                                       options={saleWarrantyOptions}
                                       setOptions={setSaleWarrantyOptions}
                                       defaultValue={saleWarranty}
-                                      required={false}
+                                      required={!isSaleReadOnly}
                                       categoryCode={SALE_LOOKUP_CATEGORIES.warranty}
                                       storeId={saleStoreId}
                                       allowManage
@@ -11860,20 +11820,6 @@ export default function Home() {
                     ) : null}
 
                     {/* View-only: hiện khách + tặng PK nếu phiếu có máy */}
-                    {isSaleReadOnly &&
-                    !saleCart.some((l) => l.kind === "phone") &&
-                    saleWarranty ? (
-                      <label className="grid gap-0.5">
-                        <span className="text-xs font-bold text-slate-700">Bảo hành</span>
-                        <input
-                          value={saleWarranty}
-                          readOnly
-                          disabled
-                          className="h-9 w-full cursor-default rounded-md border border-line bg-slate-50 px-2.5 text-sm font-semibold text-slate-700"
-                        />
-                      </label>
-                    ) : null}
-
                     {isSaleReadOnly && saleCart.some((l) => l.kind === "phone") ? (
                       <>
                         <div className="rounded-lg border border-line/80 bg-slate-50/80 px-2.5 py-2">
