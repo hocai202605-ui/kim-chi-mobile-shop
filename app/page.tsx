@@ -1010,6 +1010,24 @@ function formatMoney(value: number) {
   return value.toLocaleString("vi-VN");
 }
 
+/** Lọc tổng nợ khách trên sổ công nợ (tab Phần mềm). 1tr = 1.000 đơn vị shop. */
+type DebtCustomerAmountBucket = "all" | "lt1" | "1-3" | "3-5" | "5-10" | "gt10";
+const DEBT_SHOP_1TR = 1000;
+
+function debtCustomerKey(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function debtCustomerAmountInBucket(total: number, bucket: DebtCustomerAmountBucket): boolean {
+  if (bucket === "all") return true;
+  const t = Number(total) || 0;
+  if (bucket === "lt1") return t < DEBT_SHOP_1TR;
+  if (bucket === "1-3") return t >= DEBT_SHOP_1TR && t < 3 * DEBT_SHOP_1TR;
+  if (bucket === "3-5") return t >= 3 * DEBT_SHOP_1TR && t < 5 * DEBT_SHOP_1TR;
+  if (bucket === "5-10") return t >= 5 * DEBT_SHOP_1TR && t <= 10 * DEBT_SHOP_1TR;
+  return t > 10 * DEBT_SHOP_1TR;
+}
+
 /** `YYYY-MM-DD` → `d/m/yyyy` (vi), không new Date() mơ hồ. */
 function formatDateVi(iso?: string | null): string {
   if (!iso) return "";
@@ -1295,6 +1313,8 @@ function DraftNoteColumns({
 const TOOL_NOTE_NEW_ID = "__new__";
 const TOOL_NOTE_INPUT_CLASS =
   "box-border min-h-[2.75rem] w-full rounded-lg border border-line bg-white px-3 py-2 text-sm font-semibold leading-relaxed text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20";
+const TOOL_NOTE_TITLE_INPUT_CLASS =
+  "box-border min-h-[2.75rem] w-full rounded-lg border border-line bg-white px-3 py-2 text-lg font-black leading-snug text-brand outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20";
 
 async function copyTextToClipboard(text: string): Promise<boolean> {
   const value = text.trim();
@@ -1384,8 +1404,8 @@ function ToolNoteColumns({
 
   return (
     <div className="grid w-full min-w-0 divide-y divide-line">
-      <div className="min-w-0 p-2.5">
-        <p className="mb-1 text-[11px] font-black uppercase tracking-wide text-muted">Tiêu đề</p>
+      <div className="min-w-0 bg-brand-soft/40 p-2.5">
+        <p className="mb-1 text-xs font-black uppercase tracking-wide text-brand">Tiêu đề</p>
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
             {editing ? (
@@ -1396,10 +1416,14 @@ function ToolNoteColumns({
                 maxLength={200}
                 placeholder="Không bắt buộc"
                 onChange={(e) => onTitleChange?.(e.target.value)}
-                className={`${TOOL_NOTE_INPUT_CLASS} resize-none overflow-hidden`}
+                className={`${TOOL_NOTE_TITLE_INPUT_CLASS} resize-none overflow-hidden`}
               />
+            ) : title.trim() ? (
+              <p className="whitespace-pre-wrap break-words text-lg font-black leading-snug text-brand">
+                {title}
+              </p>
             ) : (
-              <DraftNoteText value={title} />
+              <p className="text-lg font-black text-muted">—</p>
             )}
           </div>
           <ToolCopyButton value={title} label="tiêu đề" onResult={onCopyResult} />
@@ -1807,6 +1831,8 @@ export default function Home() {
   const [debtStatusFilter, setDebtStatusFilter] = useState<"all" | "open" | "paid" | "cancelled">("open");
   /** Tìm khách nợ: gõ tay + chọn droplist tên khách. */
   const [debtCustomerQuery, setDebtCustomerQuery] = useState("");
+  /** Tab Phần mềm: lọc theo tổng nợ gom theo khách (đơn vị shop, 1.000 = 1tr). */
+  const [debtAmountBucket, setDebtAmountBucket] = useState<DebtCustomerAmountBucket>("all");
   const [selectedDebtIds, setSelectedDebtIds] = useState<string[]>([]);
   /** Phân trang grid sổ công nợ. */
   const [debtPage, setDebtPage] = useState(1);
@@ -5633,6 +5659,14 @@ export default function Home() {
       return;
     }
     const cost = parseShopMoney(saleAccCostRaw); // 0 nếu trống
+    if (saleModalTab === "accessory") {
+      const warranty = String(fd?.get("saleWarranty") ?? saleWarranty ?? "").trim();
+      if (!warranty) {
+        window.alert("Nhập bảo hành khi bán phụ kiện.");
+        return;
+      }
+      setSaleWarranty(warranty);
+    }
     setSaleCart((prev) => [
       ...prev,
       {
@@ -5751,9 +5785,16 @@ export default function Home() {
       : "";
 
     const hasPhone = saleCart.some((l) => l.kind === "phone");
+    const hasSoldAccessory = saleCart.some(
+      (l) => l.kind === "accessory" && (Number(l.unitPrice) || 0) > 0
+    );
     const customerName = (saleCustomerName.trim() || (hasPhone ? "" : "Khách lẻ")).trim();
     if (hasPhone && !customerName) {
       window.alert("Tên khách bắt buộc khi bán máy.");
+      return;
+    }
+    if (hasSoldAccessory && !warrantyNote) {
+      window.alert("Nhập bảo hành khi bán phụ kiện.");
       return;
     }
     if (saleCart.length === 0) {
@@ -10802,10 +10843,9 @@ export default function Home() {
                       <span 
                         key={`i-${item.id}`} 
                         className="inline-block max-w-[250px] truncate align-middle text-[18.4px] font-black text-slate-800 sm:max-w-[350px]"
-                        title={item.quantity > 1 ? `${item.itemName} (${item.quantity})` : item.itemName}
+                        title={item.itemName}
                       >
                         {item.itemName}
-                        {item.quantity > 1 ? ` (${item.quantity})` : ""}
                       </span>,
                       <span key={`a-${item.id}`} className="whitespace-nowrap text-[32.3px] font-black text-danger">
                         {isSaleSensitiveHidden ? "***" : formatMoney(item.amount)}
@@ -10999,6 +11039,17 @@ export default function Home() {
                         <button
                           type="button"
                           onClick={() => {
+                            if (saleModalTab === "accessory") {
+                              const form = document.getElementById(
+                                "sale-create-form"
+                              ) as HTMLFormElement | null;
+                              if (form) {
+                                const fd = new FormData(form);
+                                setSaleWarranty(
+                                  String(fd.get("saleWarranty") ?? "").trim()
+                                );
+                              }
+                            }
                             setSaleModalTab("phone");
                             // Vào tab Máy: thu gọn (bấm 1 nút mới mở cả 2 cụm)
                             setSalePhoneDetailsOpen(false);
@@ -11293,6 +11344,29 @@ export default function Home() {
                                       onManageNotify={(type, message) => showUiToast(type, message)}
                                     />
                                   </div>
+                                </div>
+                              </div>
+                              <div className="grid min-w-0 gap-1.5">
+                                <span className="text-sm font-bold text-amber-950">
+                                  Bảo hành <span className="text-red-500">*</span>
+                                </span>
+                                <div className="min-w-0 [&_label>span]:hidden">
+                                  <ManageableSelect
+                                    key={`sale-warranty-acc-${saleWarrantyKey}-${saleStoreId}`}
+                                    label="Bảo hành"
+                                    name="saleWarranty"
+                                    options={saleWarrantyOptions}
+                                    setOptions={setSaleWarrantyOptions}
+                                    defaultValue={saleWarranty}
+                                    required
+                                    categoryCode={SALE_LOOKUP_CATEGORIES.warranty}
+                                    storeId={saleStoreId}
+                                    allowManage
+                                    allowFreeText
+                                    actorUsername={currentUser?.username ?? ""}
+                                    onValueChange={setSaleWarranty}
+                                    onManageNotify={(type, message) => showUiToast(type, message)}
+                                  />
                                 </div>
                               </div>
                               <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
@@ -11786,6 +11860,20 @@ export default function Home() {
                     ) : null}
 
                     {/* View-only: hiện khách + tặng PK nếu phiếu có máy */}
+                    {isSaleReadOnly &&
+                    !saleCart.some((l) => l.kind === "phone") &&
+                    saleWarranty ? (
+                      <label className="grid gap-0.5">
+                        <span className="text-xs font-bold text-slate-700">Bảo hành</span>
+                        <input
+                          value={saleWarranty}
+                          readOnly
+                          disabled
+                          className="h-9 w-full cursor-default rounded-md border border-line bg-slate-50 px-2.5 text-sm font-semibold text-slate-700"
+                        />
+                      </label>
+                    ) : null}
+
                     {isSaleReadOnly && saleCart.some((l) => l.kind === "phone") ? (
                       <>
                         <div className="rounded-lg border border-line/80 bg-slate-50/80 px-2.5 py-2">
@@ -14225,14 +14313,28 @@ export default function Home() {
                   ? repairDebtRows
                   : saleDebtRows;
 
-          const debtCustomerOptions = Array.from(
-            new Set(tabRows.map((d) => d.customerName.trim()).filter(Boolean))
-          ).sort((a, b) => a.localeCompare(b, "vi"));
-
           const customerQ = debtCustomerQuery.trim().toLowerCase();
+          const customerDebtTotals = new Map<string, number>();
+          for (const d of tabRows) {
+            const key = debtCustomerKey(d.customerName);
+            if (!key) continue;
+            customerDebtTotals.set(key, (customerDebtTotals.get(key) || 0) + (Number(d.amount) || 0));
+          }
+          const bucketRows =
+            debtTab !== "software" || debtAmountBucket === "all"
+              ? tabRows
+              : tabRows.filter((d) =>
+                  debtCustomerAmountInBucket(
+                    customerDebtTotals.get(debtCustomerKey(d.customerName)) || 0,
+                    debtAmountBucket
+                  )
+                );
+          const debtCustomerOptions = Array.from(
+            new Set(bucketRows.map((d) => d.customerName.trim()).filter(Boolean))
+          ).sort((a, b) => a.localeCompare(b, "vi"));
           const displayDebts = !customerQ
-            ? tabRows
-            : tabRows.filter((d) => d.customerName.toLowerCase().includes(customerQ));
+            ? bucketRows
+            : bucketRows.filter((d) => d.customerName.toLowerCase().includes(customerQ));
 
           const debtRowsCount = displayDebts.length;
           const debtTotalPages = Math.max(1, Math.ceil(debtRowsCount / debtPageSize));
@@ -14400,6 +14502,7 @@ export default function Home() {
                             setDebtTab(tab.id);
                             setSelectedDebtIds([]);
                             setDebtCustomerQuery("");
+                            setDebtAmountBucket("all");
                             setDebtPage(1);
                           }}
                           className={`inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-md px-3 text-sm font-bold transition ${
@@ -14434,6 +14537,25 @@ export default function Home() {
                       <option value="cancelled">Đã hủy</option>
                       <option value="all">Tất cả TT</option>
                     </select>
+                    {debtTab === "software" ? (
+                      <select
+                        value={debtAmountBucket}
+                        onChange={(e) => {
+                          setDebtAmountBucket(e.target.value as DebtCustomerAmountBucket);
+                          setSelectedDebtIds([]);
+                          setDebtPage(1);
+                        }}
+                        aria-label="Lọc theo tổng nợ khách"
+                        className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold"
+                      >
+                        <option value="all">Tất cả mức nợ</option>
+                        <option value="lt1">Dưới 1tr</option>
+                        <option value="1-3">1–3tr</option>
+                        <option value="3-5">3–5tr</option>
+                        <option value="5-10">5–10tr</option>
+                        <option value="gt10">Trên 10tr</option>
+                      </select>
+                    ) : null}
                     <div className="relative min-w-[14rem] flex-1">
                       <Search className="pointer-events-none absolute left-3 top-2.5 text-muted" size={16} />
                       <input
@@ -14655,9 +14777,12 @@ export default function Home() {
                           <span key={`amt-${item.id}`} className="font-black text-red-600">
                             {isDebtSensitiveHidden ? "***" : formatMoney(item.amount)}
                           </span>,
-                          <span key={`dt-${item.id}`} className="text-sm font-semibold">
-                            {item.debtDate || "—"}
-                          </span>,
+                          <ColoredDateTime
+                            key={`dt-${item.id}`}
+                            value={item.debtDate}
+                            size="md"
+                            dateOnly
+                          />,
                           <StatusBadge
                             key={`st-${item.id}`}
                             tone={
@@ -17081,9 +17206,12 @@ function formatToolNoteWhen(value?: string | null): string {
 function ColoredDateTime({
   value,
   size = "sm",
+  dateOnly = false,
 }: {
   value?: string | null;
   size?: "sm" | "md";
+  /** Chỉ ngày: `dd/mm yyyy` — ngày/tháng màu brand, năm màu muted. */
+  dateOnly?: boolean;
 }) {
   const parts = toVnDisplayParts(value);
   const textCls = size === "md" ? "text-sm font-bold" : "text-xs font-semibold";
@@ -17097,10 +17225,10 @@ function ColoredDateTime({
   return (
     <span className={`inline-flex items-center gap-1.5 whitespace-nowrap ${textCls}`}>
       <span className="rounded-md bg-brand-soft/70 px-1.5 py-0.5 font-black text-brand">
-        {parts.dd}-{parts.mm}
+        {dateOnly ? `${parts.dd}/${parts.mm}` : `${parts.dd}-${parts.mm}`}
       </span>
       <span className="px-1 font-bold tabular-nums text-muted">{parts.yyyy}</span>
-      {parts.hhmm ? (
+      {!dateOnly && parts.hhmm ? (
         <span className="rounded-md bg-amber-50 px-1.5 py-0.5 font-black text-amber-800">{parts.hhmm}</span>
       ) : null}
     </span>

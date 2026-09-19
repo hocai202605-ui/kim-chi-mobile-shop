@@ -74,6 +74,16 @@ export type CreateSaleInput = {
   unitPrice?: number;
 };
 
+/** Cột Hàng trên danh sách bán: chỉ Tên máy; phiếu không có máy thì hiện tên PK. */
+function saleGridItemName(phoneNames: string[], otherNames: string[] = []): string {
+  const phones = phoneNames.map((n) => String(n || "").trim()).filter(Boolean);
+  const others = otherNames.map((n) => String(n || "").trim()).filter(Boolean);
+  const names = phones.length > 0 ? phones : others;
+  if (names.length === 0) return "Hàng";
+  if (names.length <= 2) return names.join(" + ");
+  return `${names[0]} + ${names.length - 1} dòng khác`;
+}
+
 /** Phiếu bán trả về UI — amount/profit đơn vị **short shop** (giống kho). */
 export type CreatedSale = {
   id: string;
@@ -1296,7 +1306,8 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
     let totalQty = 0;
     let phoneLines = 0;
     let accessoryLines = 0;
-    const itemNames: string[] = [];
+    const phoneNames: string[] = [];
+    const otherNames: string[] = [];
     const seenPhoneIds = new Set<string>();
 
     for (const line of lines) {
@@ -1326,6 +1337,7 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
         const amount = unitPriceVnd;
         const profit = amount - unitCostVnd;
         const itemName = `${phone.brand} ${phone.model_name}`.trim();
+        const modelName = String(phone.model_name || "").trim();
 
         await client.query(
           `insert into public.sale_items (
@@ -1352,7 +1364,7 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
         totalProfit += profit;
         totalQty += 1;
         phoneLines += 1;
-        itemNames.push(itemName);
+        phoneNames.push(modelName || itemName);
       } else {
         const quantity = Math.max(1, Math.round(Number(line.quantity) || 1));
         // Giá bán 0 = phụ kiện tặng (vẫn ghi vốn → lãi âm). Chỉ chặn số âm.
@@ -1433,7 +1445,7 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
         totalProfit += profit;
         totalQty += quantity;
         accessoryLines += 1;
-        itemNames.push(quantity > 1 ? `${itemName} ×${quantity}` : itemName);
+        otherNames.push(quantity > 1 ? `${itemName} ×${quantity}` : itemName);
       }
     }
 
@@ -1459,10 +1471,7 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
             ? "Máy"
             : "Phụ kiện";
 
-    const itemName =
-      itemNames.length <= 2
-        ? itemNames.join(" + ")
-        : `${itemNames[0]} + ${itemNames.length - 1} dòng khác`;
+    const itemName = saleGridItemName(phoneNames, otherNames);
 
     const saleChannel = normalizeSaleChannel(input.channel);
     return {
@@ -1600,13 +1609,16 @@ export async function repoGetSale(saleId: string): Promise<SaleDetail> {
   const accLines = lines.filter((l) => l.kind === "accessory").length;
   const itemType: "Máy" | "Phụ kiện" =
     phoneLines > 0 && accLines === 0 ? "Máy" : phoneLines === 0 ? "Phụ kiện" : "Máy";
-  const itemNames = lines.map((l) =>
-    l.kind === "phone"
-      ? l.name
-      : l.quantity > 1
+  const phoneNames = itemRows
+    .filter((si) => si.item_type === "phone")
+    .map((si) => String(si.phone_model || "").trim() || String(si.item_name || "").trim());
+  const otherNames = lines
+    .filter((l) => l.kind === "accessory")
+    .map((l) =>
+      l.quantity > 1
         ? `${l.category ? `${l.category}: ` : ""}${l.name} ×${l.quantity}`
         : `${l.category ? `${l.category}: ` : ""}${l.name}`
-  );
+    );
 
   const soldAtLocal =
     toVnDateTimeLocal(sale.sold_at_ts || sale.sold_at) ||
@@ -1617,10 +1629,7 @@ export async function repoGetSale(saleId: string): Promise<SaleDetail> {
     soldAt: toVnDateTimeLocal(sale.sold_at_ts) || toDateOnly(sale.sold_at) || "",
     soldAtLocal,
     storeId: idToCode.get(String(sale.store_id)) ?? "store-1",
-    itemName:
-      itemNames.length <= 2
-        ? itemNames.join(" + ")
-        : `${itemNames[0]} + ${itemNames.length - 1} dòng khác`,
+    itemName: saleGridItemName(phoneNames, otherNames),
     itemType,
     quantity: lines.reduce((s, l) => s + (l.kind === "phone" ? 1 : l.quantity), 0),
     amount: vndToShopMoney(Number(sale.total_amount) || 0),
@@ -1648,6 +1657,26 @@ export async function repoListRecentSales(limit = 2000, channel: SaleChannel = "
             coalesce(c.phone, '') as customer_phone,
             coalesce(c.address, '') as customer_address,
             coalesce(
+              nullif((
+                select string_agg(label, ' + ' order by created_at)
+                from (
+                  select
+                    si.created_at,
+                    coalesce(
+                      nullif(btrim(p.model_name), ''),
+                      case
+                        when coalesce(btrim(p.brand), '') <> ''
+                             and si.item_name ilike btrim(p.brand) || ' %'
+                        then btrim(substr(si.item_name, char_length(btrim(p.brand)) + 2))
+                        else si.item_name
+                      end
+                    ) as label
+                  from public.sale_items si
+                  left join public.phones p on p.id = si.phone_id
+                  where si.sale_id = s.id
+                    and si.item_type = 'phone'
+                ) phone_labels
+              ), ''),
               (
                 select string_agg(
                   case when si.quantity > 1 then si.item_name || ' ×' || si.quantity else si.item_name end,
