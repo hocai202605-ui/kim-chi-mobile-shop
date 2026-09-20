@@ -1314,7 +1314,7 @@ const TOOL_NOTE_NEW_ID = "__new__";
 const TOOL_NOTE_INPUT_CLASS =
   "box-border min-h-[2.75rem] w-full rounded-lg border border-line bg-white px-3 py-2 text-sm font-semibold leading-relaxed text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20";
 const TOOL_NOTE_TITLE_INPUT_CLASS =
-  "box-border min-h-[2.75rem] w-full rounded-lg border border-line bg-white px-3 py-2 text-lg font-black leading-snug text-brand outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20";
+  "box-border min-h-[2.75rem] w-full rounded-lg border border-line bg-white px-3 py-2 text-lg font-black leading-snug text-[#c6d60a] outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20";
 
 async function copyTextToClipboard(text: string): Promise<boolean> {
   const value = text.trim();
@@ -1419,7 +1419,7 @@ function ToolNoteColumns({
                 className={`${TOOL_NOTE_TITLE_INPUT_CLASS} resize-none overflow-hidden`}
               />
             ) : title.trim() ? (
-              <p className="whitespace-pre-wrap break-words text-lg font-black leading-snug text-brand">
+              <p className="whitespace-pre-wrap break-words text-lg font-black leading-snug text-[#c6d60a]">
                 {title}
               </p>
             ) : (
@@ -11791,9 +11791,11 @@ export default function Home() {
                                                   {p.storage}
                                                 </span>
                                               ) : null}
-                                              <span className="min-w-0 truncate font-mono text-[11px] font-medium text-slate-400">
-                                                {p.imei}
-                                              </span>
+                                              {p.imei ? (
+                                                <span className="shrink-0 font-mono text-xl font-black tracking-wide text-red-600">
+                                                  {p.imei}
+                                                </span>
+                                              ) : null}
                                             </div>
                                             <span className="shrink-0 text-sm font-black text-amber-800">
                                               {formatMoney(p.expectedPrice)}
@@ -11947,17 +11949,19 @@ export default function Home() {
                             >
                               <div className="min-w-0 flex-1 basis-[10rem]">
                                 {line.kind === "phone" ? (
-                                  <p className="truncate text-sm font-bold text-ink">
-                                    <span className="mr-1 font-black text-indigo-700">{line.name}</span>
+                                  <p className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-sm font-bold text-ink">
+                                    <span className="font-black text-indigo-700">{line.name}</span>
                                     {line.color ? (
-                                      <span className="font-semibold text-slate-500"> · {line.color}</span>
+                                      <span className="font-semibold text-slate-500">· {line.color}</span>
                                     ) : null}
                                     {line.storage ? (
-                                      <span className="font-semibold text-slate-500"> · {line.storage}</span>
+                                      <span className="font-semibold text-slate-500">· {line.storage}</span>
                                     ) : null}
-                                    <span className="ml-1 font-mono text-[11px] font-medium text-slate-400">
-                                      {line.imei}
-                                    </span>
+                                    {line.imei ? (
+                                      <span className="font-mono text-xl font-black tracking-wide text-red-600">
+                                        {line.imei}
+                                      </span>
+                                    ) : null}
                                   </p>
                                 ) : (
                                   <div className="flex min-w-0 flex-wrap items-center gap-1">
