@@ -1487,16 +1487,26 @@ function LinkNoteColumns({
   title,
   linkUrl,
   editing = false,
+  saving = false,
   onTitleChange,
   onLinkUrlChange,
   onCopyResult,
+  onEdit,
+  onDelete,
+  onCancel,
+  onSave,
 }: {
   title: string;
   linkUrl: string;
   editing?: boolean;
+  saving?: boolean;
   onTitleChange?: (value: string) => void;
   onLinkUrlChange?: (value: string) => void;
   onCopyResult?: (ok: boolean, label: string) => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
+  onCancel?: () => void;
+  onSave?: () => void;
 }) {
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const linkRef = useRef<HTMLTextAreaElement>(null);
@@ -1534,7 +1544,54 @@ function LinkNoteColumns({
               <p className="text-lg font-black text-muted">—</p>
             )}
           </div>
-          <ToolCopyButton value={title} label="tiêu đề" onResult={onCopyResult} />
+          <div className="flex shrink-0 items-center gap-1">
+            <ToolCopyButton value={title} label="tiêu đề" onResult={onCopyResult} />
+            {editing ? (
+              <>
+                <button
+                  type="button"
+                  onClick={onCancel}
+                  disabled={saving}
+                  title="Hủy sửa"
+                  className="grid h-10 w-10 place-items-center rounded-lg border border-line bg-white text-muted hover:bg-slate-100 active:scale-95 disabled:opacity-50"
+                >
+                  <X size={16} />
+                </button>
+                <button
+                  type="button"
+                  onClick={onSave}
+                  disabled={saving}
+                  title="Lưu"
+                  className="grid h-10 w-10 place-items-center rounded-lg bg-brand text-white hover:bg-brand-dark active:scale-95 disabled:opacity-50"
+                >
+                  {saving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                </button>
+              </>
+            ) : (
+              <>
+                {onEdit && (
+                  <button
+                    type="button"
+                    onClick={onEdit}
+                    title="Sửa"
+                    className="grid h-10 w-10 place-items-center rounded-lg border border-line bg-white text-brand hover:bg-brand-soft active:scale-95"
+                  >
+                    <Edit3 size={16} />
+                  </button>
+                )}
+                {onDelete && (
+                  <button
+                    type="button"
+                    onClick={onDelete}
+                    title="Xóa"
+                    className="grid h-10 w-10 place-items-center rounded-lg border border-red-200 bg-red-50 text-danger hover:bg-red-100 active:scale-95"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                )}
+              </>
+            )}
+          </div>
         </div>
       </div>
       <div className="min-w-0 p-2.5">
@@ -6511,9 +6568,9 @@ export default function Home() {
   }, [currentUser?.id, currentUser?.username]);
 
   useEffect(() => {
-    if (activePage !== "debt-notes" || activeOwnDebtTab !== "links" || !currentUser) return;
+    if (activePage !== "link-notes" || !currentUser) return;
     void reloadLinkNotes();
-  }, [activePage, activeOwnDebtTab, currentUser, storeFilter, reloadLinkNotes]);
+  }, [activePage, currentUser, storeFilter, reloadLinkNotes]);
 
   function openNewLinkNote() {
     if (linkNoteSaving) return;
@@ -14530,38 +14587,17 @@ export default function Home() {
                           title={linkNoteTitle}
                           linkUrl={linkNoteUrl}
                           editing
+                          saving={linkNoteSaving}
                           onTitleChange={setLinkNoteTitle}
                           onLinkUrlChange={setLinkNoteUrl}
                           onCopyResult={handleLinkCopyResult}
+                          onCancel={cancelEditLinkNote}
+                          onSave={() => void saveLinkNote()}
                         />
-                        <div className="mt-auto flex flex-col gap-2 border-t border-line bg-slate-50 px-3 py-2.5">
-                          <div className="text-[11px] font-bold text-muted">
+                        <div className="border-t border-line bg-slate-50 px-3 py-2">
+                          <p className="text-[11px] font-bold text-muted">
                             Link mới · {storeName(currentUser.role === "staff" ? currentUser.storeId : storeFilter !== "all" ? storeFilter : currentUser.storeId || "store-1")}
-                          </div>
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              onClick={cancelEditLinkNote}
-                              disabled={linkNoteSaving}
-                              className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-line bg-white px-3 text-xs font-black text-muted hover:bg-slate-50 disabled:opacity-50"
-                            >
-                              <X size={15} />
-                              Hủy
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void saveLinkNote()}
-                              disabled={linkNoteSaving}
-                              className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-black text-white hover:bg-brand-dark disabled:opacity-50"
-                            >
-                              {linkNoteSaving ? (
-                                <Loader2 size={15} className="animate-spin" />
-                              ) : (
-                                <Plus size={15} />
-                              )}
-                              Lưu
-                            </button>
-                          </div>
+                          </p>
                         </div>
                       </article>
                     ) : null}
@@ -14578,63 +14614,21 @@ export default function Home() {
                             title={isEditing ? linkNoteTitle : note.title}
                             linkUrl={isEditing ? linkNoteUrl : note.linkUrl}
                             editing={isEditing}
+                            saving={linkNoteSaving}
                             onTitleChange={setLinkNoteTitle}
                             onLinkUrlChange={setLinkNoteUrl}
                             onCopyResult={handleLinkCopyResult}
+                            onCancel={cancelEditLinkNote}
+                            onSave={() => void saveLinkNote()}
+                            onEdit={() => openEditLinkNote(note.id)}
+                            onDelete={() => cancelLinkNote(note.id)}
                           />
-                          <div className="mt-auto flex flex-col gap-2 border-t border-line bg-slate-50 px-3 py-2.5">
+                          <div className="border-t border-line bg-slate-50 px-3 py-2">
                             <p className="truncate whitespace-nowrap text-[11px] font-bold text-muted">
                               Nhập {formatToolNoteWhen(note.createdAt) || "—"}
                               {" · "}
                               Sửa {formatToolNoteWhen(note.updatedAt || note.createdAt) || "—"}
                             </p>
-                            <div className="flex gap-2">
-                              {isEditing ? (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={cancelEditLinkNote}
-                                    disabled={linkNoteSaving}
-                                    className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-line bg-white px-3 text-xs font-black text-muted hover:bg-slate-50 disabled:opacity-50"
-                                  >
-                                    <X size={15} />
-                                    Hủy
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => void saveLinkNote()}
-                                    disabled={linkNoteSaving}
-                                    className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-black text-white hover:bg-brand-dark disabled:opacity-50"
-                                  >
-                                    {linkNoteSaving ? (
-                                      <Loader2 size={15} className="animate-spin" />
-                                    ) : (
-                                      <CheckCircle2 size={15} />
-                                    )}
-                                    Lưu
-                                  </button>
-                                </>
-                              ) : (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => cancelLinkNote(note.id)}
-                                    title="Hủy/xóa link"
-                                    className="inline-flex h-9 w-11 shrink-0 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-danger hover:bg-red-100 active:scale-95"
-                                  >
-                                    <Trash2 size={15} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => openEditLinkNote(note.id)}
-                                    className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-line bg-white px-3 text-xs font-black text-ink hover:bg-slate-50 active:scale-95"
-                                  >
-                                    <Edit3 size={15} />
-                                    Sửa
-                                  </button>
-                                </>
-                              )}
-                            </div>
                           </div>
                         </article>
                       );
