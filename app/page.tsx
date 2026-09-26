@@ -847,6 +847,7 @@ const navItems = [
   { id: "draft-notes", label: "GHI NHÁP", icon: FileText },
   { id: "tools", label: "TOOLS", icon: KeyRound },
   { id: "debt-notes", label: "MÌNH NỢ", icon: NotebookPen },
+  { id: "link-notes", label: "LINK WEB", icon: ExternalLink },
   { id: "logs", label: "NHẬT KÝ", icon: ClipboardList },
   { id: "accounts", label: "TÀI KHOẢN", icon: UserCog },
   { id: "dashboard", label: "BÁO CÁO / THỐNG KÊ", icon: LayoutDashboard },
@@ -1558,7 +1559,13 @@ function LinkNoteColumns({
             {!editing && linkUrl.trim() && (
               <button
                 type="button"
-                onClick={() => window.open(linkUrl, "_blank")}
+                onClick={() => {
+                  let href = linkUrl.trim();
+                  if (href && !/^https?:\/\//i.test(href)) {
+                    href = "https://" + href;
+                  }
+                  window.open(href, "_blank");
+                }}
                 title="Mở link trong tab mới"
                 className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-line bg-slate-50 text-muted hover:bg-slate-200 hover:text-ink active:scale-95"
               >
@@ -7318,38 +7325,16 @@ export default function Home() {
                   ? "bg-white/18 text-white"
                   : "bg-white/[0.06] text-emerald-100 group-hover:bg-white/[0.12]";
             return (
-              <div key={item.id} className="grid gap-1">
-                <button
-                  onClick={() => {
-                    setActivePage(item.id);
-                    if (item.id === "debt-notes") {
-                      setActiveOwnDebtTab("debts");
-                    }
-                  }}
-                  className={`group flex h-11 items-center gap-3 rounded-lg border px-3 text-left text-sm font-black uppercase tracking-wide transition ${btnClass}`}
-                >
-                  <span className={`grid h-7 w-7 place-items-center rounded-md transition ${iconWrapClass}`}>
-                    <Icon size={17} />
-                  </span>
-                  {item.label}
-                </button>
-                {isActive && item.id === "debt-notes" && (
-                  <div className="ml-10 grid gap-1 border-l-2 border-[#1a4a3a] pl-2 mt-1 mb-2">
-                    <button
-                      onClick={() => setActiveOwnDebtTab("debts")}
-                      className={`flex h-9 items-center rounded-md px-3 text-sm font-bold transition-colors ${activeOwnDebtTab === "debts" ? "bg-white/10 text-white" : "text-emerald-100 hover:bg-white/5 hover:text-white"}`}
-                    >
-                      Khoản nợ
-                    </button>
-                    <button
-                      onClick={() => setActiveOwnDebtTab("links")}
-                      className={`flex h-9 items-center rounded-md px-3 text-sm font-bold transition-colors ${activeOwnDebtTab === "links" ? "bg-white/10 text-white" : "text-emerald-100 hover:bg-white/5 hover:text-white"}`}
-                    >
-                      Link Web
-                    </button>
-                  </div>
-                )}
-              </div>
+              <button
+                key={item.id}
+                onClick={() => setActivePage(item.id)}
+                className={`group flex h-11 items-center gap-3 rounded-lg border px-3 text-left text-sm font-black uppercase tracking-wide transition ${btnClass}`}
+              >
+                <span className={`grid h-7 w-7 place-items-center rounded-md transition ${iconWrapClass}`}>
+                  <Icon size={17} />
+                </span>
+                {item.label}
+              </button>
             );
           })}
         </nav>
@@ -14074,8 +14059,6 @@ export default function Home() {
 
           return (
             <>
-              {activeOwnDebtTab === "debts" ? (
-                <>
               <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="rounded-xl border border-line bg-white p-4 shadow-panel">
                   <p className="text-xs font-bold uppercase tracking-wide text-muted">Tổng đang nợ</p>
@@ -14459,7 +14442,11 @@ export default function Home() {
                 </div>
               ) : null}
             </>
-          ) : activeOwnDebtTab === "links" && currentUser ? (
+          );
+        })()}
+
+        {activePage === "link-notes" && currentUser && (() => {
+          return (
             <section className="rounded-lg border border-line bg-white shadow-panel">
               <div className="flex flex-col gap-3 border-b border-line p-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
@@ -14656,8 +14643,6 @@ export default function Home() {
                 )}
               </div>
             </section>
-          ) : null}
-            </>
           );
         })()}
 

@@ -5,11 +5,12 @@ create table if not exists public.link_notes (
   store_id        uuid not null references public.stores (id),
   title           text not null,
   link_url        text not null,
-  status          public.record_status not null default 'active',
+  status          text not null default 'active',
   created_by      text,
   updated_by      text,
   created_at      timestamptz not null default now(),
-  updated_at      timestamptz not null default now()
+  updated_at      timestamptz not null default now(),
+  constraint link_notes_status_check check (status in ('active', 'cancelled'))
 );
 
 create index if not exists link_notes_store_status_idx
