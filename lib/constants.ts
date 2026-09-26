@@ -30,6 +30,7 @@ export const ALL_MENU_IDS = [
   "draft-notes",
   "tools",
   "debt-notes",
+  "link-notes",
   "logs",
   "accounts",
   "dashboard",
