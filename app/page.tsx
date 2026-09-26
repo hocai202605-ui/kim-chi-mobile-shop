@@ -27,6 +27,7 @@ import {
   CreditCard,
   Crown,
   Edit3,
+  ExternalLink,
   Eye,
   EyeOff,
   FileSpreadsheet,
@@ -150,6 +151,12 @@ import {
   upsertToolNote as apiUpsertToolNote,
   type ToolNote,
 } from "@/services/toolsService";
+import {
+  cancelLinkNote as apiCancelLinkNote,
+  listLinkNotes as apiListLinkNotes,
+  upsertLinkNote as apiUpsertLinkNote,
+  type LinkNote,
+} from "@/services/linkNotesService";
 import {
   apiListAccounts,
   apiListLoginUsers,
@@ -1473,6 +1480,98 @@ function ToolNoteColumns({
   );
 }
 
+const LINK_NOTE_NEW_ID = "new-link";
+
+function LinkNoteColumns({
+  title,
+  linkUrl,
+  editing = false,
+  onTitleChange,
+  onLinkUrlChange,
+  onCopyResult,
+}: {
+  title: string;
+  linkUrl: string;
+  editing?: boolean;
+  onTitleChange?: (value: string) => void;
+  onLinkUrlChange?: (value: string) => void;
+  onCopyResult?: (ok: boolean, label: string) => void;
+}) {
+  const titleRef = useRef<HTMLTextAreaElement>(null);
+  const linkRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!editing) return;
+    for (const el of [titleRef.current, linkRef.current]) {
+      if (!el) continue;
+      el.style.height = "auto";
+      el.style.height = `${Math.max(44, el.scrollHeight)}px`;
+    }
+  }, [editing, title, linkUrl]);
+
+  return (
+    <div className="grid w-full min-w-0 divide-y divide-line">
+      <div className="min-w-0 bg-brand-soft/40 p-2.5">
+        <p className="mb-1 text-xs font-black uppercase tracking-wide text-brand">Tiêu đề</p>
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            {editing ? (
+              <textarea
+                ref={titleRef}
+                value={title}
+                rows={1}
+                maxLength={200}
+                placeholder="Không bắt buộc"
+                onChange={(e) => onTitleChange?.(e.target.value)}
+                className={`${TOOL_NOTE_TITLE_INPUT_CLASS} resize-none overflow-hidden`}
+              />
+            ) : title.trim() ? (
+              <p className="whitespace-pre-wrap break-words text-lg font-black leading-snug text-[#c6d60a]">
+                {title}
+              </p>
+            ) : (
+              <p className="text-lg font-black text-muted">—</p>
+            )}
+          </div>
+          <ToolCopyButton value={title} label="tiêu đề" onResult={onCopyResult} />
+        </div>
+      </div>
+      <div className="min-w-0 p-2.5">
+        <p className="mb-1 text-[11px] font-black uppercase tracking-wide text-muted">Link Web</p>
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            {editing ? (
+              <textarea
+                ref={linkRef}
+                value={linkUrl}
+                rows={1}
+                placeholder="Nhập link web..."
+                onChange={(e) => onLinkUrlChange?.(e.target.value)}
+                className={`${TOOL_NOTE_INPUT_CLASS} resize-none overflow-hidden`}
+              />
+            ) : (
+              <DraftNoteText value={linkUrl} />
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            <ToolCopyButton value={linkUrl} label="link web" onResult={onCopyResult} />
+            {!editing && linkUrl.trim() && (
+              <button
+                type="button"
+                onClick={() => window.open(linkUrl, "_blank")}
+                title="Mở link trong tab mới"
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-line bg-slate-50 text-muted hover:bg-slate-200 hover:text-ink active:scale-95"
+              >
+                <ExternalLink size={18} />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StatCard({ label, value, hint, icon }: { label: string; value: string; hint: string; icon: ReactNode }) {
   return (
     <section className="rounded-lg border border-line bg-white p-4 shadow-panel">
@@ -1720,6 +1819,17 @@ export default function Home() {
   const [toolNoteLoading, setToolNoteLoading] = useState(false);
   const [toolNoteSaving, setToolNoteSaving] = useState(false);
   const [toolNoteError, setToolNoteError] = useState("");
+
+  const [activeOwnDebtTab, setActiveOwnDebtTab] = useState<"debts" | "links">("debts");
+  const [linkNotes, setLinkNotes] = useState<LinkNote[]>([]);
+  const [linkNoteQuery, setLinkNoteQuery] = useState("");
+  const [linkNoteUserFilter, setLinkNoteUserFilter] = useState("");
+  const [linkNoteTitle, setLinkNoteTitle] = useState("");
+  const [linkNoteUrl, setLinkNoteUrl] = useState("");
+  const [editingLinkNoteId, setEditingLinkNoteId] = useState<string | null>(null);
+  const [linkNoteLoading, setLinkNoteLoading] = useState(false);
+  const [linkNoteSaving, setLinkNoteSaving] = useState(false);
+  const [linkNoteError, setLinkNoteError] = useState("");
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customersLoading, setCustomersLoading] = useState(false);
@@ -6358,6 +6468,136 @@ export default function Home() {
     }
   }
 
+  // ─── Link Web (API / DB) ─────────────────────────────────────────
+  const reloadLinkNotes = useCallback(async () => {
+    if (!currentUser) return;
+    setLinkNoteLoading(true);
+    setLinkNoteError("");
+    try {
+      const storeId =
+        currentUser.role === "staff"
+          ? currentUser.storeId
+          : storeFilter !== "all"
+            ? storeFilter
+            : "all";
+      const rows = await apiListLinkNotes({
+        storeId,
+        query: linkNoteQuery.trim() || undefined,
+        username:
+          currentUser.role === "staff"
+            ? currentUser.username
+            : linkNoteUserFilter === "all"
+              ? undefined
+              : linkNoteUserFilter || currentUser.username,
+      });
+      setLinkNotes(rows);
+    } catch (err) {
+      setLinkNoteError(toUiError(err));
+      setLinkNotes([]);
+    } finally {
+      setLinkNoteLoading(false);
+    }
+  }, [currentUser, storeFilter, linkNoteQuery, linkNoteUserFilter]);
+
+  useEffect(() => {
+    setLinkNoteUserFilter(currentUser?.username ?? "");
+  }, [currentUser?.id, currentUser?.username]);
+
+  useEffect(() => {
+    if (activePage !== "debt-notes" || activeOwnDebtTab !== "links" || !currentUser) return;
+    void reloadLinkNotes();
+  }, [activePage, activeOwnDebtTab, currentUser, storeFilter, reloadLinkNotes]);
+
+  function openNewLinkNote() {
+    if (linkNoteSaving) return;
+    setEditingLinkNoteId(LINK_NOTE_NEW_ID);
+    setLinkNoteTitle("");
+    setLinkNoteUrl("");
+  }
+
+  function openEditLinkNote(id: string) {
+    const row = linkNotes.find((note) => note.id === id);
+    if (!row) return;
+    setEditingLinkNoteId(row.id);
+    setLinkNoteTitle(row.title);
+    setLinkNoteUrl(row.linkUrl);
+  }
+
+  function cancelEditLinkNote() {
+    setEditingLinkNoteId(null);
+    setLinkNoteTitle("");
+    setLinkNoteUrl("");
+  }
+
+  async function saveLinkNote() {
+    if (!currentUser || linkNoteSaving || !editingLinkNoteId) return;
+    const isNew = editingLinkNoteId === LINK_NOTE_NEW_ID;
+    const title = linkNoteTitle.trim();
+    const linkUrl = linkNoteUrl.trim();
+    if (!linkUrl) {
+      showUiToast("error", "Link không được trống.");
+      return;
+    }
+    const row = isNew ? null : linkNotes.find((note) => note.id === editingLinkNoteId);
+    const storeId =
+      row?.storeId ??
+      (currentUser.role === "staff"
+        ? currentUser.storeId
+        : storeFilter !== "all"
+          ? storeFilter
+          : currentUser.storeId || "store-1");
+    setLinkNoteSaving(true);
+    try {
+      const saved = await apiUpsertLinkNote({
+        id: isNew ? undefined : editingLinkNoteId,
+        storeId,
+        title,
+        linkUrl,
+        actorUsername: currentUser.username,
+      });
+      pushLog(
+        isNew ? "Thêm link" : "Sửa link",
+        [saved.title, saved.linkUrl].filter(Boolean).join(" - ").slice(0, 80),
+        saved.storeId
+      );
+      showUiToast("success", isNew ? "Đã lưu link." : "Đã cập nhật link.");
+      cancelEditLinkNote();
+      await reloadLinkNotes();
+    } catch (err) {
+      showUiToast("error", toUiError(err));
+    } finally {
+      setLinkNoteSaving(false);
+    }
+  }
+
+  async function cancelLinkNote(id: string) {
+    if (!currentUser || linkNoteSaving) return;
+    const row = linkNotes.find((note) => note.id === id);
+    if (!row) return;
+    if (!window.confirm("Hủy link này?")) return;
+    setLinkNoteSaving(true);
+    try {
+      await apiCancelLinkNote(id, currentUser.username);
+      pushLog(
+        "Hủy link",
+        [row.title, row.linkUrl].filter(Boolean).join(" - ").slice(0, 80),
+        row.storeId
+      );
+      showUiToast("success", "Đã hủy link.");
+      if (editingLinkNoteId === id) cancelEditLinkNote();
+      await reloadLinkNotes();
+    } catch (err) {
+      showUiToast("error", toUiError(err));
+    } finally {
+      setLinkNoteSaving(false);
+    }
+  }
+
+  function handleLinkCopyResult(ok: boolean, label: string) {
+    if (ok) showUiToast("success", `Đã copy ${label}.`);
+    else showUiToast("error", `Không thể copy ${label}.`);
+  }
+
   // ─── Mình nợ (API / DB) ──────────────────────────────────────────
   const reloadOwnDebts = useCallback(async () => {
     if (!currentUser) return;
@@ -7078,16 +7318,38 @@ export default function Home() {
                   ? "bg-white/18 text-white"
                   : "bg-white/[0.06] text-emerald-100 group-hover:bg-white/[0.12]";
             return (
-              <button
-                key={item.id}
-                onClick={() => setActivePage(item.id)}
-                className={`group flex h-11 items-center gap-3 rounded-lg border px-3 text-left text-sm font-black uppercase tracking-wide transition ${btnClass}`}
-              >
-                <span className={`grid h-7 w-7 place-items-center rounded-md transition ${iconWrapClass}`}>
-                  <Icon size={17} />
-                </span>
-                {item.label}
-              </button>
+              <div key={item.id} className="grid gap-1">
+                <button
+                  onClick={() => {
+                    setActivePage(item.id);
+                    if (item.id === "debt-notes") {
+                      setActiveOwnDebtTab("debts");
+                    }
+                  }}
+                  className={`group flex h-11 items-center gap-3 rounded-lg border px-3 text-left text-sm font-black uppercase tracking-wide transition ${btnClass}`}
+                >
+                  <span className={`grid h-7 w-7 place-items-center rounded-md transition ${iconWrapClass}`}>
+                    <Icon size={17} />
+                  </span>
+                  {item.label}
+                </button>
+                {isActive && item.id === "debt-notes" && (
+                  <div className="ml-10 grid gap-1 border-l-2 border-[#1a4a3a] pl-2 mt-1 mb-2">
+                    <button
+                      onClick={() => setActiveOwnDebtTab("debts")}
+                      className={`flex h-9 items-center rounded-md px-3 text-sm font-bold transition-colors ${activeOwnDebtTab === "debts" ? "bg-white/10 text-white" : "text-emerald-100 hover:bg-white/5 hover:text-white"}`}
+                    >
+                      Khoản nợ
+                    </button>
+                    <button
+                      onClick={() => setActiveOwnDebtTab("links")}
+                      className={`flex h-9 items-center rounded-md px-3 text-sm font-bold transition-colors ${activeOwnDebtTab === "links" ? "bg-white/10 text-white" : "text-emerald-100 hover:bg-white/5 hover:text-white"}`}
+                    >
+                      Link Web
+                    </button>
+                  </div>
+                )}
+              </div>
             );
           })}
         </nav>
@@ -13812,6 +14074,8 @@ export default function Home() {
 
           return (
             <>
+              {activeOwnDebtTab === "debts" ? (
+                <>
               <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="rounded-xl border border-line bg-white p-4 shadow-panel">
                   <p className="text-xs font-bold uppercase tracking-wide text-muted">Tổng đang nợ</p>
@@ -14194,6 +14458,205 @@ export default function Home() {
                   </section>
                 </div>
               ) : null}
+            </>
+          ) : activeOwnDebtTab === "links" && currentUser ? (
+            <section className="rounded-lg border border-line bg-white shadow-panel">
+              <div className="flex flex-col gap-3 border-b border-line p-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <h2 className="text-xl font-black text-ink">Link Web</h2>
+                  <p className="text-sm font-semibold text-muted">
+                    {linkNoteLoading
+                      ? "Đang tải..."
+                      : `${linkNotes.length.toLocaleString("vi-VN")} mục · bấm Thêm / Sửa trên danh sách`}
+                  </p>
+                </div>
+                <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
+                  {currentUser.role === "owner" ? (
+                    <select
+                      value={linkNoteUserFilter || currentUser.username}
+                      onChange={(e) => setLinkNoteUserFilter(e.target.value)}
+                      aria-label="Lọc link theo người dùng"
+                      className="h-11 w-full rounded-lg border border-line bg-slate-50 px-3 text-sm font-bold text-ink outline-none focus:ring-2 focus:ring-brand/30 sm:min-w-[12rem]"
+                    >
+                      <option value="all">Tất cả người dùng</option>
+                      {sortLoginUsers(loginUsers).map((user) => (
+                        <option key={user.username} value={user.username}>
+                          {user.name} ({user.username})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="flex h-11 items-center rounded-lg border border-line bg-slate-50 px-3 text-sm font-bold text-muted">
+                      Người dùng: {currentUser.username}
+                    </div>
+                  )}
+                  <label className="relative min-w-0 flex-1 sm:min-w-[14rem]">
+                    <Search size={16} className="absolute left-3 top-3.5 text-muted" />
+                    <input
+                      value={linkNoteQuery}
+                      onChange={(e) => setLinkNoteQuery(e.target.value)}
+                      placeholder="Tìm tiêu đề, link..."
+                      className="h-11 w-full rounded-lg border border-line bg-slate-50 pl-9 pr-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-brand/30"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={openNewLinkNote}
+                    disabled={linkNoteSaving || editingLinkNoteId === LINK_NOTE_NEW_ID}
+                    className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-bold text-white hover:bg-brand-dark disabled:opacity-50"
+                  >
+                    <Plus size={18} />
+                    Thêm
+                  </button>
+                </div>
+              </div>
+
+              {linkNoteError ? (
+                <div className="m-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-danger">
+                  {linkNoteError}
+                </div>
+              ) : null}
+
+              <div className="p-4">
+                {linkNoteLoading ? (
+                  <div className="grid min-h-[160px] place-items-center text-muted">
+                    <Loader2 className="animate-spin" />
+                  </div>
+                ) : linkNotes.length === 0 && editingLinkNoteId !== LINK_NOTE_NEW_ID ? (
+                  <div className="rounded-lg border border-dashed border-line p-8 text-center">
+                    <p className="text-sm font-semibold text-muted">Chưa có mục link phù hợp.</p>
+                    <button
+                      type="button"
+                      onClick={openNewLinkNote}
+                      disabled={linkNoteSaving}
+                      className="mt-3 inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-brand px-4 text-sm font-bold text-white hover:bg-brand-dark disabled:opacity-50"
+                    >
+                      <Plus size={18} />
+                      Thêm link
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {editingLinkNoteId === LINK_NOTE_NEW_ID ? (
+                      <article className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-brand bg-white shadow-panel">
+                        <LinkNoteColumns
+                          title={linkNoteTitle}
+                          linkUrl={linkNoteUrl}
+                          editing
+                          onTitleChange={setLinkNoteTitle}
+                          onLinkUrlChange={setLinkNoteUrl}
+                          onCopyResult={handleLinkCopyResult}
+                        />
+                        <div className="mt-auto flex flex-col gap-2 border-t border-line bg-slate-50 px-3 py-2.5">
+                          <div className="text-[11px] font-bold text-muted">
+                            Link mới · {storeName(currentUser.role === "staff" ? currentUser.storeId : storeFilter !== "all" ? storeFilter : currentUser.storeId || "store-1")}
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={cancelEditLinkNote}
+                              disabled={linkNoteSaving}
+                              className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-line bg-white px-3 text-xs font-black text-muted hover:bg-slate-50 disabled:opacity-50"
+                            >
+                              <X size={15} />
+                              Hủy
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void saveLinkNote()}
+                              disabled={linkNoteSaving}
+                              className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-black text-white hover:bg-brand-dark disabled:opacity-50"
+                            >
+                              {linkNoteSaving ? (
+                                <Loader2 size={15} className="animate-spin" />
+                              ) : (
+                                <Plus size={15} />
+                              )}
+                              Lưu
+                            </button>
+                          </div>
+                        </div>
+                      </article>
+                    ) : null}
+                    {linkNotes.map((note) => {
+                      const isEditing = editingLinkNoteId === note.id;
+                      return (
+                        <article
+                          key={note.id}
+                          className={`flex min-w-0 flex-col overflow-hidden rounded-xl border bg-white ${
+                            isEditing ? "border-brand shadow-panel" : "border-line"
+                          }`}
+                        >
+                          <LinkNoteColumns
+                            title={isEditing ? linkNoteTitle : note.title}
+                            linkUrl={isEditing ? linkNoteUrl : note.linkUrl}
+                            editing={isEditing}
+                            onTitleChange={setLinkNoteTitle}
+                            onLinkUrlChange={setLinkNoteUrl}
+                            onCopyResult={handleLinkCopyResult}
+                          />
+                          <div className="mt-auto flex flex-col gap-2 border-t border-line bg-slate-50 px-3 py-2.5">
+                            <p className="truncate whitespace-nowrap text-[11px] font-bold text-muted">
+                              Nhập {formatToolNoteWhen(note.createdAt) || "—"}
+                              {" · "}
+                              Sửa {formatToolNoteWhen(note.updatedAt || note.createdAt) || "—"}
+                            </p>
+                            <div className="flex gap-2">
+                              {isEditing ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={cancelEditLinkNote}
+                                    disabled={linkNoteSaving}
+                                    className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-line bg-white px-3 text-xs font-black text-muted hover:bg-slate-50 disabled:opacity-50"
+                                  >
+                                    <X size={15} />
+                                    Hủy
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void saveLinkNote()}
+                                    disabled={linkNoteSaving}
+                                    className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-black text-white hover:bg-brand-dark disabled:opacity-50"
+                                  >
+                                    {linkNoteSaving ? (
+                                      <Loader2 size={15} className="animate-spin" />
+                                    ) : (
+                                      <CheckCircle2 size={15} />
+                                    )}
+                                    Lưu
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => cancelLinkNote(note.id)}
+                                    title="Hủy/xóa link"
+                                    className="inline-flex h-9 w-11 shrink-0 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-danger hover:bg-red-100 active:scale-95"
+                                  >
+                                    <Trash2 size={15} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditLinkNote(note.id)}
+                                    className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-line bg-white px-3 text-xs font-black text-ink hover:bg-slate-50 active:scale-95"
+                                  >
+                                    <Edit3 size={15} />
+                                    Sửa
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </section>
+          ) : null}
             </>
           );
         })()}
