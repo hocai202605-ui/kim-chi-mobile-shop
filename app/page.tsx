@@ -11048,7 +11048,6 @@ export default function Home() {
                     <span>Lãi: {isSaleSensitiveHidden ? "***" : formatMoney(totalDailySalesStats.profit)}</span>
                     <span>{totalDailySalesStats.count} phiếu</span>
                   </div>
-                  <p className="mt-2 text-xs font-semibold text-muted">Bán hàng + Bán Gà + Sửa chữa</p>
                 </div>
               ) : null}
             </div>
