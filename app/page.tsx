@@ -10993,8 +10993,8 @@ export default function Home() {
 
         {showSalesUi && (
           <section className="grid gap-4">
-            {/* KPI tháng / ngày và tổng ngày của ba nghiệp vụ */}
-            <div className={`grid gap-3 sm:grid-cols-2 ${activePage === "sales" ? "xl:grid-cols-3" : ""}`}>
+            {/* Bán hàng: tháng + tổng ngày. Bán Gà: tháng + ngày riêng. */}
+            <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-lg border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-4 shadow-sm">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                   <span className="block text-sm font-bold text-emerald-800">Doanh thu & lãi tháng</span>
@@ -11016,30 +11016,36 @@ export default function Home() {
                   <span>{saleStats.monthlyCount} phiếu</span>
                 </div>
               </div>
-              <div className="rounded-lg border border-line bg-white p-4 shadow-sm">
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                  <span className="block text-sm font-bold text-slate-500">Doanh thu & lãi ngày</span>
-                  <DayStepFilter
-                    value={saleStats.displayDate}
-                    onChange={setSaleDate}
-                    inputClassName="h-8 rounded border border-line bg-slate-50 px-2 text-sm font-semibold text-slate-700"
-                  />
+              {activePage !== "sales" ? (
+                <div className="rounded-lg border border-line bg-white p-4 shadow-sm">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <span className="block text-sm font-bold text-slate-500">Doanh thu & lãi ngày</span>
+                    <DayStepFilter
+                      value={saleStats.displayDate}
+                      onChange={setSaleDate}
+                      inputClassName="h-8 rounded border border-line bg-slate-50 px-2 text-sm font-semibold text-slate-700"
+                    />
+                  </div>
+                  <strong className="text-3xl text-red-600">
+                    {isSaleSensitiveHidden ? "***" : formatMoney(saleStats.dailyRevenue)}
+                  </strong>
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2 text-sm font-semibold text-slate-500">
+                    <span>
+                      Lãi: {isSaleSensitiveHidden ? "***" : formatMoney(saleStats.dailyProfit)}
+                    </span>
+                    <span>{saleStats.dailyCount} phiếu</span>
+                  </div>
                 </div>
-                <strong className="text-3xl text-red-600">
-                  {isSaleSensitiveHidden ? "***" : formatMoney(saleStats.dailyRevenue)}
-                </strong>
-                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2 text-sm font-semibold text-slate-500">
-                  <span>
-                    Lãi: {isSaleSensitiveHidden ? "***" : formatMoney(saleStats.dailyProfit)}
-                  </span>
-                  <span>{saleStats.dailyCount} phiếu</span>
-                </div>
-              </div>
+              ) : null}
               {activePage === "sales" ? (
-                <div className="rounded-lg border border-line bg-brand-soft/40 p-4 shadow-sm sm:col-span-2 xl:col-span-1">
+                <div className="rounded-lg border border-line bg-brand-soft/40 p-4 shadow-sm">
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                     <span className="text-sm font-bold text-brand">Tổng doanh thu & lãi ngày</span>
-                    <ColoredDateTime value={saleStats.displayDate} dateOnly />
+                    <DayStepFilter
+                      value={saleStats.displayDate}
+                      onChange={setSaleDate}
+                      inputClassName="h-8 rounded border border-line bg-white px-2 text-sm font-semibold text-brand-dark"
+                    />
                   </div>
                   <strong className="text-3xl font-bold text-brand">
                     {isSaleSensitiveHidden ? "***" : formatMoney(totalDailySalesStats.revenue)}
@@ -16803,8 +16809,13 @@ export default function Home() {
 
           const customerKey = (name: string) =>
             name.normalize("NFC").trim().replace(/\s+/g, " ").toLocaleLowerCase("vi");
+          const customerOptionOrders = onlineRepairs.filter((order) =>
+            onlineRepairDate
+              ? orderTimeKey(order).includes(onlineRepairDate)
+              : orderTimeKey(order).startsWith(onlineRepairMonth)
+          );
           const customerNames = new Map<string, string>();
-          for (const order of onlineRepairs) {
+          for (const order of customerOptionOrders) {
             const key = customerKey(order.customerName);
             if (key && !customerNames.has(key)) {
               customerNames.set(key, order.customerName.trim().replace(/\s+/g, " "));
@@ -17228,6 +17239,7 @@ export default function Home() {
                       value={onlineRepairMonth}
                       onChange={(e) => {
                         setOnlineRepairMonth(e.target.value);
+                        setOnlineRepairCustomerFilter("");
                         setSelectedSoftwareIds([]);
                       }}
                       className="h-8 rounded border border-emerald-200 bg-white px-2 text-sm font-semibold text-emerald-800"
@@ -17246,6 +17258,7 @@ export default function Home() {
                       value={displayDate}
                       onChange={(next) => {
                         setOnlineRepairDate(next);
+                        setOnlineRepairCustomerFilter("");
                         setSelectedSoftwareIds([]);
                       }}
                       inputClassName="h-8 rounded border border-line bg-slate-50 px-2 text-sm font-semibold text-slate-700"
@@ -17295,6 +17308,7 @@ export default function Home() {
                         value={onlineRepairDate}
                         onChange={(next) => {
                           setOnlineRepairDate(next);
+                          setOnlineRepairCustomerFilter("");
                           setSelectedSoftwareIds([]);
                         }}
                       />
@@ -17303,6 +17317,7 @@ export default function Home() {
                           type="button"
                           onClick={() => {
                             setOnlineRepairDate("");
+                            setOnlineRepairCustomerFilter("");
                             setSelectedSoftwareIds([]);
                           }}
                           className="text-sm font-bold text-brand hover:underline"
