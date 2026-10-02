@@ -1795,6 +1795,7 @@ export default function Home() {
   const [isOnlineRepairModalOpen, setIsOnlineRepairModalOpen] = useState(false);
   const [isOnlineRepairSensitiveHidden, setIsOnlineRepairSensitiveHidden] = useState(false);
   const [onlineRepairFilter, setOnlineRepairFilter] = useState("all");
+  const [onlineRepairCustomerFilter, setOnlineRepairCustomerFilter] = useState("");
   const [onlineRepairMonth, setOnlineRepairMonth] = useState(() => vnNowMonth());
   /** Grid phần mềm: mặc định lọc ngày hôm nay (VN); user có thể đổi hoặc xóa để xem cả tháng. */
   const [onlineRepairDate, setOnlineRepairDate] = useState(() => vnNowDate());
@@ -16777,6 +16778,18 @@ export default function Home() {
           const orderTimeKey = (r: OnlineRepair) =>
             (r.receiveDate || r.createdAt || "").replace("T", " ");
 
+          const customerKey = (name: string) =>
+            name.normalize("NFC").trim().replace(/\s+/g, " ").toLocaleLowerCase("vi");
+          const customerNames = new Map<string, string>();
+          for (const order of onlineRepairs) {
+            const key = customerKey(order.customerName);
+            if (key && !customerNames.has(key)) {
+              customerNames.set(key, order.customerName.trim().replace(/\s+/g, " "));
+            }
+          }
+          const customerOptions = Array.from(customerNames, ([value, label]) => ({ value, label }))
+            .sort((a, b) => a.label.localeCompare(b.label, "vi"));
+
           let filteredRepairs = onlineRepairs;
           if (onlineRepairDate) {
             filteredRepairs = filteredRepairs.filter((r) => orderTimeKey(r).includes(onlineRepairDate));
@@ -16787,6 +16800,12 @@ export default function Home() {
           if (onlineRepairFilter !== "all") {
             filteredRepairs = filteredRepairs.filter((r) =>
               onlineRepairFilter === "paid" ? r.isPaid : !r.isPaid
+            );
+          }
+
+          if (onlineRepairCustomerFilter) {
+            filteredRepairs = filteredRepairs.filter((r) =>
+              customerKey(r.customerName).includes(customerKey(onlineRepairCustomerFilter))
             );
           }
 
@@ -17220,6 +17239,20 @@ export default function Home() {
               <Panel title="Danh sách Phần mềm">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
                   <div className="flex flex-wrap items-center gap-2">
+                    <ScrollableSelect
+                      name="software-customer-filter"
+                      value={onlineRepairCustomerFilter}
+                      options={[{ value: "", label: "Tất cả khách hàng" }, ...customerOptions]}
+                      required={false}
+                      allowFreeText
+                      maxVisibleOptions={10}
+                      placeholder="Tất cả khách hàng"
+                      className="w-full sm:w-56"
+                      onChange={(next) => {
+                        setOnlineRepairCustomerFilter(next);
+                        setSelectedSoftwareIds([]);
+                      }}
+                    />
                     <select
                       value={onlineRepairFilter}
                       onChange={(e) => {
@@ -17612,7 +17645,6 @@ function ColoredDateTime({
 
 /** Max visible option rows before dropdown scrolls (row = h-10). */
 const DROPDOWN_MAX_VISIBLE = 8;
-const DROPDOWN_PANEL_MAX_H = `${DROPDOWN_MAX_VISIBLE * 2.5}rem`;
 const DROPDOWN_MOBILE_BREAKPOINT = 640;
 
 type ScrollableSelectOption = { value: string; label: string };
@@ -17630,6 +17662,7 @@ function ScrollableSelect({
   placeholder = "Chọn",
   colorPreview = false,
   allowFreeText = false,
+  maxVisibleOptions = DROPDOWN_MAX_VISIBLE,
 }: {
   name: string;
   options: ScrollableSelectOption[];
@@ -17643,6 +17676,8 @@ function ScrollableSelect({
   colorPreview?: boolean;
   /** true = nhập tay + droplist (combobox), không bắt buộc chọn đúng option. */
   allowFreeText?: boolean;
+  /** Số dòng tối đa trước khi cuộn danh sách. */
+  maxVisibleOptions?: number;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -17687,7 +17722,7 @@ function ScrollableSelect({
       const sideGap = 12;
       const gap = 6;
       const minPanelHeight = 140;
-      const maxPanelHeight = Math.min(416, Math.round(viewportHeight * 0.55));
+      const maxPanelHeight = Math.min(416, maxVisibleOptions * 44 + 8, Math.round(viewportHeight * 0.55));
       const spaceBelow = viewportHeight - r.bottom - sideGap;
       const spaceAbove = r.top - sideGap;
       const openUp =
@@ -17710,7 +17745,7 @@ function ScrollableSelect({
     // Nút chevron cạnh input: lấy width cả khối root
     const rootW = rootRef.current?.getBoundingClientRect().width ?? r.width;
     const spaceBelow = viewportTop + viewportHeight - r.bottom - 8;
-    const maxH = DROPDOWN_MAX_VISIBLE * 40; // px ≈ h-10
+    const maxH = maxVisibleOptions * 40 + 8; // h-10 + padding danh sách
     const openUp =
       spaceBelow < Math.min(maxH, visibleOptions.length * 40) && r.top > spaceBelow;
     setPanelStyle({
@@ -17718,12 +17753,12 @@ function ScrollableSelect({
       left: allowFreeText ? (rootRef.current?.getBoundingClientRect().left ?? r.left) : r.left,
       width: Math.max(allowFreeText ? rootW : r.width, 120),
       zIndex: 200,
-      maxHeight: DROPDOWN_PANEL_MAX_H,
+      maxHeight: `${maxH}px`,
       ...(openUp
         ? { bottom: viewportTop + viewportHeight - r.top + 4, top: "auto" }
         : { top: r.bottom + 4, bottom: "auto" }),
     });
-  }, [allowFreeText, visibleOptions.length]);
+  }, [allowFreeText, visibleOptions.length, maxVisibleOptions]);
 
   useEffect(() => {
     if (!open) return;
