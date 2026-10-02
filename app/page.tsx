@@ -105,6 +105,7 @@ import {
   upsertPartInbound as apiUpsertPartInbound,
 } from "@/services/partsService";
 import { isUuid } from "@/lib/utils";
+import { calculateDailySalesSummary } from "@/lib/salesSummary";
 import { PartsInventoryScreen } from "@/components/features/parts/PartsInventoryScreen";
 import {
   cancelManualDebt as apiCancelManualDebt,
@@ -2654,6 +2655,13 @@ export default function Home() {
       dailyProfit: sum(daily, "profit"),
     };
   }, [sales, storeFilter, saleMonth, saleDate]);
+
+  const totalDailySalesStats = useMemo(() =>
+    calculateDailySalesSummary(
+      salesRetail, salesBanGa, shopRepairs, saleStats.displayDate, storeFilter
+    ),
+    [salesRetail, salesBanGa, shopRepairs, saleStats.displayDate, storeFilter]
+  );
 
   /** Góc header Bán hàng: lãi tháng = bán hàng + bán gà + sửa chữa. */
   const salesHeaderMonthProfit = useMemo(() => {
@@ -10985,8 +10993,8 @@ export default function Home() {
 
         {showSalesUi && (
           <section className="grid gap-4">
-            {/* KPI tháng / ngày — tương tự phần mềm */}
-            <div className="grid gap-3 sm:grid-cols-2">
+            {/* KPI tháng / ngày và tổng ngày của ba nghiệp vụ */}
+            <div className={`grid gap-3 sm:grid-cols-2 ${activePage === "sales" ? "xl:grid-cols-3" : ""}`}>
               <div className="rounded-lg border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-4 shadow-sm">
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                   <span className="block text-sm font-bold text-emerald-800">Doanh thu & lãi tháng</span>
@@ -11027,6 +11035,22 @@ export default function Home() {
                   <span>{saleStats.dailyCount} phiếu</span>
                 </div>
               </div>
+              {activePage === "sales" ? (
+                <div className="rounded-lg border border-line bg-brand-soft/40 p-4 shadow-sm sm:col-span-2 xl:col-span-1">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-sm font-bold text-brand">Tổng doanh thu & lãi ngày</span>
+                    <ColoredDateTime value={saleStats.displayDate} dateOnly />
+                  </div>
+                  <strong className="text-3xl font-bold text-brand">
+                    {isSaleSensitiveHidden ? "***" : formatMoney(totalDailySalesStats.revenue)}
+                  </strong>
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-2 text-sm font-semibold text-muted">
+                    <span>Lãi: {isSaleSensitiveHidden ? "***" : formatMoney(totalDailySalesStats.profit)}</span>
+                    <span>{totalDailySalesStats.count} phiếu</span>
+                  </div>
+                  <p className="mt-2 text-xs font-semibold text-muted">Bán hàng + Bán Gà + Sửa chữa</p>
+                </div>
+              ) : null}
             </div>
 
             <Panel title="Danh sách bán hàng">
