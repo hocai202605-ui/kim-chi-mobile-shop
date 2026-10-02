@@ -12061,12 +12061,6 @@ export default function Home() {
                                       </p>
                                     ) : (
                                       saleAvailablePhones.map((p) => {
-                                        const colorHex = p.color ? getColorCode(p.color) : "";
-                                        const colorIsLight =
-                                          !colorHex ||
-                                          ["#ffffff", "#cbd5e1", "#e2e8f0", "#f8fafc", "#94a3b8", "#a8a29e"].includes(
-                                            colorHex.toLowerCase()
-                                          );
                                         return (
                                           <div
                                             key={p.id}
@@ -12078,16 +12072,12 @@ export default function Home() {
                                               </span>
                                               {p.color ? (
                                                 <span
-                                                  className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-black ring-1"
-                                                  style={{
-                                                    color: colorIsLight ? "#334155" : colorHex,
-                                                    backgroundColor: colorIsLight ? "#f1f5f9" : `${colorHex}22`,
-                                                    borderColor: colorIsLight ? "#cbd5e1" : `${colorHex}55`,
-                                                  }}
+                                                  className="inline-flex shrink-0 items-center"
                                                   title={p.color}
+                                                  role="img"
+                                                  aria-label={`Màu ${p.color}`}
                                                 >
                                                   <ColorDot color={p.color} size="sm" />
-                                                  {p.color}
                                                 </span>
                                               ) : null}
                                               {p.storage ? (
@@ -14623,13 +14613,6 @@ export default function Home() {
                             onEdit={() => openEditLinkNote(note.id)}
                             onDelete={() => cancelLinkNote(note.id)}
                           />
-                          <div className="border-t border-line bg-slate-50 px-3 py-2">
-                            <p className="truncate whitespace-nowrap text-[11px] font-bold text-muted">
-                              Nhập {formatToolNoteWhen(note.createdAt) || "—"}
-                              {" · "}
-                              Sửa {formatToolNoteWhen(note.updatedAt || note.createdAt) || "—"}
-                            </p>
-                          </div>
                         </article>
                       );
                     })}
