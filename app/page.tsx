@@ -5780,6 +5780,8 @@ export default function Home() {
         } else {
           setSaleAccDefaultName("");
         }
+        const allChecked = !lines.some((l) => l.kind === "accessory" && l.isChecked === false);
+        setSaleAccessoryIsChecked(allChecked);
       } else {
         const rawAmt = Number(sale.amount) || 0;
         const amountShort = rawAmt >= 1_000_000 ? Math.round(rawAmt / 1000) : rawAmt;
@@ -6184,7 +6186,7 @@ export default function Home() {
                 quantity: line.quantity,
                 unitPrice: line.unitPrice,
                 unitCost: line.cost || 0,
-                isChecked: line.isChecked !== false,
+                isChecked: saleAccessoryIsChecked !== false,
               }
         ),
       });
