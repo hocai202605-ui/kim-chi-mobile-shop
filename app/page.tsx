@@ -11316,6 +11316,7 @@ export default function Home() {
                     "Giá nhập",
                     "Lãi",
                     "Hình thức",
+                    "Check",
                     "Thao tác",
                     "Ngày",
                     "Khách",
@@ -11366,6 +11367,14 @@ export default function Home() {
                         }
                       >
                         {methodUi.text}
+                      </span>,
+                      <span
+                        key={`chk-${item.id}`}
+                        className={`inline-flex h-8 whitespace-nowrap items-center rounded px-2 text-xs font-bold shadow-sm ${
+                          item.isChecked ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+                        }`}
+                      >
+                        {item.isChecked ? "Đã kiểm tra" : "Chưa kiểm tra"}
                       </span>,
                       <div
                         key={`act-${item.id}`}
@@ -12579,19 +12588,7 @@ export default function Home() {
                                 )}
                               </div>
                               ) : null}
-                              {line.kind === "accessory" ? (
-                                <div className="flex shrink-0 flex-col items-center gap-1 px-1">
-                                  <span className="text-[10px] font-bold text-muted">Check</span>
-                                  <input
-                                    type="checkbox"
-                                    checked={line.isChecked ?? false}
-                                    disabled={isSaleReadOnly}
-                                    onChange={(e) => updateSaleCartIsChecked(line.key, e.target.checked)}
-                                    className="h-5 w-5 rounded border-amber-300 text-brand accent-brand"
-                                    title="Đã kiểm tra"
-                                  />
-                                </div>
-                              ) : null}
+
                               {line.kind === "accessory" && line.quantity > 1 ? (
                                 <span className="w-16 shrink-0 self-end pb-1 text-right text-xs font-black text-ink">
                                   {isSaleSensitiveHidden
