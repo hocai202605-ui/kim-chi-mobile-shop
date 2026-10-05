@@ -55,6 +55,7 @@ import {
   Users,
   Wrench,
   X,
+  XCircle,
 } from "lucide-react";
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
@@ -11368,14 +11369,13 @@ export default function Home() {
                       >
                         {methodUi.text}
                       </span>,
-                      <span
-                        key={`chk-${item.id}`}
-                        className={`inline-flex h-8 whitespace-nowrap items-center rounded px-2 text-xs font-bold shadow-sm ${
-                          item.isChecked ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
-                        }`}
-                      >
-                        {item.isChecked ? "Đã kiểm tra" : "Chưa kiểm tra"}
-                      </span>,
+                      <div key={`chk-${item.id}`} className="flex justify-center" title={item.isChecked !== false ? "Đã kiểm tra" : "Chưa kiểm tra"}>
+                        {item.isChecked !== false ? (
+                          <CheckCircle2 size={20} className="text-emerald-600" />
+                        ) : (
+                          <XCircle size={20} className="text-red-600" />
+                        )}
+                      </div>,
                       <div
                         key={`act-${item.id}`}
                         className="flex flex-nowrap items-center justify-center gap-1.5"
