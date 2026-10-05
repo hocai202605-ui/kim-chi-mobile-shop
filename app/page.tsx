@@ -2013,7 +2013,7 @@ export default function Home() {
   /** Ngày giờ bán — mặc định VN now (datetime-local). */
   const [saleSoldAt, setSaleSoldAt] = useState(() => vnNowDateTimeLocal());
   const [saleMetaOpen, setSaleMetaOpen] = useState(false);
-  const [saleAccessoryCartGridVisible, setSaleAccessoryCartGridVisible] = useState(true);
+  const [saleAccessoryIsChecked, setSaleAccessoryIsChecked] = useState(true);
   const [saleCustomerId, setSaleCustomerId] = useState<string | null>(null);
   const [saleCustomerName, setSaleCustomerName] = useState("Khách lẻ");
   const [saleCustomerPhone, setSaleCustomerPhone] = useState("");
@@ -5599,7 +5599,7 @@ export default function Home() {
     setSalePayStatus("Đã thanh toán");
     setSaleSoldAt(vnNowDateTimeLocal());
     setSaleMetaOpen(false);
-    setSaleAccessoryCartGridVisible(true);
+    setSaleAccessoryIsChecked(true);
     setEditingSaleId(null);
     setIsSaleReadOnly(false);
     setViewingSaleId(null);
@@ -5991,7 +5991,7 @@ export default function Home() {
         quantity,
         unitPrice,
         cost,
-        isChecked: saleAccessoryCartGridVisible,
+        isChecked: saleAccessoryIsChecked,
       },
     ]);
     setSaleAccQty(1);
@@ -6082,6 +6082,12 @@ export default function Home() {
   function updateSaleCartName(key: string, name: string) {
     setSaleCart((prev) =>
       prev.map((l) => (l.key === key && l.kind === "accessory" ? { ...l, name } : l))
+    );
+  }
+
+  function updateSaleCartIsChecked(key: string, isChecked: boolean) {
+    setSaleCart((prev) =>
+      prev.map((l) => (l.key === key && l.kind === "accessory" ? { ...l, isChecked } : l))
     );
   }
 
@@ -11846,11 +11852,11 @@ export default function Home() {
                                 <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-amber-200/70 bg-white px-3 text-sm font-bold text-amber-950">
                                   <input
                                     type="checkbox"
-                                    checked={saleAccessoryCartGridVisible}
-                                    onChange={(e) => setSaleAccessoryCartGridVisible(e.target.checked)}
+                                    checked={saleAccessoryIsChecked}
+                                    onChange={(e) => setSaleAccessoryIsChecked(e.target.checked)}
                                     className="h-4 w-4 rounded border-amber-300 text-brand accent-brand"
                                   />
-                                  Hiển thị grid
+                                  {saleAccessoryIsChecked ? "Đã kiểm tra" : "Chưa kiểm tra"}
                                 </label>
                                 <button
                                   type="button"
@@ -12408,7 +12414,7 @@ export default function Home() {
                           </button>
                         ) : null}
                       </div>
-                      {saleModalTab === "accessory" && !saleAccessoryCartGridVisible && !isSaleReadOnly ? null : saleCart.length === 0 ? (
+                      {saleCart.length === 0 ? (
                         <p className="py-2 text-center text-sm font-semibold text-muted">Giỏ trống</p>
                       ) : (
                         <ul className="space-y-1.5">
@@ -12572,6 +12578,19 @@ export default function Home() {
                                   />
                                 )}
                               </div>
+                              ) : null}
+                              {line.kind === "accessory" ? (
+                                <div className="flex shrink-0 flex-col items-center gap-1 px-1">
+                                  <span className="text-[10px] font-bold text-muted">Check</span>
+                                  <input
+                                    type="checkbox"
+                                    checked={line.isChecked ?? false}
+                                    disabled={isSaleReadOnly}
+                                    onChange={(e) => updateSaleCartIsChecked(line.key, e.target.checked)}
+                                    className="h-5 w-5 rounded border-amber-300 text-brand accent-brand"
+                                    title="Đã kiểm tra"
+                                  />
+                                </div>
                               ) : null}
                               {line.kind === "accessory" && line.quantity > 1 ? (
                                 <span className="w-16 shrink-0 self-end pb-1 text-right text-xs font-black text-ink">
