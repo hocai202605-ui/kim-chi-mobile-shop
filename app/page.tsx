@@ -11170,7 +11170,7 @@ export default function Home() {
               {activePage === "sales" ? (
                 <div className="rounded-lg border border-line bg-brand-soft/40 p-4 shadow-sm">
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-sm font-bold text-brand">Doanh thu bán máy & lãi ngày</span>
+                    <span className="text-sm font-bold text-brand">Tổng doanh thu ngày</span>
                     <DayStepFilter
                       value={saleStats.displayDate}
                       onChange={setSaleDate}
@@ -11178,7 +11178,7 @@ export default function Home() {
                     />
                   </div>
                   <strong className="text-3xl font-bold text-brand">
-                    {isSaleSensitiveHidden ? "***" : formatMoney(dailyPhoneSalesStats.revenue)}
+                    {isSaleSensitiveHidden ? "***" : formatMoney(totalDailySalesStats.revenue)}
                   </strong>
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-2 text-sm font-semibold text-muted">
                     <span>Lãi: {isSaleSensitiveHidden ? "***" : formatMoney(totalDailySalesStats.profit)}</span>
