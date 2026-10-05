@@ -449,13 +449,13 @@ function giftCartLinesFromSlots(slots: SaleGiftSlot[]): Extract<SaleCartLine, { 
       if (cost <= 0 || !name) return null;
       return {
         key: giftCartKey(g.id),
-        kind: "accessory" as const,
+        kind: "accessory",
         name,
         quantity: 1,
         unitPrice: 0,
         cost,
         isChecked: true,
-      };
+      } as Extract<SaleCartLine, { kind: "accessory" }>;
     })
     .filter((x): x is Extract<SaleCartLine, { kind: "accessory" }> => x != null);
 }
