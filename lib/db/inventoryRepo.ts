@@ -1539,6 +1539,7 @@ export type SaleDetailLine =
       unitPrice: number;
       cost: number;
       accessoryId?: string;
+      isChecked?: boolean;
     };
 
 export type SaleDetail = CreatedSale & {
