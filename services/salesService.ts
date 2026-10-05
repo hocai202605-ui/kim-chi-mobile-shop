@@ -27,6 +27,7 @@ export type SaleRow = {
   note?: string;
   lineCount?: number;
   channel?: SaleChannel;
+  isChecked?: boolean;
 };
 
 export type CreateSaleLineBody =
@@ -46,6 +47,7 @@ export type CreateSaleLineBody =
       /** Giá nhập short 1 cái (free-text). */
       unitCost?: number;
       accessoryId?: string;
+      isChecked?: boolean;
     };
 
 export type CreateSaleBody = {
@@ -123,6 +125,7 @@ export type SaleDetailLine =
       unitPrice: number;
       cost: number;
       accessoryId?: string;
+      isChecked?: boolean;
     };
 
 export type SaleDetail = SaleRow & {

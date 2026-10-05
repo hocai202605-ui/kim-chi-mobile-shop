@@ -52,6 +52,7 @@ function mapLine(raw: Record<string, unknown>): CreateSaleLineInput {
       unitPrice: Number(raw.unitPrice ?? raw.amount ?? 0),
       unitCost: raw.unitCost != null ? Number(raw.unitCost) : undefined,
       accessoryId: raw.accessoryId ? String(raw.accessoryId) : undefined,
+      isChecked: raw.isChecked !== false,
     };
   }
 

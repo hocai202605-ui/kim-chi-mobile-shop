@@ -375,6 +375,7 @@ type SaleCartLine =
       unitPrice: number;
       /** Giá nhập short (1 cái), mặc định 0 */
       cost: number;
+      isChecked?: boolean;
     };
 
 /**
@@ -453,6 +454,7 @@ function giftCartLinesFromSlots(slots: SaleGiftSlot[]): Extract<SaleCartLine, { 
         quantity: 1,
         unitPrice: 0,
         cost,
+        isChecked: true,
       };
     })
     .filter((x): x is Extract<SaleCartLine, { kind: "accessory" }> => x != null);
@@ -538,6 +540,7 @@ type SaleLineSnapshot =
       unitPrice: number;
       cost?: number;
       category?: string;
+      isChecked?: boolean;
     };
 
 type Sale = {
@@ -565,6 +568,7 @@ type Sale = {
   status: "Hoàn tất" | "Đã hủy";
   /** Chi tiết dòng (UI mock). Seed cũ có thể không có. */
   lines?: SaleLineSnapshot[];
+  isChecked?: boolean;
 };
 
 type SoftwareService = {
@@ -5728,6 +5732,7 @@ export default function Home() {
                     quantity: line.quantity,
                     unitPrice: line.unitPrice,
                     cost: line.cost || 0,
+                    isChecked: line.isChecked ?? true,
                   }
             );
           setSaleCart([...paidAccAndPhones, ...giftCartLinesFromSlots(giftSlots)]);
@@ -5763,6 +5768,7 @@ export default function Home() {
                     quantity: line.quantity,
                     unitPrice: line.unitPrice,
                     cost: line.cost || 0,
+                    isChecked: line.isChecked ?? true,
                   }
             )
           );
@@ -5793,6 +5799,7 @@ export default function Home() {
             quantity: Math.max(1, sale.quantity),
             unitPrice: unitShort,
             cost: 0,
+            isChecked: sale.isChecked ?? true,
           },
         ]);
         setSaleAccDefaultName(sale.itemName);
@@ -5984,6 +5991,7 @@ export default function Home() {
         quantity,
         unitPrice,
         cost,
+        isChecked: saleAccessoryCartGridVisible,
       },
     ]);
     setSaleAccQty(1);
@@ -6169,6 +6177,7 @@ export default function Home() {
                 quantity: line.quantity,
                 unitPrice: line.unitPrice,
                 unitCost: line.cost || 0,
+                isChecked: line.isChecked !== false,
               }
         ),
       });
@@ -6196,6 +6205,7 @@ export default function Home() {
         profit: saved.profit,
         payment: (saved.payment as PaymentMethod) || paymentValue,
         status: "Hoàn tất",
+        isChecked: saved.isChecked ?? true,
       };
 
       setSales((prev) => [sale, ...prev.filter((s) => s.id !== sale.id)]);

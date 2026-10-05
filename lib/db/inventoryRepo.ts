@@ -36,6 +36,7 @@ export type CreateSaleLineInput =
       unitCost?: number;
       /** Tuỳ chọn — nếu có thì trừ tồn kho PK. */
       accessoryId?: string;
+      isChecked?: boolean;
     };
 
 export type SaleChannel = "retail" | "ban_ga";
@@ -84,6 +85,21 @@ function saleGridItemName(phoneNames: string[], otherNames: string[] = []): stri
   return `${names[0]} + ${names.length - 1} dòng khác`;
 }
 
+const SALE_RECHECK_MARKER = "[[KC_RECHECK]]";
+
+function stripSaleCheckMarker(name: string): string {
+  return String(name || "").replaceAll(SALE_RECHECK_MARKER, "").replace(/\s{2,}/g, " ").trim();
+}
+
+function isSaleLineCheckedFromName(name: string): boolean {
+  return !String(name || "").includes(SALE_RECHECK_MARKER);
+}
+
+function saleItemNameForDb(name: string, isChecked?: boolean): string {
+  const clean = stripSaleCheckMarker(name);
+  return isChecked === false ? `${clean} ${SALE_RECHECK_MARKER}`.trim() : clean;
+}
+
 /** Phiếu bán trả về UI — amount/profit đơn vị **short shop** (giống kho). */
 export type CreatedSale = {
   id: string;
@@ -109,6 +125,7 @@ export type CreatedSale = {
   note?: string;
   lineCount?: number;
   channel?: SaleChannel;
+  isChecked?: boolean;
 };
 
 type StoreRow = { id: string; code: string };
@@ -1375,7 +1392,7 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
         const unitPriceShort = toShopMoney(rawAccPrice);
         const unitPriceVnd = shopMoneyToVnd(unitPriceShort);
 
-        let itemName = String(line.itemName || "").trim();
+        let itemName = stripSaleCheckMarker(String(line.itemName || "").trim());
         let unitCostVnd = 0;
         let accessoryId: string | null = line.accessoryId ? String(line.accessoryId) : null;
 
@@ -1415,6 +1432,8 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
           unitCostVnd = shopMoneyToVnd(toShopMoney(Number(line.unitCost) || 0));
         }
 
+        const itemNameDb = saleItemNameForDb(itemName, line.isChecked);
+
         const amount = unitPriceVnd * quantity;
         const profit = amount - unitCostVnd * quantity;
 
@@ -1430,7 +1449,7 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
           [
             saleId,
             accessoryId,
-            itemName,
+            itemNameDb,
             quantity,
             unitCostVnd,
             unitPriceVnd,
@@ -1493,6 +1512,7 @@ export async function repoCreateSale(input: CreateSaleInput): Promise<CreatedSal
       note: input.note ?? "",
       lineCount: lines.length,
       channel: saleChannel,
+      isChecked: !lines.some((line) => line.itemType === "accessory" && line.isChecked === false),
     };
   });
 }
@@ -1586,7 +1606,7 @@ export async function repoGetSale(saleId: string): Promise<SaleDetail> {
           : toShopMoney(Number(si.phone_cost) || 0),
       };
     }
-    const rawName = String(si.item_name || "").trim() || "Phụ kiện";
+    const rawName = stripSaleCheckMarker(String(si.item_name || "").trim() || "Phụ kiện");
     const colon = rawName.indexOf(":");
     let category = "";
     let name = rawName;
@@ -1602,6 +1622,7 @@ export async function repoGetSale(saleId: string): Promise<SaleDetail> {
       unitPrice: vndToShopMoney(Number(si.unit_price) || 0),
       cost: vndToShopMoney(Number(si.unit_cost) || 0),
       accessoryId: si.accessory_id ? String(si.accessory_id) : undefined,
+      isChecked: isSaleLineCheckedFromName(String(si.item_name || "")),
     };
   });
 
@@ -1644,6 +1665,7 @@ export async function repoGetSale(saleId: string): Promise<SaleDetail> {
     note: sale.note ? String(sale.note) : "",
     lineCount: lines.length,
     channel: normalizeSaleChannel(sale.channel),
+    isChecked: !lines.some((l) => l.kind === "accessory" && l.isChecked === false),
     lines,
   };
 }
@@ -1714,7 +1736,14 @@ export async function repoListRecentSales(limit = 2000, channel: SaleChannel = "
             coalesce(
               (select count(*)::int from public.sale_items si where si.sale_id = s.id),
               1
-            ) as line_count
+            ) as line_count,
+            exists (
+              select 1
+              from public.sale_items si
+              where si.sale_id = s.id
+                and si.item_type = 'accessory'
+                and si.item_name like '%[[KC_RECHECK]]%'
+            ) as needs_check
      from public.sales s
      left join public.customers c on c.id = s.customer_id
      where s.channel = $2
@@ -1727,7 +1756,7 @@ export async function repoListRecentSales(limit = 2000, channel: SaleChannel = "
     id: String(row.id),
     soldAt: toVnDateTimeLocal(row.sold_at_ts) || toDateOnly(row.sold_at) || "",
     storeId: idToCode.get(String(row.store_id)) ?? "store-1",
-    itemName: String(row.item_name),
+    itemName: stripSaleCheckMarker(String(row.item_name)),
     itemType: row.item_type === "accessory" ? ("Phụ kiện" as const) : ("Máy" as const),
     quantity: Number(row.quantity) || 1,
     amount: vndToShopMoney(Number(row.total_amount) || 0),
@@ -1742,6 +1771,7 @@ export async function repoListRecentSales(limit = 2000, channel: SaleChannel = "
     note: row.note ? String(row.note) : "",
     lineCount: Number(row.line_count) || 1,
     channel: normalizeSaleChannel(row.channel ?? channel),
+    isChecked: !Boolean(row.needs_check),
   }));
 }
 
