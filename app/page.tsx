@@ -169,6 +169,7 @@ import {
 } from "@/services/accountsService";
 import { ALL_MENU_IDS } from "@/lib/constants";
 import { downloadPhonesExcel } from "@/lib/exportPhonesExcel";
+import { downloadSalesExcel } from "@/lib/exportSalesExcel";
 import {
   shiftVnDate,
   toVnDate,
@@ -455,6 +456,13 @@ function giftCartLinesFromSlots(slots: SaleGiftSlot[]): Extract<SaleCartLine, { 
       };
     })
     .filter((x): x is Extract<SaleCartLine, { kind: "accessory" }> => x != null);
+}
+
+function displaySalePhoneName(name: string): string {
+  return String(name || "")
+    .replace(/\b\d+\s*(?:GB|G|TB)\b/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 const SALE_ACC_NAME_SEED = [
@@ -1384,19 +1392,29 @@ function ToolNoteColumns({
   account,
   password,
   editing = false,
+  saving = false,
   onTitleChange,
   onAccountChange,
   onPasswordChange,
   onCopyResult,
+  onEdit,
+  onDelete,
+  onCancel,
+  onSave,
 }: {
   title: string;
   account: string;
   password: string;
   editing?: boolean;
+  saving?: boolean;
   onTitleChange?: (value: string) => void;
   onAccountChange?: (value: string) => void;
   onPasswordChange?: (value: string) => void;
   onCopyResult?: (ok: boolean, label: string) => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
+  onCancel?: () => void;
+  onSave?: () => void;
 }) {
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const accountRef = useRef<HTMLTextAreaElement>(null);
@@ -1414,28 +1432,77 @@ function ToolNoteColumns({
   return (
     <div className="grid w-full min-w-0 divide-y divide-line">
       <div className="min-w-0 bg-brand-soft/40 p-2.5">
-        <p className="mb-1 text-xs font-black uppercase tracking-wide text-brand">Tiêu đề</p>
-        <div className="flex items-start gap-2">
-          <div className="min-w-0 flex-1">
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <p className="text-xs font-black uppercase tracking-wide text-brand">Tiêu đề</p>
+          <div className="flex shrink-0 items-center gap-1">
+            <ToolCopyButton value={title} label="tiêu đề" onResult={onCopyResult} />
             {editing ? (
-              <textarea
-                ref={titleRef}
-                value={title}
-                rows={1}
-                maxLength={200}
-                placeholder="Không bắt buộc"
-                onChange={(e) => onTitleChange?.(e.target.value)}
-                className={`${TOOL_NOTE_TITLE_INPUT_CLASS} resize-none overflow-hidden`}
-              />
-            ) : title.trim() ? (
-              <p className="whitespace-pre-wrap break-words text-lg font-black leading-snug text-[#c6d60a]">
-                {title}
-              </p>
+              <>
+                <button
+                  type="button"
+                  onClick={onCancel}
+                  disabled={saving}
+                  title="Hủy sửa"
+                  className="grid h-10 w-10 place-items-center rounded-lg border border-line bg-white text-muted hover:bg-slate-100 active:scale-95 disabled:opacity-50"
+                >
+                  <X size={16} />
+                </button>
+                <button
+                  type="button"
+                  onClick={onSave}
+                  disabled={saving}
+                  title="Lưu"
+                  className="grid h-10 w-10 place-items-center rounded-lg bg-brand text-white hover:bg-brand-dark active:scale-95 disabled:opacity-50"
+                >
+                  {saving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                </button>
+              </>
             ) : (
-              <p className="text-lg font-black text-muted">—</p>
+              <>
+                {onEdit && (
+                  <button
+                    type="button"
+                    onClick={onEdit}
+                    disabled={saving}
+                    title="Sửa"
+                    className="grid h-10 w-10 place-items-center rounded-lg border border-line bg-white text-brand hover:bg-brand-soft active:scale-95 disabled:opacity-50"
+                  >
+                    <Edit3 size={16} />
+                  </button>
+                )}
+                {onDelete && (
+                  <button
+                    type="button"
+                    onClick={onDelete}
+                    disabled={saving}
+                    title="Hủy"
+                    className="grid h-10 w-10 place-items-center rounded-lg border border-red-200 bg-red-50 text-danger hover:bg-red-100 active:scale-95 disabled:opacity-50"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                )}
+              </>
             )}
           </div>
-          <ToolCopyButton value={title} label="tiêu đề" onResult={onCopyResult} />
+        </div>
+        <div className="min-w-0">
+          {editing ? (
+            <textarea
+              ref={titleRef}
+              value={title}
+              rows={1}
+              maxLength={200}
+              placeholder="Không bắt buộc"
+              onChange={(e) => onTitleChange?.(e.target.value)}
+              className={`${TOOL_NOTE_TITLE_INPUT_CLASS} resize-none overflow-hidden`}
+            />
+          ) : title.trim() ? (
+            <p className="whitespace-pre-wrap break-words text-lg font-black leading-snug text-[#c6d60a]">
+              {title}
+            </p>
+          ) : (
+            <p className="text-lg font-black text-muted">—</p>
+          )}
         </div>
       </div>
       <div className="min-w-0 p-2.5">
@@ -1942,6 +2009,7 @@ export default function Home() {
   /** Ngày giờ bán — mặc định VN now (datetime-local). */
   const [saleSoldAt, setSaleSoldAt] = useState(() => vnNowDateTimeLocal());
   const [saleMetaOpen, setSaleMetaOpen] = useState(false);
+  const [saleAccessoryCartGridVisible, setSaleAccessoryCartGridVisible] = useState(true);
   const [saleCustomerId, setSaleCustomerId] = useState<string | null>(null);
   const [saleCustomerName, setSaleCustomerName] = useState("Khách lẻ");
   const [saleCustomerPhone, setSaleCustomerPhone] = useState("");
@@ -2633,6 +2701,53 @@ export default function Home() {
     customers,
   ]);
 
+  const monthlySalesForExport = useMemo(() => {
+    const q = saleSearch.trim().toLowerCase();
+    return sales.filter((item) => {
+      if (storeFilter !== "all" && item.storeId !== storeFilter) return false;
+      if (saleStatusFilter !== "all" && item.status !== saleStatusFilter) return false;
+      if (
+        salePaymentFilter === "debt" &&
+        item.payment !== "NỢ DAI" &&
+        item.payment !== "Nợ"
+      ) {
+        return false;
+      }
+      if (salePaymentFilter === "partial" && item.payment !== "Thanh toán 1 phần") return false;
+      if (salePaymentFilter === "cash" && item.payment !== "Tiền mặt") return false;
+      if (salePaymentFilter === "transfer" && item.payment !== "Chuyển khoản") return false;
+      if (
+        salePaymentFilter === "paid" &&
+        (item.payment === "NỢ DAI" ||
+          item.payment === "Nợ" ||
+          item.payment === "Thanh toán 1 phần")
+      ) {
+        return false;
+      }
+      if (saleTypeFilter !== "all" && item.itemType !== saleTypeFilter) return false;
+      const day = (item.createdAt || "").slice(0, 10);
+      if (saleMonth && !day.startsWith(saleMonth)) return false;
+      if (q) {
+        const cust =
+          item.customerName ||
+          customers.find((c) => c.id === item.customerId)?.name ||
+          "";
+        const hay = `${cust} ${item.itemName} ${item.customerPhone || ""} ${item.payment}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [
+    sales,
+    storeFilter,
+    saleStatusFilter,
+    salePaymentFilter,
+    saleTypeFilter,
+    saleMonth,
+    saleSearch,
+    customers,
+  ]);
+
   const saleStats = useMemo(() => {
     const displayDate = saleDate || vnNowDate();
     const inStore = (s: Sale) => storeFilter === "all" || s.storeId === storeFilter;
@@ -2662,6 +2777,20 @@ export default function Home() {
     ),
     [salesRetail, salesBanGa, shopRepairs, saleStats.displayDate, storeFilter]
   );
+
+  const dailyPhoneSalesStats = useMemo(() => {
+    const rows = salesRetail.filter(
+      (sale) =>
+        sale.status === "Hoàn tất" &&
+        sale.itemType === "Máy" &&
+        (storeFilter === "all" || sale.storeId === storeFilter) &&
+        (sale.createdAt || "").slice(0, 10) === saleStats.displayDate
+    );
+    return {
+      count: rows.length,
+      revenue: rows.reduce((sum, sale) => sum + (Number(sale.amount) || 0), 0),
+    };
+  }, [salesRetail, saleStats.displayDate, storeFilter]);
 
   /** Góc header Bán hàng: lãi tháng = bán hàng + bán gà + sửa chữa. */
   const salesHeaderMonthProfit = useMemo(() => {
@@ -5466,6 +5595,7 @@ export default function Home() {
     setSalePayStatus("Đã thanh toán");
     setSaleSoldAt(vnNowDateTimeLocal());
     setSaleMetaOpen(false);
+    setSaleAccessoryCartGridVisible(true);
     setEditingSaleId(null);
     setIsSaleReadOnly(false);
     setViewingSaleId(null);
@@ -5762,7 +5892,7 @@ export default function Home() {
           key: `phone-${phone.id}`,
           kind: "phone" as const,
           phoneId: phone.id,
-          name: `${phone.brand} ${phone.name}`.trim(),
+          name: displaySalePhoneName(`${phone.brand} ${phone.name}`),
           imei: phone.imei,
           brand: phone.brand,
           color: phone.color,
@@ -11040,7 +11170,7 @@ export default function Home() {
               {activePage === "sales" ? (
                 <div className="rounded-lg border border-line bg-brand-soft/40 p-4 shadow-sm">
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-sm font-bold text-brand">Tổng doanh thu & lãi ngày</span>
+                    <span className="text-sm font-bold text-brand">Doanh thu bán máy & lãi ngày</span>
                     <DayStepFilter
                       value={saleStats.displayDate}
                       onChange={setSaleDate}
@@ -11048,11 +11178,11 @@ export default function Home() {
                     />
                   </div>
                   <strong className="text-3xl font-bold text-brand">
-                    {isSaleSensitiveHidden ? "***" : formatMoney(totalDailySalesStats.revenue)}
+                    {isSaleSensitiveHidden ? "***" : formatMoney(dailyPhoneSalesStats.revenue)}
                   </strong>
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-2 text-sm font-semibold text-muted">
                     <span>Lãi: {isSaleSensitiveHidden ? "***" : formatMoney(totalDailySalesStats.profit)}</span>
-                    <span>{totalDailySalesStats.count} phiếu</span>
+                    <span>{dailyPhoneSalesStats.count} phiếu máy</span>
                   </div>
                 </div>
               ) : null}
@@ -11119,6 +11249,30 @@ export default function Home() {
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        if (!monthlySalesForExport.length) {
+                          showUiToast("error", "Không có phiếu bán trong tháng để xuất Excel.");
+                          return;
+                        }
+                        const { fileName, count } = downloadSalesExcel(monthlySalesForExport, {
+                          month: saleMonth,
+                          title: `Ban hang ${saleMonth}`,
+                        });
+                        showUiToast("success", `Đã xuất ${count} phiếu → ${fileName}`);
+                      } catch (err) {
+                        showUiToast("error", `Xuất Excel thất bại: ${toUiError(err)}`);
+                      }
+                    }}
+                    disabled={!monthlySalesForExport.length}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-line bg-white px-3 font-bold text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    title="Xuất Excel phiếu bán của cả tháng đang chọn"
+                  >
+                    <FileSpreadsheet size={18} className="text-brand" />
+                    Xuất Excel
+                  </button>
                   <button
                     type="button"
                     onClick={() => setIsSaleSensitiveHidden((v) => !v)}
@@ -11661,7 +11815,7 @@ export default function Home() {
                                   </div>
                                 </div>
                               </div>
-                              <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                              <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-end">
                                 <label className="grid min-w-0 gap-1.5">
                                   <span className="text-sm font-bold text-amber-950">
                                     Hình thức thanh toán <span className="text-red-500">*</span>
@@ -11678,6 +11832,15 @@ export default function Home() {
                                       </option>
                                     ))}
                                   </select>
+                                </label>
+                                <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-amber-200/70 bg-white px-3 text-sm font-bold text-amber-950">
+                                  <input
+                                    type="checkbox"
+                                    checked={saleAccessoryCartGridVisible}
+                                    onChange={(e) => setSaleAccessoryCartGridVisible(e.target.checked)}
+                                    className="h-4 w-4 rounded border-amber-300 text-brand accent-brand"
+                                  />
+                                  Hiển thị grid
                                 </label>
                                 <button
                                   type="button"
@@ -12098,25 +12261,10 @@ export default function Home() {
                                           >
                                             <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
                                               <span className="shrink-0 text-sm font-black text-indigo-700">
-                                                {p.brand} {p.name}
+                                                {displaySalePhoneName(`${p.brand} ${p.name}`)}
                                               </span>
-                                              {p.color ? (
-                                                <span
-                                                  className="inline-flex shrink-0 items-center"
-                                                  title={p.color}
-                                                  role="img"
-                                                  aria-label={`Màu ${p.color}`}
-                                                >
-                                                  <ColorDot color={p.color} size="sm" />
-                                                </span>
-                                              ) : null}
-                                              {p.storage ? (
-                                                <span className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-xs font-black text-slate-700 ring-1 ring-slate-200">
-                                                  {p.storage}
-                                                </span>
-                                              ) : null}
                                               {p.imei ? (
-                                                <span className="shrink-0 font-mono text-xl font-black tracking-wide text-red-600">
+                                                <span className="shrink-0 font-mono text-lg font-black tracking-wide text-violet-700">
                                                   {p.imei}
                                                 </span>
                                               ) : null}
@@ -12250,7 +12398,7 @@ export default function Home() {
                           </button>
                         ) : null}
                       </div>
-                      {saleCart.length === 0 ? (
+                      {saleModalTab === "accessory" && !saleAccessoryCartGridVisible && !isSaleReadOnly ? null : saleCart.length === 0 ? (
                         <p className="py-2 text-center text-sm font-semibold text-muted">Giỏ trống</p>
                       ) : (
                         <ul className="space-y-1.5">
@@ -12274,15 +12422,11 @@ export default function Home() {
                               <div className="min-w-0 flex-1 basis-[10rem]">
                                 {line.kind === "phone" ? (
                                   <p className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-sm font-bold text-ink">
-                                    <span className="font-black text-indigo-700">{line.name}</span>
-                                    {line.color ? (
-                                      <span className="font-semibold text-slate-500">· {line.color}</span>
-                                    ) : null}
-                                    {line.storage ? (
-                                      <span className="font-semibold text-slate-500">· {line.storage}</span>
-                                    ) : null}
+                                    <span className="font-black text-indigo-700" title={line.name}>
+                                      {displaySalePhoneName(line.name)}
+                                    </span>
                                     {line.imei ? (
-                                      <span className="font-mono text-xl font-black tracking-wide text-red-600">
+                                      <span className="font-mono text-lg font-black tracking-wide text-violet-700">
                                         {line.imei}
                                       </span>
                                     ) : null}
@@ -13869,12 +14013,6 @@ export default function Home() {
 
         {activePage === "tools" && currentUser && (() => {
           const isAddingNew = editingToolNoteId === TOOL_NOTE_NEW_ID;
-          const newStoreId: Exclude<StoreId, "all"> =
-            currentUser.role === "staff"
-              ? currentUser.storeId
-              : storeFilter !== "all"
-                ? storeFilter
-                : currentUser.storeId || "store-1";
           return (
             <section className="rounded-lg border border-line bg-white shadow-panel">
               <div className="flex flex-col gap-3 border-b border-line p-4 lg:flex-row lg:items-center lg:justify-between">
@@ -13960,40 +14098,14 @@ export default function Home() {
                           account={toolNoteAccount}
                           password={toolNotePassword}
                           editing
+                          saving={toolNoteSaving}
                           onTitleChange={setToolNoteTitle}
                           onAccountChange={setToolNoteAccount}
                           onPasswordChange={setToolNotePassword}
                           onCopyResult={handleToolCopyResult}
+                          onCancel={cancelEditToolNote}
+                          onSave={() => void saveToolNote()}
                         />
-                        <div className="mt-auto flex flex-col gap-2 border-t border-line bg-slate-50 px-3 py-2.5">
-                          <div className="text-[11px] font-bold text-muted">
-                            Tools mới · {storeName(newStoreId)}
-                          </div>
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              onClick={cancelEditToolNote}
-                              disabled={toolNoteSaving}
-                              className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-line bg-white px-3 text-xs font-black text-muted hover:bg-slate-50 disabled:opacity-50"
-                            >
-                              <X size={15} />
-                              Hủy
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void saveToolNote()}
-                              disabled={toolNoteSaving}
-                              className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-black text-white hover:bg-brand-dark disabled:opacity-50"
-                            >
-                              {toolNoteSaving ? (
-                                <Loader2 size={15} className="animate-spin" />
-                              ) : (
-                                <Plus size={15} />
-                              )}
-                              Lưu
-                            </button>
-                          </div>
-                        </div>
                       </article>
                     ) : null}
                     {toolNotes.map((note) => {
@@ -14010,67 +14122,16 @@ export default function Home() {
                             account={isEditing ? toolNoteAccount : note.account}
                             password={isEditing ? toolNotePassword : note.password}
                             editing={isEditing}
+                            saving={toolNoteSaving}
                             onTitleChange={setToolNoteTitle}
                             onAccountChange={setToolNoteAccount}
                             onPasswordChange={setToolNotePassword}
                             onCopyResult={handleToolCopyResult}
+                            onCancel={cancelEditToolNote}
+                            onSave={() => void saveToolNote()}
+                            onEdit={() => openEditToolNote(note.id)}
+                            onDelete={() => void cancelToolNote(note.id)}
                           />
-                          <div className="mt-auto flex flex-col gap-2 border-t border-line bg-slate-50 px-3 py-2.5">
-                            <p className="truncate whitespace-nowrap text-[11px] font-bold text-muted">
-                              Nhập {formatToolNoteWhen(note.createdAt) || "—"}
-                              {" · "}
-                              Sửa {formatToolNoteWhen(note.updatedAt || note.createdAt) || "—"}
-                            </p>
-                            <div className="flex gap-2">
-                              {isEditing ? (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={cancelEditToolNote}
-                                    disabled={toolNoteSaving}
-                                    className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-line bg-white px-3 text-xs font-black text-muted hover:bg-slate-50 disabled:opacity-50"
-                                  >
-                                    <X size={15} />
-                                    Hủy
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => void saveToolNote()}
-                                    disabled={toolNoteSaving}
-                                    className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-black text-white hover:bg-brand-dark disabled:opacity-50"
-                                  >
-                                    {toolNoteSaving ? (
-                                      <Loader2 size={15} className="animate-spin" />
-                                    ) : (
-                                      <Edit3 size={15} />
-                                    )}
-                                    Lưu
-                                  </button>
-                                </>
-                              ) : (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => openEditToolNote(note.id)}
-                                    disabled={toolNoteSaving}
-                                    className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand-soft px-3 text-xs font-black text-brand hover:bg-brand/20 disabled:opacity-50"
-                                  >
-                                    <Edit3 size={15} />
-                                    Sửa
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => void cancelToolNote(note.id)}
-                                    disabled={toolNoteSaving}
-                                    className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-red-50 px-3 text-xs font-black text-danger hover:bg-red-100 disabled:opacity-50"
-                                  >
-                                    <Trash2 size={15} />
-                                    Hủy
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </div>
                         </article>
                       );
                     })}
@@ -17289,6 +17350,18 @@ export default function Home() {
                         setSelectedSoftwareIds([]);
                       }}
                     />
+                    <button
+                      type="button"
+                      aria-label="Xóa lọc khách"
+                      disabled={!onlineRepairCustomerFilter}
+                      onClick={() => {
+                        setOnlineRepairCustomerFilter("");
+                        setSelectedSoftwareIds([]);
+                      }}
+                      className="grid h-10 w-10 place-items-center rounded-lg border border-line bg-white text-muted transition hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <X size={18} />
+                    </button>
                     <select
                       value={onlineRepairFilter}
                       onChange={(e) => {
@@ -17639,14 +17712,6 @@ function DayStepFilter({
       </button>
     </div>
   );
-}
-
-/** Ngày-tháng (xanh brand) + năm (muted, cách ra) + giờ phút (vàng amber). */
-function formatToolNoteWhen(value?: string | null): string {
-  const parts = toVnDisplayParts(value);
-  if (!parts) return String(value || "").replace("T", " ").trim();
-  const date = `${parts.dd}/${parts.mm}/${parts.yyyy}`;
-  return parts.hhmm ? `${date} ${parts.hhmm}` : date;
 }
 
 function ColoredDateTime({
