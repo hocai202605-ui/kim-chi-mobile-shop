@@ -6094,6 +6094,17 @@ export default function Home() {
     );
   }
 
+  function updateSaleAccessoryCheckedForForm(isChecked: boolean) {
+    setSaleAccessoryIsChecked(isChecked);
+    setSaleCart((prev) =>
+      prev.map((line) =>
+        line.kind === "accessory" && line.unitPrice > 0
+          ? { ...line, isChecked }
+          : line
+      )
+    );
+  }
+
   async function createSale(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (isSaleReadOnly) return;
@@ -6186,7 +6197,7 @@ export default function Home() {
                 quantity: line.quantity,
                 unitPrice: line.unitPrice,
                 unitCost: line.cost || 0,
-                isChecked: saleAccessoryIsChecked !== false,
+                isChecked: line.isChecked !== false,
               }
         ),
       });
@@ -11864,7 +11875,7 @@ export default function Home() {
                                   <input
                                     type="checkbox"
                                     checked={saleAccessoryIsChecked}
-                                    onChange={(e) => setSaleAccessoryIsChecked(e.target.checked)}
+                                    onChange={(e) => updateSaleAccessoryCheckedForForm(e.target.checked)}
                                     className="h-4 w-4 rounded border-amber-300 text-brand accent-brand"
                                   />
                                   {saleAccessoryIsChecked ? "Đã kiểm tra" : "Chưa kiểm tra"}
