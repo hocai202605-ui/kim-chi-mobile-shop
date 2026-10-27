@@ -1,6 +1,7 @@
 "use client";
 
 import { ExcelTable } from "@/components/ui/ExcelTable";
+import { ExcelExportPortal } from "@/components/ui/ExcelExportPortal";
 import {
   Bar,
   BarChart,
@@ -7613,6 +7614,7 @@ export default function Home() {
                 {isSaleSensitiveHidden ? "***" : formatMoney(salesHeaderMonthProfit)}
               </strong>
             ) : null}
+            <div id="header-excel-exports" className="flex items-center gap-2 empty:hidden" />
             <select
               value={currentUser.role === "staff" ? currentUser.storeId : storeFilter}
               onChange={(event) => {
@@ -10031,27 +10033,29 @@ export default function Home() {
                       </button>
                     ) : null}
                     {inventoryTab === "phones" ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!filteredPhones.length) {
-                            showUiToast("error", "Không có máy để xuất Excel.");
-                            return;
-                          }
-                          try {
-                            const { fileName, count } = downloadPhonesExcel(filteredPhones);
-                            showUiToast("success", `Đã xuất ${count} máy → ${fileName}`);
-                          } catch (err) {
-                            showUiToast("error", `Xuất Excel thất bại: ${toUiError(err)}`);
-                          }
-                        }}
-                        disabled={!filteredPhones.length}
-                        className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-4 text-sm font-black text-ink shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                        title="Xuất danh sách máy (theo bộ lọc hiện tại) ra Excel"
-                      >
-                        <FileSpreadsheet size={17} className="text-brand" />
-                        Xuất Excel
-                      </button>
+                      <ExcelExportPortal>
+  <button
+                          type="button"
+                          onClick={() => {
+                            if (!filteredPhones.length) {
+                              showUiToast("error", "Không có máy để xuất Excel.");
+                              return;
+                            }
+                            try {
+                              const { fileName, count } = downloadPhonesExcel(filteredPhones);
+                              showUiToast("success", `Đã xuất ${count} máy → ${fileName}`);
+                            } catch (err) {
+                              showUiToast("error", `Xuất Excel thất bại: ${toUiError(err)}`);
+                            }
+                          }}
+                          disabled={!filteredPhones.length}
+                          aria-label="Xuất Excel kho hàng"
+                          className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-white text-ink shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          title="Xuất danh sách máy (theo bộ lọc hiện tại) ra Excel"
+                        >
+                          <FileSpreadsheet size={17} className="text-brand" />
+                        </button>
+                      </ExcelExportPortal>
                     ) : null}
                     <button onClick={() => openInventoryCreateModal(inventoryTab)} className="inline-flex h-10 items-center gap-2 rounded-lg bg-brand px-4 text-sm font-black text-white hover:bg-brand-dark">
                       <Plus size={17} />
@@ -11288,30 +11292,32 @@ export default function Home() {
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      try {
-                        if (!monthlySalesForExport.length) {
-                          showUiToast("error", "Không có phiếu bán trong tháng để xuất Excel.");
-                          return;
+                  <ExcelExportPortal>
+  <button
+                      type="button"
+                      onClick={() => {
+                        try {
+                          if (!monthlySalesForExport.length) {
+                            showUiToast("error", "Không có phiếu bán trong tháng để xuất Excel.");
+                            return;
+                          }
+                          const { fileName, count } = downloadSalesExcel(monthlySalesForExport, {
+                            month: saleMonth,
+                            title: `Ban hang ${saleMonth}`,
+                          });
+                          showUiToast("success", `Đã xuất ${count} phiếu → ${fileName}`);
+                        } catch (err) {
+                          showUiToast("error", `Xuất Excel thất bại: ${toUiError(err)}`);
                         }
-                        const { fileName, count } = downloadSalesExcel(monthlySalesForExport, {
-                          month: saleMonth,
-                          title: `Ban hang ${saleMonth}`,
-                        });
-                        showUiToast("success", `Đã xuất ${count} phiếu → ${fileName}`);
-                      } catch (err) {
-                        showUiToast("error", `Xuất Excel thất bại: ${toUiError(err)}`);
-                      }
-                    }}
-                    disabled={!monthlySalesForExport.length}
-                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-line bg-white px-3 font-bold text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                    title="Xuất Excel phiếu bán của cả tháng đang chọn"
-                  >
-                    <FileSpreadsheet size={18} className="text-brand" />
-                    Xuất Excel
-                  </button>
+                      }}
+                      disabled={!monthlySalesForExport.length}
+                      aria-label="Xuất Excel bán hàng"
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      title="Xuất Excel phiếu bán của cả tháng đang chọn"
+                    >
+                      <FileSpreadsheet size={18} className="text-brand" />
+                    </button>
+                  </ExcelExportPortal>
                   <button
                     type="button"
                     onClick={() => setIsSaleSensitiveHidden((v) => !v)}

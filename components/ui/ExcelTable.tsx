@@ -2,6 +2,7 @@
 
 import { useRef, useState, type ComponentPropsWithoutRef } from "react";
 import { FileSpreadsheet } from "lucide-react";
+import { ExcelExportPortal } from "@/components/ui/ExcelExportPortal";
 import { downloadTableExcel, readExcelTable, type ExcelTableData } from "@/lib/exportTableExcel";
 
 /** Shared export control for native grids; explicit data includes all filtered pages. */
@@ -31,13 +32,13 @@ export function ExcelTable({ exportData, exportTitle, exportEnabled = true, ...p
   return (
     <div className="min-w-0">
       {exportEnabled ? (
-        <div className="flex flex-wrap items-center justify-end gap-2 p-2">
-          {message ? <span role={message.error ? "alert" : "status"} className={`text-sm font-semibold ${message.error ? "text-danger" : "text-brand"}`}>{message.text}</span> : null}
-          <button type="button" onClick={download} className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-white px-4 text-sm font-black text-ink shadow-sm transition hover:bg-slate-50" title={exportData ? "Xuất toàn bộ dữ liệu theo bộ lọc hiện tại ra Excel" : "Xuất dữ liệu đang hiển thị trong bảng ra Excel"}>
-            <FileSpreadsheet size={17} className="text-brand" /> Xuất Excel
+        <ExcelExportPortal>
+          <button type="button" onClick={download} aria-label="Xuất Excel" className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-white text-ink shadow-sm transition hover:bg-slate-50" title={exportData ? "Xuất toàn bộ dữ liệu theo bộ lọc hiện tại ra Excel" : "Xuất dữ liệu đang hiển thị trong bảng ra Excel"}>
+            <FileSpreadsheet size={17} className="text-brand" />
           </button>
-        </div>
+        </ExcelExportPortal>
       ) : null}
+      {message ? <p role={message.error ? "alert" : "status"} className={`p-2 text-sm font-semibold ${message.error ? "text-danger" : "text-brand"}`}>{message.text}</p> : null}
       <div className="overflow-auto"><table ref={tableRef} {...props} /></div>
     </div>
   );
