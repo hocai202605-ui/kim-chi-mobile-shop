@@ -8,13 +8,20 @@ export type ExcelTableData = { headers: string[]; rows: ExcelCell[][] };
 export function readExcelTable(table: HTMLTableElement): ExcelTableData {
   const text = (cell: Element) => {
     const copy = cell.cloneNode(true) as HTMLElement;
-    copy.querySelectorAll("svg, input[type=checkbox], input[type=password], [hidden], .hidden, [aria-hidden=true]").forEach((node) => node.remove());
-    copy.querySelectorAll("input, textarea, select").forEach((node) => {
-      const control = node as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+    const controls = cell.querySelectorAll("input, textarea, select");
+    copy.querySelectorAll("input, textarea, select").forEach((node, index) => {
+      const control = controls[index] as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+      if (!control) return;
+      if (control instanceof HTMLInputElement && ["checkbox", "password"].includes(control.type)) {
+        if (control.type === "checkbox" && !control.checked && node.closest("label")) node.closest("label")?.remove();
+        else node.remove();
+        return;
+      }
       node.replaceWith(document.createTextNode(control instanceof HTMLSelectElement
         ? control.selectedOptions[0]?.textContent || ""
         : control.value));
     });
+    copy.querySelectorAll("svg, [hidden], .hidden, [aria-hidden=true]").forEach((node) => node.remove());
     copy.querySelectorAll("br").forEach((node) => node.replaceWith(" "));
     copy.querySelectorAll("div, p").forEach((node) => node.append(" "));
     return (copy.textContent || "").replace(/\s+/g, " ").trim();
@@ -24,7 +31,14 @@ export function readExcelTable(table: HTMLTableElement): ExcelTableData {
   const rows = Array.from(table.tBodies).flatMap((body) => Array.from(body.rows))
     .filter((row) => row.cells.length === headers.length && !Array.from(row.cells).some((cell) => cell.colSpan > 1))
     .map((row) => columns.map((index) => text(row.cells[index])))
-    .filter((row) => row.some(Boolean));
+    .filter((row) => row.some(Boolean))
+    .map((row) => row.map((value, index) => {
+      // Keep phone numbers, identifiers and dates as text, including leading zeroes.
+      const numeric = /giá|lãi|tiền|phí|số nợ|số lượng|^sl$|^lượt|^sc \+ pm$/i.test(headers[columns[index]]);
+      if (!numeric || !/^-?\d[\d.]*(,\d+)?\s*[₫đ]?$/i.test(value)) return value;
+      const number = Number(value.replace(/[.\s₫đ]/gi, "").replace(",", "."));
+      return Number.isFinite(number) ? number : value;
+    }));
   return { headers: columns.map((index) => headers[index]), rows };
 }
 
