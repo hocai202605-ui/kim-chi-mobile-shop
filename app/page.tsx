@@ -1,5 +1,6 @@
 "use client";
 
+import { ExcelTable } from "@/components/ui/ExcelTable";
 import {
   Bar,
   BarChart,
@@ -8643,7 +8644,7 @@ export default function Home() {
                     </p>
                   </div>
                   <div className="max-h-[min(50vh,24rem)] overflow-auto">
-                    <table className="min-w-full border-collapse text-left text-sm">
+                    <ExcelTable className="min-w-full border-collapse text-left text-sm">
                       <thead className="sticky top-0 z-10 bg-slate-50">
                         <tr className="border-b border-line text-xs font-black uppercase tracking-wide text-muted">
                           <th className="whitespace-nowrap px-3 py-2.5">Ngày</th>
@@ -8710,7 +8711,7 @@ export default function Home() {
                           ))
                         )}
                       </tbody>
-                    </table>
+                    </ExcelTable>
                   </div>
                 </section>
 
@@ -9273,7 +9274,7 @@ export default function Home() {
                     </p>
                   </div>
                   <div className="max-h-[min(60vh,28rem)] overflow-auto">
-                    <table className="min-w-full border-collapse text-left text-sm">
+                    <ExcelTable className="min-w-full border-collapse text-left text-sm">
                       <thead className="sticky top-0 z-10 bg-slate-50">
                         <tr className="border-b border-line text-xs font-black uppercase tracking-wide text-muted">
                           <th className="whitespace-nowrap px-4 py-3">Số tiền</th>
@@ -9316,7 +9317,7 @@ export default function Home() {
                           ))
                         )}
                       </tbody>
-                    </table>
+                    </ExcelTable>
                   </div>
                 </section>
               </div>
@@ -9757,7 +9758,10 @@ export default function Home() {
                   </div>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="min-w-full border-collapse text-left text-sm">
+                  <ExcelTable exportTitle="Nhập hàng" exportData={() => ({
+                    headers: ["Nhà phân phối", "Loại linh kiện", "Tên linh kiện", "Ngày", "Cửa hàng"],
+                    rows: list.map((row) => [row.distributor, row.partType, row.partName, formatDateVi(row.createdAt), storeName(row.storeId)]),
+                  })} className="min-w-full border-collapse text-left text-sm">
                     <thead className="bg-slate-50">
                       <tr className="border-b border-line text-xs font-black uppercase tracking-wide text-muted">
                         <th className="w-10 px-2 py-3 text-center">
@@ -9880,7 +9884,7 @@ export default function Home() {
                         })
                       )}
                     </tbody>
-                  </table>
+                  </ExcelTable>
                 </div>
                 <div className="flex flex-col gap-3 border-t border-line p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
@@ -10267,6 +10271,7 @@ export default function Home() {
               {inventoryTab === "phones" ? (
                 <DataTable
                   compact
+                  exportEnabled={false}
                   headers={["Tên máy", "Dung lượng", "IMEI", "Giá bán", "Màu sắc", "Dung lượng pin", "Pin", "Giá nhập", "Lãi", "Thao tác"]}
                   rows={paginatedPhones.map((item) => [
                     <div key={`name-${item.id}`} className="flex flex-col items-center gap-1.5">
@@ -10361,6 +10366,10 @@ export default function Home() {
                     "Lãi",
                     "Thao tác",
                   ]}
+                  exportData={() => ({
+                    headers: ["Mã", "Danh mục", "Hãng", "Tên phụ kiện", "SL", "Giá bán", "Giá nhập", "Lãi"],
+                    rows: filteredAccessories.map((item) => [item.code, item.category, item.brand, item.name, item.quantity, item.price, isAccessorySensitiveHidden ? "***" : item.cost, isAccessorySensitiveHidden ? "***" : item.price - item.cost]),
+                  })}
                   rows={paginatedAccessories.map((item) => [
                     <span className="font-mono text-[17px] font-medium text-slate-500" key={`code-${item.id}`}>{item.code}</span>,
                     <span className="text-[17px] font-semibold text-slate-700" key={`cat-${item.id}`}>{item.category || "—"}</span>,
@@ -11324,6 +11333,7 @@ export default function Home() {
 
               <div className="overflow-x-auto pb-2">
                 <DataTable
+                  exportEnabled={false}
                   headers={[
                     "Hàng",
                     "Tổng tiền",
@@ -13288,6 +13298,13 @@ export default function Home() {
                       "Gần nhất",
                       "Thao tác",
                     ]}
+                    exportData={() => ({
+                      headers: ["Tên", "SĐT", "Địa chỉ", "Ghi chú", `Lượt (${periodLabel})`, "Giá trị mua", "SC + PM", "Gần nhất"],
+                      rows: filteredCustomers.map((customer) => {
+                        const st = statsOf(customer.id);
+                        return [customer.name, customer.phone, customer.address, customer.note, st.visits, st.saleAmount, serviceValue(st), st.lastAt];
+                      }),
+                    })}
                     rows={paged.map((customer) => {
                       const st = statsOf(customer.id);
                       const svc = serviceValue(st);
@@ -15228,6 +15245,10 @@ export default function Home() {
                         "Cửa hàng",
                         "Thao tác",
                       ]}
+                      exportData={() => ({
+                        headers: ["Khách", "SĐT", "Nội dung", "Số nợ", "Ngày", "Trạng thái", "Nguồn", "Cửa hàng"],
+                        rows: displayDebts.map((item) => [item.customerName, item.customerPhone, item.title, isDebtSensitiveHidden ? "***" : item.amount, item.debtDate, statusLabel(item.status), ({ software: "Phần mềm", sale: "Bán hàng", repair: "Sửa chữa" } as Record<string, string>)[item.source] || "Nhập tay", storeName(item.storeId)]),
+                      })}
                       rows={pagedDebts.map((item) => {
                         const isOpen = item.status === "open";
                         const checked = selectedDebtIds.includes(item.id);
@@ -15897,7 +15918,7 @@ export default function Home() {
               </div>
             ) : (
               <div className="overflow-x-auto rounded-xl border border-line">
-                <table className="min-w-full text-left text-sm">
+                <ExcelTable className="min-w-full text-left text-sm">
                   <thead className="bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-600">
                     <tr>
                       <th className="px-3 py-3">Tài khoản</th>
@@ -16012,7 +16033,7 @@ export default function Home() {
                       </tr>
                     ) : null}
                   </tbody>
-                </table>
+                </ExcelTable>
               </div>
             )}
           </Panel>
@@ -18600,11 +18621,15 @@ function InventoryBar({ label, value, color }: { label: string; value: number; c
 }
 
 function DataTable({
+  exportData,
+  exportEnabled = true,
   headers,
   rows,
   compact = false,
   emptyMessage = "Chưa có dữ liệu phù hợp.",
 }: {
+  exportData?: () => import("@/lib/exportTableExcel").ExcelTableData;
+  exportEnabled?: boolean;
   headers: ReactNode[];
   rows: ReactNode[][];
   compact?: boolean;
@@ -18618,7 +18643,7 @@ function DataTable({
 
   return (
     <div className="overflow-auto rounded-xl border border-line bg-white shadow-sm">
-      <table className={`min-w-max w-full border-collapse ${compact ? "text-base" : "text-base"}`}>
+      <ExcelTable exportData={exportData} exportEnabled={exportEnabled} className={`min-w-max w-full border-collapse ${compact ? "text-base" : "text-base"}`}>
         <thead className={`bg-slate-100 text-center font-black uppercase tracking-wider text-slate-800 ${compact ? "text-xs" : "text-sm"}`}>
           <tr>
             {headers.map((header, headerIndex) => (
@@ -18651,7 +18676,7 @@ function DataTable({
             );
           })}
         </tbody>
-      </table>
+      </ExcelTable>
     </div>
   );
 }

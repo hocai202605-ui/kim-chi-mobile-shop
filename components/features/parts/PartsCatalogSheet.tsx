@@ -6,6 +6,7 @@
  * Android: mỗi hãng = 1 tab (Samsung / Oppo / Xiaomi), không gộp 3 cột.
  */
 
+import { ExcelTable } from "@/components/ui/ExcelTable";
 import { Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -555,7 +556,7 @@ function AndroidBrandSheet({
     <div className="overflow-hidden rounded-lg border border-line shadow-sm">
       <div className={`px-3 py-2 text-center text-sm font-black ${headClass}`}>{title}</div>
       <div className="overflow-x-auto">
-        <table className="min-w-full border-collapse text-sm">
+        <ExcelTable className="min-w-full border-collapse text-sm">
           <thead>
             <tr className="border-b border-line bg-amber-100 text-xs font-black text-ink">
               <th className="min-w-[12rem] px-2 py-2 text-left">Model</th>
@@ -639,7 +640,7 @@ function AndroidBrandSheet({
               {role === "owner" ? <td /> : null}
             </tr>
           </tbody>
-        </table>
+        </ExcelTable>
       </div>
     </div>
   );
@@ -675,7 +676,7 @@ function GradePriceSheet({
     <div className="overflow-hidden rounded-lg border border-line shadow-sm">
       <div className={`px-3 py-2 text-center text-sm font-black ${headerClass}`}>{title}</div>
       <div className="overflow-x-auto">
-        <table className="min-w-full border-collapse text-sm">
+        <ExcelTable className="min-w-full border-collapse text-sm">
           <thead>
             <tr className="border-b border-line bg-fuchsia-100 text-xs font-black text-ink">
               <th className="sticky left-0 z-[1] min-w-[10rem] bg-fuchsia-100 px-3 py-2 text-left">
@@ -739,7 +740,7 @@ function GradePriceSheet({
               {role === "owner" ? <td /> : null}
             </tr>
           </tbody>
-        </table>
+        </ExcelTable>
       </div>
     </div>
   );
